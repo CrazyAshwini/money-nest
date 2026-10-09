@@ -1,0 +1,23 @@
+import { describe, expect, it } from "vitest";
+import { recordSchemas, transactionSchema } from "../src/lib/supabase/validation";
+
+const owned={id:"11111111-1111-4111-8111-111111111111",userId:"22222222-2222-4222-8222-222222222222"};
+describe("server record validation",()=>{
+  it("normalizes a snapshot calendar date without shifting its label",()=>{
+    const snapshot=recordSchemas.snapshots.parse({...owned,accountId:owned.id,asOf:"2026-10-09",reportedBalance:"0.10",source:"user_report",verifiedByUser:false});
+    expect(snapshot.asOf).toBe("2026-10-09T00:00:00.000Z");
+    expect(recordSchemas.snapshots.safeParse({...snapshot,reportedBalance:null}).success).toBe(false);
+  });
+  it("allows pending undated purchases but rejects posting them",()=>{
+    const transaction={...owned,amount:"10.01",currency:"INR",kind:"expense",status:"pending_review",occurredOn:null,description:"Unconfirmed purchase",fromAccountId:owned.id,toAccountId:null};
+    expect(transactionSchema.safeParse(transaction).success).toBe(true);
+    expect(transactionSchema.safeParse({...transaction,status:"posted"}).success).toBe(false);
+    expect(transactionSchema.safeParse({...transaction,amount:"10.001"}).success).toBe(false);
+    expect(transactionSchema.safeParse({...transaction,id:"11111111-1111-8111-8111-111111111111"}).success).toBe(true);
+  });
+  it("accepts only a masked numeric suffix of up to four digits",()=>{
+    const account={...owned,name:"Fictional account",institution:"Fictional bank",kind:"bank",maskedSuffix:"1234",active:true};
+    expect(recordSchemas.accounts.safeParse(account).success).toBe(true);
+    expect(recordSchemas.accounts.safeParse({...account,maskedSuffix:"12345678"}).success).toBe(false);
+  });
+});

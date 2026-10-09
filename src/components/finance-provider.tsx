@@ -1,0 +1,313 @@
+"use client";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { cloneDemoData, DEMO_USER_ID } from "@/lib/seed";
+import { validateWorkspaceRecord } from "@/lib/validation";
+import type { WorkspaceData, OwnedRecord } from "@/lib/types";
+import type { UserProfile } from "@/lib/profile-types";
+
+const STORAGE_KEY = "finance-os:fictional-demo:v1";
+type Mode = "loading" | "demo" | "cloud" | "private" | "login" | "error";
+type ContextValue = {
+  data: WorkspaceData;
+  mode: Mode;
+  backend: "local" | "supabase" | null;
+  profile: UserProfile | null;
+  needsSetup: boolean;
+  emailRequired: boolean;
+  userId: string;
+  month: string;
+  setMonth: (month: string) => void;
+  today: string;
+  toast: (message: string) => void;
+  message: string;
+  save: <K extends keyof WorkspaceData>(
+    collection: K,
+    record: WorkspaceData[K][number],
+  ) => Promise<void>;
+  refresh: () => Promise<void>;
+  resetDemo: () => void;
+  enterDemo: () => void;
+  commitImport: (
+    transactions: WorkspaceData["transactions"],
+    inputHash: string,
+    fileName: string,
+  ) => Promise<number>;
+};
+const Context = createContext<ContextValue | null>(null);
+const localDate = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+export function FinanceProvider({ children }: { children: React.ReactNode }) {
+  const [data, setData] = useState<WorkspaceData>(cloneDemoData);
+  const currentData = useRef(data);
+  const [mode, setMode] = useState<Mode>("loading");
+  const [month, setMonth] = useState("2026-10");
+  const [message, setMessage] = useState("");
+  const [authUserId, setAuthUserId] = useState("");
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [backend, setBackend] = useState<"local" | "supabase" | null>(null);
+  const [needsSetup, setNeedsSetup] = useState(false);
+  const [emailRequired, setEmailRequired] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const path = usePathname();
+  const router = useRouter();
+  const replaceData = useCallback((next: WorkspaceData) => {
+    currentData.current = next;
+    setData(next);
+  }, []);
+  const toast = useCallback((text: string) => {
+    setMessage(text);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setMessage(""), 5000);
+  }, []);
+  const enterDemo = useCallback(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      const parsed = stored ? JSON.parse(stored) : null;
+      replaceData(
+        parsed &&
+          Object.keys(cloneDemoData()).every(
+            (key) =>
+              Array.isArray(parsed[key]) &&
+              parsed[key].every(
+                (row: OwnedRecord) => row.userId === DEMO_USER_ID,
+              ),
+          )
+          ? parsed
+          : cloneDemoData(),
+      );
+    } catch {
+      replaceData(cloneDemoData());
+    }
+    setMode("demo");
+    setProfile(null);
+  }, [replaceData]);
+  const refresh = useCallback(async () => {
+    if (
+      sessionStorage.getItem("finance-os:mode") === "demo" &&
+      !window.location.pathname.startsWith("/profile") &&
+      window.location.pathname !== "/login"
+    ) {
+      enterDemo();
+      return;
+    }
+    try {
+      const res = await fetch("/api/workspace", { cache: "no-store" });
+      const result = await res.json();
+      setBackend(
+        result.backend === "local"
+          ? "local"
+          : result.configured === false
+            ? null
+            : "supabase",
+      );
+      setNeedsSetup(result.needsSetup === true);
+      setEmailRequired(
+        result.emailRequired === true || Boolean(result.profile?.email),
+      );
+      if (result.configured === false) {
+        enterDemo();
+        return;
+      }
+      if (!res.ok && res.status !== 401)
+        throw new Error(result.error || "Your workspace could not be loaded.");
+      if (!result.authenticated) {
+        replaceData(cloneDemoData());
+        setProfile(null);
+        setAuthUserId("");
+        setMode("login");
+        return;
+      }
+      if (!res.ok || !result.workspace)
+        throw new Error(result.error || "Your workspace could not be loaded.");
+      replaceData(result.workspace);
+      setAuthUserId(result.userId);
+      setProfile(result.profile ?? null);
+      setMode(result.backend === "local" ? "private" : "cloud");
+    } catch (error) {
+      setMode("error");
+      toast(
+        error instanceof Error
+          ? error.message
+          : "Unable to connect. Please retry.",
+      );
+    }
+  }, [enterDemo, toast, replaceData]);
+  // Hydration synchronizes external session/browser storage after SSR; it must also support the immediate demo branch.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refresh();
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [refresh]);
+  // Surface a browser-storage quota failure to the user when persisting the external store fails.
+  useEffect(() => {
+    if (mode === "demo") {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        toast(
+          "Browser storage is full. Export your demo changes before closing.",
+        );
+      }
+    }
+  }, [data, mode, toast]);
+  useEffect(() => {
+    if (mode === "login" && path !== "/login" && !path.startsWith("/profile"))
+      router.replace("/login");
+  }, [mode, path, router]);
+  async function save<K extends keyof WorkspaceData>(
+    collection: K,
+    record: WorkspaceData[K][number],
+  ) {
+    if (mode !== "demo" && mode !== "cloud" && mode !== "private")
+      throw new Error("Your workspace is not ready.");
+    if (collection === "auditEvents")
+      throw new Error("Audit history is recorded automatically.");
+    const owner = mode === "demo" ? DEMO_USER_ID : authUserId;
+    const current = currentData.current;
+    const checked = validateWorkspaceRecord(current, collection, record, owner);
+    if (mode === "cloud" || mode === "private") {
+      const res = await fetch("/api/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collection, record: checked }),
+      });
+      const result = await res.json();
+      if (!res.ok)
+        throw new Error(result.error || "Changes could not be saved.");
+      await refresh();
+      return;
+    }
+    const rows = current[collection] as OwnedRecord[];
+    const exists = rows.some((row) => row.id === checked.id);
+    replaceData({
+      ...current,
+      [collection]: exists
+        ? rows.map((row) => (row.id === checked.id ? checked : row))
+        : [...rows, checked],
+      auditEvents: [
+        ...current.auditEvents,
+        {
+          id: crypto.randomUUID(),
+          userId: owner,
+          entityType: collection,
+          entityId: checked.id,
+          action: exists ? "updated" : "created",
+          description: `${collection} ${exists ? "updated" : "created"}`,
+          occurredAt: new Date().toISOString(),
+        },
+      ],
+    });
+  }
+  function resetDemo() {
+    if (mode !== "demo") return;
+    replaceData(cloneDemoData());
+    toast("Fictional demo restored.");
+  }
+  async function commitImport(
+    transactions: WorkspaceData["transactions"],
+    inputHash: string,
+    fileName: string,
+  ) {
+    if (mode !== "demo" && mode !== "cloud" && mode !== "private")
+      throw new Error("Your workspace is not ready.");
+    const owner = mode === "demo" ? DEMO_USER_ID : authUserId;
+    const current = currentData.current;
+    const checked = transactions.map((t) =>
+      validateWorkspaceRecord(current, "transactions", t, owner),
+    );
+    if (mode === "cloud" || mode === "private") {
+      const res = await fetch("/api/imports/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactions: checked, inputHash, fileName }),
+      });
+      const result = await res.json();
+      if (!res.ok)
+        throw new Error(result.error || "Import could not be saved.");
+      await refresh();
+      return result.count || 0;
+    }
+    const existing = new Set(
+      current.transactions
+        .filter((t) => t.sourceSystem && t.sourceObjectId)
+        .map((t) => `${t.sourceSystem}:${t.sourceObjectId}`),
+    );
+    const fresh = checked.filter((t) => {
+      if (!t.sourceSystem || !t.sourceObjectId)
+        throw new Error(
+          "Imported rows need their reviewed source identifiers.",
+        );
+      const key = `${t.sourceSystem}:${t.sourceObjectId}`;
+      if (
+        existing.has(key) ||
+        current.transactions.some((row) => row.id === t.id)
+      )
+        return false;
+      existing.add(key);
+      return true;
+    });
+    replaceData({
+      ...current,
+      transactions: [...current.transactions, ...fresh],
+      auditEvents: [
+        ...current.auditEvents,
+        {
+          id: crypto.randomUUID(),
+          userId: owner,
+          entityType: "imports",
+          entityId: inputHash,
+          action: "committed",
+          description: `${fileName}: ${fresh.length} reviewed rows imported`,
+          occurredAt: new Date().toISOString(),
+        },
+      ],
+    });
+    return fresh.length;
+  }
+  return (
+    <Context.Provider
+      value={{
+        data,
+        mode,
+        backend,
+        profile,
+        needsSetup,
+        emailRequired,
+        userId: mode === "demo" ? DEMO_USER_ID : authUserId,
+        month,
+        setMonth,
+        today: mode === "demo" ? "2026-10-09" : localDate(),
+        toast,
+        message,
+        save,
+        refresh,
+        resetDemo,
+        enterDemo,
+        commitImport,
+      }}
+    >
+      {children}
+    </Context.Provider>
+  );
+}
+export function useFinance() {
+  const value = useContext(Context);
+  if (!value) throw new Error("FinanceProvider is required");
+  return value;
+}

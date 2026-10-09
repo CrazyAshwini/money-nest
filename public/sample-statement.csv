@@ -1,0 +1,5 @@
+date,description,amount,type,account,reference,category,from_account,to_account
+2026-10-07,Neighborhood market,248.60,expense,Meridian Everyday,DEMO-CSV-001,Groceries,,
+2026-10-08,"Cafe lunch, two courses",180.00,expense,Meridian Everyday,DEMO-CSV-002,Food,,
+2026-10-08,Wallet top-up,50.00,transfer,Meridian Everyday,DEMO-CSV-003,Other,Meridian Everyday,Pocket Wallet
+2026-10-09,Merchant return,75.00,refund,Meridian Everyday,DEMO-CSV-004,Shopping,,

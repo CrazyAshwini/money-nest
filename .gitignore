@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.env*
+!.env.example
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+.supabase/
+*.log
+supabase/.temp/
+statements/
+backups/
+artifacts/
+private/
+*.private.json
