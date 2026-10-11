@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Decimal from "decimal.js";
+import { ChevronDown } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { Modal, Field } from "./ui";
 import {
@@ -426,14 +427,64 @@ export function RecordEditor({
       min={type === "number" ? "0" : undefined}
     />
   );
+  const incomingTransaction = ["income", "refund"].includes(transaction.kind);
+  const twoAccountTransaction = [
+    "transfer",
+    "bill_payment",
+    "adjustment",
+  ].includes(transaction.kind);
+  const showTransactionStatus =
+    Boolean(receipt) ||
+    (editor.type === "transaction" &&
+      Boolean(editor.record && editor.record.status !== "posted"));
+  const transactionAccount = (
+    name: "fromAccountId" | "toAccountId",
+    label: string,
+    full = false,
+  ) => (
+    <Field label={label} className={full ? "full" : undefined}>
+      <select
+        name={name}
+        value={transaction[name]}
+        onChange={(event) => updateTransaction(name, event.target.value)}
+      >
+        <option value="">
+          {name === "fromAccountId"
+            ? "Unknown / external"
+            : "Merchant / external"}
+        </option>
+        {options}
+      </select>
+    </Field>
+  );
+  const transactionStatus = (
+    <Field label="Status">
+      <select
+        name="status"
+        value={transaction.status}
+        onChange={(event) => updateTransaction("status", event.target.value)}
+      >
+        <option value="posted">Posted</option>
+        <option value="pending_review">Needs review</option>
+        <option value="voided">Voided</option>
+      </select>
+    </Field>
+  );
   return (
     <Modal
       title={`${record && editor.type !== "snapshot" ? "Edit" : "Add"} ${names[editor.type]}`}
       onClose={onClose}
+      className={
+        editor.type === "transaction" ? "transaction-modal" : undefined
+      }
       description={
         editor.type === "allocation"
           ? "Apply an existing ledger payment. This does not record another expense."
-          : undefined
+          : editor.type === "transaction"
+            ? editor.record
+              ? "Review the transaction details."
+              : "Add the essentials, or scan a receipt."
+            : undefined
       }
     >
       <form onSubmit={submit} className="editor-form">
@@ -504,7 +555,7 @@ export function RecordEditor({
               <Field label="Amount · ₹">
                 {transactionInput("amount", "number", true)}
               </Field>
-              <Field label="Purchase / movement date">
+              <Field label="Date">
                 {transactionInput("occurredOn", "date")}
               </Field>
               <Field label="Transaction type">
@@ -517,7 +568,7 @@ export function RecordEditor({
                 >
                   {TRANSACTION_KINDS.map((k) => (
                     <option key={k} value={k}>
-                      {human(k)}
+                      {human(k)[0].toUpperCase() + human(k).slice(1)}
                     </option>
                   ))}
                 </select>
@@ -535,110 +586,118 @@ export function RecordEditor({
                   ))}
                 </select>
               </Field>
-              <Field label="From account">
-                <select
-                  name="fromAccountId"
-                  value={transaction.fromAccountId}
-                  onChange={(event) =>
-                    updateTransaction("fromAccountId", event.target.value)
-                  }
-                >
-                  <option value="">Unknown / external</option>
-                  {options}
-                </select>
-              </Field>
-              <Field label="To account">
-                <select
-                  name="toAccountId"
-                  value={transaction.toAccountId}
-                  onChange={(event) =>
-                    updateTransaction("toAccountId", event.target.value)
-                  }
-                >
-                  <option value="">Merchant / unknown</option>
-                  {options}
-                </select>
-              </Field>
-              <Field label="External payer (if applicable)">
-                {transactionInput("externalPayer")}
-              </Field>
-              <Field label="Bank reference">
-                {transactionInput("externalReference")}
-              </Field>
-              <Field label="Merchant (optional)">
-                {transactionInput("merchant")}
-              </Field>
-              <Field label="Status">
-                <select
-                  name="status"
-                  value={transaction.status}
-                  onChange={(event) =>
-                    updateTransaction("status", event.target.value)
-                  }
-                >
-                  <option value="posted">Posted</option>
-                  <option value="pending_review">Needs review</option>
-                  <option value="voided">Voided</option>
-                </select>
-              </Field>
-              <Field label="Refund of (optional)">
-                <select
-                  name="refundOfTransactionId"
-                  value={transaction.refundOfTransactionId}
-                  onChange={(event) =>
-                    updateTransaction(
-                      "refundOfTransactionId",
-                      event.target.value,
-                    )
-                  }
-                >
-                  <option value="">Unmatched</option>
-                  {data.transactions
-                    .filter(
-                      (t) =>
-                        t.userId === userId &&
-                        (t.kind === "expense" ||
-                          (t.id === editor.record?.refundOfTransactionId &&
-                            t.kind === "transfer")) &&
-                        t.status === "posted" &&
-                        t.occurredOn &&
-                        t.id !== editor.record?.id,
-                    )
-                    .map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.description} · ₹{t.amount}
-                      </option>
-                    ))}
-                </select>
-              </Field>
-              <Field label="External lender (for EMI repayment)">
-                {transactionInput("externalLender")}
-              </Field>
-              <Field label="External repayment confirmation">
-                <span className="check-row">
-                  <input
-                    type="checkbox"
-                    name="externalRepayment"
-                    checked={transaction.externalRepayment}
-                    onChange={(event) =>
-                      updateTransaction(
-                        "externalRepayment",
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  Confirmed payment to an external lender
-                </span>
-              </Field>
-              <Field label="Notes" className="full">
-                {transactionInput("notes")}
-              </Field>
-              <p className="form-note full">
-                An unknown date or incomplete transfer stays in Needs review. A
-                confirmed external loan repayment needs a named lender and bank
-                source; leave its destination external. Bill repayments and
-                transfers are excluded from spending.
-              </p>
+              {!incomingTransaction &&
+                transactionAccount(
+                  "fromAccountId",
+                  "From account",
+                  !twoAccountTransaction && !showTransactionStatus,
+                )}
+              {(incomingTransaction || twoAccountTransaction) &&
+                transactionAccount(
+                  "toAccountId",
+                  "To account",
+                  !twoAccountTransaction && !showTransactionStatus,
+                )}
+              {showTransactionStatus && transactionStatus}
+              <details className="transaction-details full">
+                <summary>
+                  <span>More details</span>
+                  <small>Optional</small>
+                  <ChevronDown size={15} aria-hidden="true" />
+                </summary>
+                <div className="form-grid">
+                  {!twoAccountTransaction &&
+                    transactionAccount(
+                      incomingTransaction ? "fromAccountId" : "toAccountId",
+                      incomingTransaction ? "From account" : "To account",
+                    )}
+                  {!showTransactionStatus && transactionStatus}
+                  <Field label="Merchant (optional)">
+                    {transactionInput("merchant")}
+                  </Field>
+                  <Field label="Bank reference">
+                    {transactionInput("externalReference")}
+                  </Field>
+                  <Field label="External payer (if applicable)">
+                    {transactionInput("externalPayer")}
+                  </Field>
+                  {(transaction.kind === "refund" ||
+                    transaction.refundOfTransactionId) && (
+                    <Field label="Refund of (optional)">
+                      <select
+                        name="refundOfTransactionId"
+                        value={transaction.refundOfTransactionId}
+                        onChange={(event) =>
+                          updateTransaction(
+                            "refundOfTransactionId",
+                            event.target.value,
+                          )
+                        }
+                      >
+                        <option value="">Unmatched</option>
+                        {data.transactions
+                          .filter(
+                            (t) =>
+                              t.userId === userId &&
+                              (t.kind === "expense" ||
+                                (t.id ===
+                                  editor.record?.refundOfTransactionId &&
+                                  t.kind === "transfer")) &&
+                              t.status === "posted" &&
+                              t.occurredOn &&
+                              t.id !== editor.record?.id,
+                          )
+                          .map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.description} · ₹{t.amount}
+                            </option>
+                          ))}
+                      </select>
+                    </Field>
+                  )}
+                  {(["bill_payment", "transfer"].includes(transaction.kind) ||
+                    transaction.externalLender ||
+                    transaction.externalRepayment) && (
+                    <>
+                      <Field label="External lender (for EMI repayment)">
+                        {transactionInput("externalLender")}
+                      </Field>
+                      <Field label="External repayment confirmation">
+                        <span className="check-row">
+                          <input
+                            type="checkbox"
+                            name="externalRepayment"
+                            checked={transaction.externalRepayment}
+                            onChange={(event) =>
+                              updateTransaction(
+                                "externalRepayment",
+                                event.target.checked,
+                              )
+                            }
+                          />
+                          Confirmed payment to an external lender
+                        </span>
+                      </Field>
+                      <p className="form-note full">
+                        For an external loan repayment, select the bank source,
+                        leave the destination external and confirm the lender.
+                      </p>
+                    </>
+                  )}
+                  <Field label="Notes" className="full">
+                    {transactionInput("notes")}
+                  </Field>
+                </div>
+              </details>
+              {(!transaction.occurredOn ||
+                (["transfer", "bill_payment"].includes(transaction.kind) &&
+                  (!transaction.fromAccountId ||
+                    (!transaction.toAccountId &&
+                      !transaction.externalRepayment)))) && (
+                <p className="transaction-hint full">
+                  Missing dates or incomplete transfers stay in Needs review.
+                </p>
+              )}
             </>
           )}
           {editor.type === "bill" && (

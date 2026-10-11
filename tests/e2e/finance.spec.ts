@@ -17,11 +17,12 @@ async function addTransaction(page: Page, values: { description: string; amount:
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Description", { exact: true }).fill(values.description);
   await dialog.getByLabel("Amount · ₹", { exact: true }).fill(values.amount);
-  await dialog.getByLabel("Purchase / movement date").fill("2026-10-09");
+  await dialog.getByLabel("Date", { exact: true }).fill("2026-10-09");
   await dialog.getByLabel("Transaction type").selectOption(values.kind ?? "expense");
   await dialog.getByRole("combobox", { name: "From account", exact: true }).selectOption({ label: BANK });
   if (values.to) await dialog.getByRole("combobox", { name: "To account", exact: true }).selectOption({ label: values.to });
   if (values.externalLender) {
+    await dialog.locator("summary", { hasText: "More details" }).click();
     await dialog.getByLabel("External lender (for EMI repayment)", { exact: true }).fill(values.externalLender);
     await dialog.getByRole("checkbox", { name: /Confirmed payment to an external lender/ }).check();
   }

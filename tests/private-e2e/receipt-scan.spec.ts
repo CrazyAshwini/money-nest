@@ -873,15 +873,20 @@ test("AI scan fills a reviewed draft only, then a chosen account saves to the re
   await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
     "125.50",
   );
+  await expect(dialog.getByLabel("Date", { exact: true })).toHaveValue(
+    "2026-10-09",
+  );
   await expect(
-    dialog.getByLabel("Purchase / movement date", { exact: true }),
-  ).toHaveValue("2026-10-09");
+    dialog.getByLabel("Merchant (optional)", { exact: true }),
+  ).toBeHidden();
+  await dialog.locator("summary", { hasText: "More details" }).click();
   await expect(
     dialog.getByLabel("Merchant (optional)", { exact: true }),
   ).toHaveValue(merchant);
   await expect(
     dialog.getByLabel("Bank reference", { exact: true }),
   ).toHaveValue(reference);
+  await dialog.locator("summary", { hasText: "More details" }).click();
   await expect(
     dialog.getByRole("combobox", { name: "From account", exact: true }),
   ).toHaveValue("");
@@ -1076,9 +1081,7 @@ test("unknown date stays empty instead of becoming today and saves to Needs revi
   await dialog
     .getByRole("button", { name: "Use details", exact: true })
     .click();
-  await expect(
-    dialog.getByLabel("Purchase / movement date", { exact: true }),
-  ).toHaveValue("");
+  await expect(dialog.getByLabel("Date", { exact: true })).toHaveValue("");
   await dialog
     .getByRole("combobox", { name: "From account", exact: true })
     .selectOption({ label: bankName });

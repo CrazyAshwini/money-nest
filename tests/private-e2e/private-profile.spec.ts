@@ -5,7 +5,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { randomBytes, randomUUID } from "node:crypto";
-import { readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createDemoData } from "../../src/lib/seed";
@@ -24,6 +24,8 @@ const email = `synthetic.${randomBytes(5).toString("hex")}@example.test`;
 const password = randomBytes(8).toString("base64url").slice(0, 10);
 const editedName = `${profileName} updated`;
 const transactionName = "Synthetic private lunch";
+const transactionNote = "Synthetic optional note preserved while collapsed";
+const transactionReference = "SYNTHETIC-COMPACT-REFERENCE";
 let setupToken = "";
 let testDirectory = "";
 
@@ -260,14 +262,64 @@ test("private profile setup, protected records, persistence, and demo isolation"
       .getByRole("button", { name: "Add transaction", exact: true })
       .click();
     let dialog = page.getByRole("dialog");
+    const moreDetails = dialog
+      .locator("details")
+      .filter({ hasText: "More details" });
+    await expect(moreDetails).not.toHaveAttribute("open");
+    await expect(
+      dialog.getByRole("combobox", { name: "From account", exact: true }),
+    ).toBeVisible();
+    await expect(dialog.locator('select[name="toAccountId"]')).toHaveCount(1);
+    await expect(dialog.locator('select[name="toAccountId"]')).toBeHidden();
+    await expect(dialog.getByLabel("Notes", { exact: true })).toBeHidden();
+    await expect(
+      dialog.getByLabel("Bank reference", { exact: true }),
+    ).toBeHidden();
+    await expect(dialog.locator('select[name="status"]')).toHaveCount(1);
+    await expect(dialog.locator('select[name="status"]')).toBeHidden();
+    await mkdir(path.resolve("artifacts"), { recursive: true });
+    await dialog.screenshot({
+      path: path.resolve("artifacts/transaction-compact-desktop.png"),
+    });
+    await page.setViewportSize({ width: 360, height: 800 });
+    await assertNoPageOverflow(page);
+    await dialog.screenshot({
+      path: path.resolve("artifacts/transaction-compact-mobile.png"),
+    });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const transactionType = dialog.getByRole("combobox", {
+      name: "Transaction type",
+      exact: true,
+    });
+    await transactionType.selectOption("income");
+    await expect(
+      dialog.getByRole("combobox", { name: "To account", exact: true }),
+    ).toBeVisible();
+    await expect(dialog.locator('select[name="fromAccountId"]')).toHaveCount(1);
+    await expect(dialog.locator('select[name="fromAccountId"]')).toBeHidden();
+    await transactionType.selectOption("transfer");
+    await expect(
+      dialog.getByRole("combobox", { name: "From account", exact: true }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("combobox", { name: "To account", exact: true }),
+    ).toBeVisible();
+    await transactionType.selectOption("expense");
     await dialog
       .getByLabel("Description", { exact: true })
       .fill(transactionName);
     await dialog.getByLabel("Amount · ₹", { exact: true }).fill("12.34");
-    await dialog.getByLabel("Purchase / movement date").fill("2026-10-09");
+    await dialog.getByLabel("Date", { exact: true }).fill("2026-10-09");
     await dialog
       .getByRole("combobox", { name: "From account", exact: true })
       .selectOption({ label: bankName });
+    await moreDetails.locator("summary").click();
+    await dialog.getByLabel("Notes", { exact: true }).fill(transactionNote);
+    await dialog
+      .getByLabel("Bank reference", { exact: true })
+      .fill(transactionReference);
+    await moreDetails.locator("summary").click();
+    await expect(moreDetails).not.toHaveAttribute("open");
     await dialog
       .getByRole("button", { name: "Save transaction", exact: true })
       .click();
@@ -279,6 +331,15 @@ test("private profile setup, protected records, persistence, and demo isolation"
       .getByRole("button", { name: `Edit ${transactionName}`, exact: true })
       .click();
     dialog = page.getByRole("dialog");
+    await expect(dialog.getByLabel("Notes", { exact: true })).toBeHidden();
+    await dialog.locator("summary", { hasText: "More details" }).click();
+    await expect(dialog.getByLabel("Notes", { exact: true })).toHaveValue(
+      transactionNote,
+    );
+    await expect(
+      dialog.getByLabel("Bank reference", { exact: true }),
+    ).toHaveValue(transactionReference);
+    await dialog.locator("summary", { hasText: "More details" }).click();
     await dialog.getByLabel("Amount · ₹", { exact: true }).fill("15.67");
     await dialog
       .getByRole("button", { name: "Save transaction", exact: true })
@@ -299,6 +360,14 @@ test("private profile setup, protected records, persistence, and demo isolation"
         )
         .map((row: { amount: string }) => row.amount),
     ).toEqual(["15.67"]);
+    expect(
+      loaded.workspace.transactions.find(
+        (row: { description: string }) => row.description === transactionName,
+      ),
+    ).toMatchObject({
+      notes: transactionNote,
+      externalReference: transactionReference,
+    });
     await assertNoPrivateBrowserStorage(page);
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto("/dashboard");
