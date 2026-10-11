@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Camera, ImagePlus, ScanLine, Upload, X } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { Modal } from "./ui";
+import { UploadedImagePreview } from "./uploaded-image-preview";
 import {
   MAX_RECEIPT_BYTES,
   MAX_RECEIPT_IMAGES,
@@ -36,6 +37,10 @@ export function ReceiptScanner({
   const [checking, setChecking] = useState(false);
   const [images, setImages] = useState<Array<{ file: File; url: string }>>([]);
   const [longBill, setLongBill] = useState(false);
+  const [preview, setPreview] = useState<{
+    photoId: string;
+    opener: HTMLButtonElement;
+  } | null>(null);
   const [result, setResult] = useState<ReceiptScanResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -134,9 +139,16 @@ export function ReceiptScanner({
   }
 
   function closeScanner() {
+    // A quick Escape can reach the parent before Radix registers the viewer's
+    // dismissable layer. Keep the scan draft and dismiss only its preview.
+    if (preview) {
+      setPreview(null);
+      return;
+    }
     cancelScan();
     settingsRequest.current?.abort();
     setChecking(false);
+    setPreview(null);
     setOpen(false);
   }
 
@@ -156,6 +168,7 @@ export function ReceiptScanner({
   }
 
   function removeImage(index: number) {
+    setPreview(null);
     resetReview();
     updateImages(
       imageFiles.current.filter((_, position) => position !== index),
@@ -405,19 +418,47 @@ export function ReceiptScanner({
                         {image && (
                           <div className="receipt-image-row">
                             {/* Blob previews stay in this tab; no image proxy or upload. */}
-                            <img
-                              src={image.url}
-                              alt={
-                                index === 0
-                                  ? "Selected receipt preview"
-                                  : `Receipt photo ${index + 1} preview`
+                            <button
+                              type="button"
+                              className="receipt-preview-button"
+                              aria-label={`Preview uploaded photo ${index + 1}: ${image.file.name}`}
+                              aria-haspopup="dialog"
+                              onClick={(event) =>
+                                setPreview({
+                                  photoId: image.url,
+                                  opener: event.currentTarget,
+                                })
                               }
-                              className="receipt-preview"
-                            />
+                            >
+                              <img
+                                src={image.url}
+                                alt={
+                                  index === 0
+                                    ? "Selected receipt preview"
+                                    : `Receipt photo ${index + 1} preview`
+                                }
+                                className="receipt-preview"
+                              />
+                              <span>View</span>
+                            </button>
                             <div>
                               <p className="receipt-file-name">
                                 {image.file.name}
                               </p>
+                              <button
+                                type="button"
+                                className="receipt-text-button receipt-preview-text"
+                                aria-label={`Preview image ${index + 1}`}
+                                aria-haspopup="dialog"
+                                onClick={(event) =>
+                                  setPreview({
+                                    photoId: image.url,
+                                    opener: event.currentTarget,
+                                  })
+                                }
+                              >
+                                Preview image
+                              </button>
                               <button
                                 type="button"
                                 className="receipt-remove"
@@ -740,6 +781,19 @@ export function ReceiptScanner({
                 </button>
               ))}
           </div>
+          {preview && images.length > 0 && (
+            <UploadedImagePreview
+              key={preview.photoId}
+              photos={images.map((image) => ({
+                id: image.url,
+                name: image.file.name,
+                url: image.url,
+              }))}
+              initialPhotoId={preview.photoId}
+              returnFocusTo={preview.opener}
+              onClose={() => setPreview(null)}
+            />
+          )}
         </Modal>
       )}
     </>

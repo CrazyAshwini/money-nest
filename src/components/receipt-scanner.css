@@ -221,6 +221,31 @@
 .receipt-image-row > div {
   min-width: 0;
 }
+.receipt-preview-button {
+  background: #fff;
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  flex-shrink: 0;
+  overflow: hidden;
+  padding: 0;
+  position: relative;
+}
+.receipt-preview-button:focus-visible {
+  outline: 2px solid #418164;
+  outline-offset: 3px;
+}
+.receipt-preview-button > span {
+  background: #27352cdd;
+  bottom: 0;
+  color: #fff;
+  font-size: 9px;
+  left: 0;
+  padding: 3px;
+  position: absolute;
+  right: 0;
+  text-align: center;
+}
 .receipt-preview {
   background: #fff;
   border: 1px solid #dce6d9;
@@ -229,6 +254,12 @@
   height: 86px;
   object-fit: contain;
   width: 70px;
+  display: block;
+}
+.receipt-preview-text {
+  display: block;
+  margin-bottom: 3px;
+  min-height: 28px;
 }
 .receipt-file-name {
   color: #566450;
