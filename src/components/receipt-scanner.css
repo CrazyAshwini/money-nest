@@ -1,142 +1,305 @@
 .receipt-scanner {
-  border: 1px solid #ffffff15;
-  border-radius: 9px;
+  background: #f2f6f2;
+  border: 1px dashed #bbd1c4;
+  border-radius: 18px;
   margin-bottom: 20px;
   min-width: 0;
+  padding: 17px;
 }
-.receipt-toggle {
+.receipt-card-heading {
   align-items: center;
-  background: #ffffff03;
-  border: 0;
-  border-radius: 9px;
-  color: #ced6ec;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+.receipt-camera-icon {
+  align-items: center;
+  background: #e2ece5;
+  border-radius: 50%;
+  color: #3d795b;
+  display: flex;
+  flex: 0 0 42px;
+  height: 42px;
+  justify-content: center;
+}
+.receipt-card-heading h3 {
+  color: #26362e;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.3;
+  margin: 0 0 4px;
+}
+.receipt-card-heading p {
+  color: #727a73;
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+}
+.receipt-card-actions,
+.receipt-photo-actions {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.receipt-pill {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e0e4e0;
+  border-radius: 999px;
+  box-shadow: 0 2px 5px #203d2810;
+  color: #737a74;
   cursor: pointer;
   display: flex;
-  font-size: 11px;
-  gap: 9px;
-  padding: 13px;
-  text-align: left;
-  width: 100%;
-}
-.receipt-toggle:focus-visible {
-  outline: 2px solid #a3b7ef;
-  outline-offset: 2px;
-}
-.receipt-chevron {
-  margin-left: auto;
-}
-.receipt-chevron.open {
-  transform: rotate(180deg);
-}
-.receipt-panel {
-  border-top: 1px solid #ffffff0d;
-  padding: 14px;
-}
-.receipt-upload {
-  color: #c2c2ce;
-  display: grid;
-  font-size: 11px;
+  font-size: 13px;
+  font-weight: 600;
   gap: 8px;
-}
-.receipt-upload input {
-  border: 1px dashed #5a5a67;
-  border-radius: 7px;
-  font-size: 11px;
+  justify-content: center;
+  min-height: 45px;
   min-width: 0;
-  padding: 10px;
-  width: 100%;
+  padding: 10px 16px;
+  transition:
+    background 150ms,
+    border-color 150ms;
 }
-.receipt-upload input::file-selector-button {
-  background: #34343d;
-  border: 0;
-  border-radius: 4px;
-  color: #e1e1e9;
+.receipt-pill:hover {
+  background: #f8fbf8;
+  border-color: #b5ccbf;
+}
+.receipt-pill:focus-visible,
+.receipt-remove:focus-visible,
+.receipt-text-button:focus-visible {
+  outline: 2px solid #418164;
+  outline-offset: 3px;
+}
+.receipt-pill:disabled,
+.receipt-text-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.receipt-camera-button {
+  border-color: #b9d0c1;
+  color: #3d795b;
+}
+.receipt-modal-overlay {
+  background: #23372970;
+  backdrop-filter: blur(6px);
+  z-index: 110;
+}
+.modal.receipt-modal {
+  color-scheme: light;
+  background: #fafbf8;
+  border: 1px solid #e6eae3;
+  border-radius: 26px;
+  color: #27352c;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 40px);
+  overflow: hidden;
+  padding: 24px;
+  width: 530px;
+  z-index: 111;
+}
+.receipt-modal .modal-heading {
+  border-bottom: 1px solid #e3e7df;
+  flex-shrink: 0;
+  gap: 15px;
+  margin: 0;
+  padding-bottom: 18px;
+}
+.receipt-modal .modal-heading h2 {
+  color: #243229;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.6px;
+  line-height: 1.2;
+}
+.receipt-modal .modal-heading p {
+  color: #7c817a;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 7px;
+}
+.receipt-modal .modal-heading .icon-button {
+  color: #767d75;
+  height: 32px;
+  margin: 0 -5px 0 0;
+  padding: 6px;
+  width: 32px;
+}
+.receipt-modal .modal-heading .icon-button:hover {
+  background: #e9eee6;
+}
+.receipt-modal .receipt-panel {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 19px 1px 4px;
+  scrollbar-color: #c3d1c3 transparent;
+}
+.receipt-long-bill {
+  align-items: center;
+  color: #71786e;
   cursor: pointer;
-  margin-right: 9px;
-  padding: 5px 7px;
+  display: flex;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 11px;
+  line-height: 1.5;
+  margin-bottom: 18px;
 }
-.receipt-upload small,
-.receipt-note,
-.receipt-disclosure {
-  color: #a8a8b5;
+.receipt-long-bill input,
+.receipt-review-check input {
+  accent-color: #3b7c58;
+  flex-shrink: 0;
+  height: 21px;
+  margin: 0;
+  width: 21px;
+}
+.receipt-photo-list {
+  display: grid;
+  gap: 12px;
+}
+.receipt-photo-slot {
+  background: #f1f5ef;
+  border: 1.5px dashed #b7d0bf;
+  border-radius: 20px;
+  min-width: 0;
+  padding: 19px 13px;
+}
+.receipt-photo-slot h3 {
+  color: #28382d;
+  font-size: 13px;
+  font-weight: 650;
+  margin: 0 0 14px;
+  text-align: center;
+}
+.receipt-photo-slot h3 small {
+  color: #858d80;
   font-size: 10px;
-  line-height: 1.7;
+  font-weight: 400;
+  margin-left: 7px;
+}
+.receipt-photo-actions .receipt-pill {
+  box-shadow: none;
+  font-size: 12px;
+}
+.receipt-file-input {
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  position: absolute;
+  width: 1px;
+}
+.receipt-file-hint {
+  color: #85907f;
+  font-size: 10px;
+  line-height: 1.6;
+  margin: 10px 0;
+  text-align: center;
+}
+.receipt-file-hint span {
+  display: block;
 }
 .receipt-note,
 .receipt-disclosure {
+  color: #76806f;
+  font-size: 11px;
+  line-height: 1.6;
   margin: 10px 0;
 }
 .receipt-note a {
-  color: #b8c8f5;
+  color: #3b7c58;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 .receipt-image-row {
   align-items: center;
   display: flex;
-  gap: 12px;
-  margin: 14px 0;
+  gap: 13px;
+  margin: 0 0 14px;
 }
 .receipt-image-row > div {
   min-width: 0;
 }
 .receipt-preview {
-  background: #141416;
-  border: 1px solid #ffffff17;
-  border-radius: 6px;
-  height: 92px;
+  background: #fff;
+  border: 1px solid #dce6d9;
+  border-radius: 9px;
+  flex-shrink: 0;
+  height: 86px;
   object-fit: contain;
-  width: 76px;
+  width: 70px;
 }
 .receipt-file-name {
-  color: #bbbcca;
-  font-size: 10px;
-  margin: 0 0 8px;
+  color: #566450;
+  font-size: 11px;
+  margin: 0 0 9px;
   overflow-wrap: anywhere;
 }
-.receipt-actions {
+.receipt-remove {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #7f6961;
+  cursor: pointer;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  font-size: 10px;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0;
+}
+.receipt-retry-actions {
+  margin: 8px 0;
+}
+.receipt-text-button {
+  background: transparent;
+  border: 0;
+  color: #3b7c58;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 4px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .receipt-result {
-  border-top: 1px solid #ffffff13;
-  margin-top: 16px;
-  padding-top: 15px;
+  border-top: 1px solid #dae5d4;
+  margin-top: 18px;
+  padding-top: 17px;
 }
 .receipt-result h3 {
-  color: #dfdfeb;
-  font-size: 12px;
-  margin: 0 0 12px;
+  color: #2d3d30;
+  font-size: 15px;
+  margin: 0 0 15px;
 }
 .receipt-details {
   display: grid;
-  font-size: 10px;
-  gap: 9px;
+  font-size: 12px;
+  gap: 12px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .receipt-details > div {
   min-width: 0;
 }
 .receipt-details dt {
-  color: #a1a1ad;
-  margin-bottom: 3px;
+  color: #7f8978;
+  font-size: 11px;
+  margin-bottom: 4px;
 }
 .receipt-details dd {
-  color: #e0e0e8;
+  color: #354d38;
   margin: 0;
   overflow-wrap: anywhere;
 }
 .receipt-warning {
-  background: #f4c5790b;
-  border: 1px solid #f4c57929;
-  border-radius: 6px;
-  color: #dfc48f;
+  background: #f5f3e8;
+  border: 1px solid #e4dfc6;
+  border-radius: 12px;
+  color: #756c45;
   font-size: 10px;
-  line-height: 1.7;
+  line-height: 1.6;
   margin: 12px 0;
   overflow-wrap: anywhere;
-  padding: 10px;
+  padding: 11px;
 }
 .receipt-warning ul {
   margin: 5px 0;
@@ -145,38 +308,107 @@
 .receipt-warning p {
   margin: 6px 0 0;
 }
-.receipt-save-review {
-  border: 1px solid #a3b7ef2b;
-  border-radius: 8px;
-  color: #b8c5e5;
-  font-size: 10px;
-  line-height: 1.7;
-  margin-top: 18px;
-  padding: 12px;
-}
-.receipt-save-review > p {
-  margin: 0 0 10px;
+.receipt-warning p:first-child {
+  margin-top: 0;
 }
 .receipt-review-check {
   align-items: flex-start;
   cursor: pointer;
   display: flex;
-  gap: 8px;
+  gap: 9px;
+  line-height: 1.6;
+  margin-top: 12px;
 }
 .receipt-review-check input {
-  flex-shrink: 0;
-  height: 15px;
-  margin-top: 2px;
-  width: 15px;
+  height: 17px;
+  margin-top: 1px;
+  width: 17px;
 }
-@media (max-width: 420px) {
-  .receipt-panel {
-    padding: 12px;
-  }
-  .receipt-upload input {
-    padding: 8px;
-  }
-  .receipt-actions .button {
+.receipt-review-check small {
+  display: block;
+  font-size: inherit;
+  margin-top: 3px;
+}
+.receipt-save-review {
+  background: #eef5ed;
+  border: 1px solid #c7dac7;
+  border-radius: 12px;
+  color: #55734e;
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 16px;
+  padding: 12px;
+}
+.receipt-save-review > p {
+  margin: 0 0 10px;
+}
+.receipt-footer {
+  align-items: center;
+  border-top: 1px solid #e0e6d9;
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 17px;
+  padding-top: 17px;
+}
+.receipt-footer .receipt-pill {
+  color: #2e3a2d;
+  min-height: 46px;
+  min-width: 105px;
+}
+.receipt-footer .receipt-primary {
+  background: #3d7e59;
+  border-color: #3d7e59;
+  box-shadow: 0 5px 15px #3d7e5922;
+  color: #fff;
+  min-width: 130px;
+}
+.receipt-footer .receipt-primary:hover {
+  background: #326c4d;
+}
+.receipt-modal .error {
+  background: #fcf2ee;
+  border: 1px solid #e8c9bf;
+  border-radius: 11px;
+  color: #a05b44;
+  font-size: 11px;
+  margin-top: 12px;
+}
+@media (max-width: 600px) {
+  .modal.receipt-modal {
+    border-bottom: 0;
+    border-radius: 28px 28px 0 0;
+    bottom: 0;
+    left: 0;
+    max-height: calc(100dvh - 35px);
     max-width: 100%;
+    padding: 22px 20px max(18px, env(safe-area-inset-bottom));
+    top: auto;
+    transform: none;
+    width: 100%;
+  }
+  .receipt-modal .modal-heading h2 {
+    font-size: 23px;
+  }
+  .receipt-modal .modal-heading p {
+    font-size: 12px;
+  }
+  .receipt-long-bill {
+    font-size: 11px;
+  }
+  .receipt-scanner {
+    border-radius: 17px;
+    padding: 15px;
+  }
+  .receipt-card-heading {
+    gap: 10px;
+  }
+  .receipt-card-heading h3 {
+    font-size: 13px;
+  }
+  .receipt-pill {
+    font-size: 12px;
+    padding: 10px 12px;
   }
 }

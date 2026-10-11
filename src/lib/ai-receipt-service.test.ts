@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { NextRequest } from "next/server";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -6,6 +6,7 @@ import {
   DEFAULT_RECEIPT_GATEWAY_MODEL,
   RECEIPT_GATEWAY_MODELS,
   MAX_RECEIPT_BYTES,
+  MAX_RECEIPT_IMAGES,
   type ReceiptExtraction,
 } from "./receipt-scan";
 
@@ -174,7 +175,7 @@ describe("receipt cloud boundaries", () => {
     );
   });
 
-  it("rejects absent consent, fake image signatures, multiple images, hidden fields, and oversized images", async () => {
+  it("rejects absent consent, fake image signatures, hidden fields, and oversized images", async () => {
     const cases = [
       { options: { consent: null }, code: "consent_required" },
       { options: { consent: "false" }, code: "consent_required" },
@@ -183,7 +184,6 @@ describe("receipt cloud boundaries", () => {
         code: "invalid_image",
       },
       { options: { type: "image/jpeg" }, code: "invalid_image" },
-      { options: { multiple: true }, code: "invalid_image" },
       { options: { extra: true }, code: "invalid_image" },
       {
         options: { bytes: Buffer.alloc(MAX_RECEIPT_BYTES + 1) },
@@ -199,6 +199,96 @@ describe("receipt cloud boundaries", () => {
     expect(valid.mediaType).toBe("image/png");
     expect(valid.fingerprint).toMatch(/^[a-f0-9]{64}$/);
     valid.bytes.fill(0);
+    expect(mocked.generate).not.toHaveBeenCalled();
+  });
+
+  it("preserves a single-photo fingerprint and frames ordered photos without page-boundary collisions", async () => {
+    const single = await readReceiptUpload(request(upload()), configuration);
+    expect(single.fingerprint).toBe(createHash("sha256").update(PNG).digest("hex"));
+    expect(single.images).toHaveLength(1);
+    expect(single.bytes).toBe(single.images[0]);
+    const forms = [upload({ bytes: Buffer.concat([PNG, PNG]), multiple: true }), upload()];
+    forms[1].append("image", new Blob([Buffer.concat([PNG, PNG])], { type: "image/png" }), "synthetic-two.png");
+    const uploads = await Promise.all(forms.map((form) => readReceiptUpload(request(form), configuration)));
+    expect(Buffer.concat(uploads[0].images)).toEqual(Buffer.concat(uploads[1].images));
+    expect(uploads[0].fingerprint).not.toBe(uploads[1].fingerprint);
+    expect(uploads[0].fingerprint).not.toBe(single.fingerprint);
+    const repeated = await readReceiptUpload(request(upload({ bytes: Buffer.concat([PNG, PNG]), multiple: true })), configuration);
+    expect(repeated.fingerprint).toBe(uploads[0].fingerprint);
+    for (const item of [single, ...uploads, repeated])
+      for (const image of item.images) image.fill(0);
+  });
+
+  it("rejects missing, too many, oversized aggregate and invalid later photos before any cloud call", async () => {
+    const missing = upload();
+    missing.delete("image");
+    const tooMany = upload();
+    for (let index = 1; index <= MAX_RECEIPT_IMAGES; index++)
+      tooMany.append("image", new Blob([PNG], { type: "image/png" }), `synthetic-${index}.png`);
+    const largeImage = Buffer.alloc(3 * 1024 * 1024);
+    PNG.copy(largeImage);
+    const aggregate = upload({ bytes: largeImage });
+    aggregate.append("image", new Blob([largeImage], { type: "image/png" }), "synthetic-two.png");
+    const invalidLater = upload();
+    invalidLater.append("image", new Blob(["<svg>not an image</svg>"], { type: "image/png" }), "synthetic-two.png");
+    const invalidName = upload();
+    invalidName.append("image", new Blob([PNG], { type: "image/png" }), "synthetic-two.exe");
+    const nonFile = upload();
+    nonFile.append("image", "not a photo");
+    for (const [form, status, code] of [
+      [missing, 400, "invalid_image"],
+      [tooMany, 400, "invalid_image"],
+      [aggregate, 413, "too_large"],
+      [invalidLater, 400, "invalid_image"],
+      [invalidName, 400, "invalid_image"],
+      [nonFile, 400, "invalid_image"],
+    ] as const) {
+      const response = await receiptPOST(request(form));
+      expect(response.status).toBe(status);
+      expect((await response.json()).code).toBe(code);
+    }
+    expect(mocked.gateway).not.toHaveBeenCalled();
+    expect(mocked.google).not.toHaveBeenCalled();
+    expect(mocked.prepareImage).not.toHaveBeenCalled();
+    expect(mocked.generate).not.toHaveBeenCalled();
+  });
+
+  it("accepts up to three photos whose combined bytes reach the exact 5 MB limit", async () => {
+    const first = Buffer.alloc(MAX_RECEIPT_BYTES - PNG.length * 2);
+    PNG.copy(first);
+    const form = upload({ bytes: first, multiple: true });
+    form.append("image", new Blob([PNG], { type: "image/png" }), "synthetic-three.png");
+    const accepted = await readReceiptUpload(request(form), configuration);
+    expect(accepted.images).toHaveLength(MAX_RECEIPT_IMAGES);
+    expect(accepted.images.reduce((size, image) => size + image.length, 0)).toBe(MAX_RECEIPT_BYTES);
+    for (const image of accepted.images) image.fill(0);
+  });
+
+  it("enforces the separate multipart body limit before reading or sending photos", async () => {
+    const oversized = upload({ bytes: Buffer.alloc(6 * 1024 * 1024) });
+    const response = await receiptPOST(request(oversized));
+    expect(response.status).toBe(413);
+    expect((await response.json()).code).toBe("too_large");
+    expect(mocked.generate).not.toHaveBeenCalled();
+    expect(mocked.gateway).not.toHaveBeenCalled();
+  });
+
+  it("validates all direct-call photos before a provider is created", async () => {
+    const oversized = Buffer.alloc(MAX_RECEIPT_BYTES);
+    PNG.copy(oversized);
+    for (const [images, code] of [
+      [[], "invalid_image"],
+      [Array.from({ length: MAX_RECEIPT_IMAGES + 1 }, () => PNG), "invalid_image"],
+      [[PNG, Buffer.alloc(0)], "invalid_image"],
+      [[PNG, Buffer.from("untrusted nonimage")], "invalid_image"],
+      [[oversized, PNG], "too_large"],
+    ] as const) {
+      await expect(scanReceiptWithAI({ configuration, images })).rejects.toMatchObject({ code });
+      await expect(scanReceiptWithAI({ configuration: googleConfiguration, images, redacted: true })).rejects.toMatchObject({ code });
+    }
+    expect(mocked.prepareImage).not.toHaveBeenCalled();
+    expect(mocked.gateway).not.toHaveBeenCalled();
+    expect(mocked.google).not.toHaveBeenCalled();
     expect(mocked.generate).not.toHaveBeenCalled();
   });
 
@@ -451,6 +541,34 @@ describe("authenticated AI endpoints", () => {
     expect(mocked.authenticate).toHaveBeenCalledTimes(1);
   });
 
+  it("sends ordered photos together in one request and clears every upload after success or failure", async () => {
+    const second = Buffer.concat([PNG, Buffer.from("synthetic-page-two")]);
+    const third = Buffer.concat([PNG, Buffer.from("synthetic-page-three")]);
+    for (const fails of [false, true]) {
+      const form = upload();
+      form.append("image", new Blob([second], { type: "image/png" }), "synthetic-two.png");
+      form.append("image", new Blob([third], { type: "image/png" }), "synthetic-three.png");
+      mocked.generate.mockImplementationOnce(async (call) => {
+        expect(call.messages).toHaveLength(1);
+        expect(call.messages[0].content.map((part: { data: Buffer }) => part.data)).toEqual([PNG, second, third]);
+        expect(call.system).toContain("do not sum repeated or overlapping totals");
+        expect(call.system).toContain("contradictory totals");
+        if (fails) throw { statusCode: 429 };
+        return { output: extraction };
+      });
+      const response = await receiptPOST(request(form));
+      expect(response.status).toBe(fails ? 429 : 200);
+      if (!fails) expect((await response.json()).extraction).toEqual(extraction);
+      const call = mocked.generate.mock.calls.at(-1)![0];
+      expect(call.messages[0].content).toHaveLength(3);
+      for (const part of call.messages[0].content)
+        expect(part.data.every((byte: number) => byte === 0)).toBe(true);
+    }
+    expect(mocked.generate).toHaveBeenCalledTimes(2);
+    expect(mocked.gateway).toHaveBeenCalledTimes(2);
+    expect(mocked.google).not.toHaveBeenCalled();
+  });
+
   it("cleans up concurrency limits and buffers after a provider failure", async () => {
     const ownerId = randomUUID();
     mocked.authenticate.mockResolvedValue({ ownerId });
@@ -473,6 +591,64 @@ describe("direct Gemini receipt scanning", () => {
   beforeEach(() => {
     vi.stubEnv("RECEIPT_AI_PROVIDER", "");
     vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", SYNTHETIC_GOOGLE_KEY);
+  });
+
+  it("sanitizes every ordered Gemini photo before one cloud call and clears all temporary buffers", async () => {
+    const originals = [Buffer.from(PNG), Buffer.concat([PNG, Buffer.from("synthetic-page-two")])];
+    const sanitized = [Buffer.from("sanitized-page-one"), Buffer.from("sanitized-page-two")];
+    mocked.prepareImage
+      .mockResolvedValueOnce({ bytes: sanitized[0], mediaType: "image/png" })
+      .mockResolvedValueOnce({ bytes: sanitized[1], mediaType: "image/png" });
+    mocked.generate.mockImplementationOnce(async (call) => {
+      expect(call.messages[0].content.map((part: { data: Buffer }) => part.data)).toEqual(sanitized);
+      expect(mocked.prepareImage).toHaveBeenCalledTimes(2);
+      return { output: { ...extraction, warnings: ["Conflicting dates across photos; confirm the date."], occurredOn: null } };
+    });
+    const result = await scanReceiptWithAI({ configuration: googleConfiguration, images: originals, redacted: true });
+    expect(result.amount).toBe(extraction.amount);
+    expect(result.occurredOn).toBeNull();
+    expect(result.warnings).toContain("Conflicting dates across photos; confirm the date.");
+    expect(result.accountHint).toBeNull();
+    expect(result.externalReference).toBeNull();
+    expect(mocked.prepareImage).toHaveBeenNthCalledWith(1, originals[0], "image/png");
+    expect(mocked.prepareImage).toHaveBeenNthCalledWith(2, originals[1], "image/png");
+    expect(mocked.prepareImage.mock.invocationCallOrder[1]).toBeLessThan(mocked.google.mock.invocationCallOrder[0]);
+    expect(mocked.generate).toHaveBeenCalledTimes(1);
+    expect(mocked.google).toHaveBeenCalledTimes(1);
+    expect(mocked.gateway).not.toHaveBeenCalled();
+    for (const image of sanitized) expect(image.every((byte) => byte === 0)).toBe(true);
+    expect(originals[0]).toEqual(PNG);
+    expect(originals[1].subarray(0, PNG.length)).toEqual(PNG);
+  });
+
+  it("clears earlier sanitized pages when a later Gemini photo cannot be decoded", async () => {
+    const sanitized = Buffer.from("sanitized-page-one");
+    mocked.prepareImage
+      .mockResolvedValueOnce({ bytes: sanitized, mediaType: "image/png" })
+      .mockRejectedValueOnce(new ReceiptImageError("invalid_image"));
+    const response = await receiptPOST(request(upload({ multiple: true, redacted: "true" })));
+    expect(response.status).toBe(400);
+    expect((await response.json()).code).toBe("invalid_image");
+    expect(sanitized.every((byte) => byte === 0)).toBe(true);
+    for (const [bytes] of mocked.prepareImage.mock.calls)
+      expect(bytes.every((byte: number) => byte === 0)).toBe(true);
+    expect(mocked.generate).not.toHaveBeenCalled();
+    expect(mocked.google).not.toHaveBeenCalled();
+    expect(mocked.gateway).not.toHaveBeenCalled();
+  });
+
+  it("rejects sanitized photos over the combined limit before cloud spend and clears every prepared page", async () => {
+    const sanitized = [Buffer.alloc(3 * 1024 * 1024), Buffer.alloc(3 * 1024 * 1024)];
+    mocked.prepareImage
+      .mockResolvedValueOnce({ bytes: sanitized[0], mediaType: "image/png" })
+      .mockResolvedValueOnce({ bytes: sanitized[1], mediaType: "image/png" });
+    const response = await receiptPOST(request(upload({ multiple: true, redacted: "true" })));
+    expect(response.status).toBe(413);
+    expect((await response.json()).code).toBe("too_large");
+    for (const image of sanitized) expect(image.every((byte) => byte === 0)).toBe(true);
+    expect(mocked.generate).not.toHaveBeenCalled();
+    expect(mocked.google).not.toHaveBeenCalled();
+    expect(mocked.gateway).not.toHaveBeenCalled();
   });
 
   it("forwards only sanitized Gemini bytes and wipes the temporary output after success", async () => {

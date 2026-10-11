@@ -4,6 +4,7 @@ import { CATEGORIES, TRANSACTION_KINDS, type Transaction } from "./types";
 import { isoDateSchema, positiveMoneySchema } from "./validation";
 
 export const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
+export const MAX_RECEIPT_IMAGES = 3;
 export const RECEIPT_GATEWAY_MODELS = [
   { id: "openai/gpt-5.4-nano", label: "Everyday receipts" },
   { id: "openai/gpt-6-luna", label: "Advanced receipts" },

@@ -2,9 +2,12 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, FileImage, ScanLine } from "lucide-react";
+import { Camera, ImagePlus, ScanLine, Upload, X } from "lucide-react";
 import { useFinance } from "./finance-provider";
+import { Modal } from "./ui";
 import {
+  MAX_RECEIPT_BYTES,
+  MAX_RECEIPT_IMAGES,
   findReceiptDuplicates,
   normalizeReceiptExtraction,
   receiptDraft,
@@ -31,7 +34,8 @@ export function ReceiptScanner({
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState<ReceiptAISettings | null>(null);
   const [checking, setChecking] = useState(false);
-  const [image, setImage] = useState<{ file: File; url: string } | null>(null);
+  const [images, setImages] = useState<Array<{ file: File; url: string }>>([]);
+  const [longBill, setLongBill] = useState(false);
   const [result, setResult] = useState<ReceiptScanResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -40,7 +44,10 @@ export function ReceiptScanner({
   const [redacted, setRedacted] = useState(false);
   const scanRequest = useRef<AbortController | null>(null);
   const settingsRequest = useRef<AbortController | null>(null);
-  const imageUrl = useRef<string | null>(null);
+  const imageFiles = useRef<Array<{ file: File; url: string }>>([]);
+  const uploadInputs = useRef<Array<HTMLInputElement | null>>([]);
+  const cameraInputs = useRef<Array<HTMLInputElement | null>>([]);
+  const reviewPanel = useRef<HTMLDivElement | null>(null);
   const generation = useRef(0);
   const signedIn = mode === "private";
 
@@ -49,9 +56,14 @@ export function ReceiptScanner({
       generation.current += 1;
       scanRequest.current?.abort();
       settingsRequest.current?.abort();
-      if (imageUrl.current) URL.revokeObjectURL(imageUrl.current);
+      for (const image of imageFiles.current) URL.revokeObjectURL(image.url);
     };
   }, []);
+
+  useEffect(() => {
+    if (open && result && !applied)
+      reviewPanel.current?.scrollIntoView({ block: "start" });
+  }, [open, result, applied]);
 
   function cancelScan() {
     generation.current += 1;
@@ -116,44 +128,89 @@ export function ReceiptScanner({
     }
   }
 
-  function toggle() {
-    if (open) {
-      cancelScan();
-      settingsRequest.current?.abort();
-      setChecking(false);
-    } else if (signedIn) {
-      void checkSettings();
-    }
-    setOpen(!open);
+  function openScanner() {
+    if (signedIn) void checkSettings();
+    setOpen(true);
   }
 
-  function removeImage() {
+  function closeScanner() {
     cancelScan();
-    if (imageUrl.current) URL.revokeObjectURL(imageUrl.current);
-    imageUrl.current = null;
-    setImage(null);
+    settingsRequest.current?.abort();
+    setChecking(false);
+    setOpen(false);
+  }
+
+  function resetReview() {
+    cancelScan();
     setResult(null);
     setApplied(false);
     setRedacted(false);
     setError("");
   }
 
-  function chooseImage(file: File | undefined) {
-    if (!file) return;
-    removeImage();
-    const invalid = validateReceiptFile(file);
-    if (invalid) {
-      setError(invalid);
+  function updateImages(next: Array<{ file: File; url: string }>) {
+    for (const image of imageFiles.current)
+      if (!next.includes(image)) URL.revokeObjectURL(image.url);
+    imageFiles.current = next;
+    setImages(next);
+  }
+
+  function removeImage(index: number) {
+    resetReview();
+    updateImages(
+      imageFiles.current.filter((_, position) => position !== index),
+    );
+  }
+
+  function chooseImages(files: File[], index: number) {
+    if (!files.length) return;
+    resetReview();
+    const current = imageFiles.current;
+    const nextFiles = longBill
+      ? [
+          ...current.slice(0, index).map((image) => image.file),
+          ...files,
+          ...current.slice(index + files.length).map((image) => image.file),
+        ]
+      : files;
+    const invalid = nextFiles.map(validateReceiptFile).find(Boolean);
+    if (
+      invalid ||
+      nextFiles.length > (longBill ? MAX_RECEIPT_IMAGES : 1) ||
+      nextFiles.reduce((total, file) => total + file.size, 0) >
+        MAX_RECEIPT_BYTES
+    ) {
+      updateImages([]);
+      setError(
+        invalid ||
+          (nextFiles.length > (longBill ? MAX_RECEIPT_IMAGES : 1)
+            ? longBill
+              ? `Use up to ${MAX_RECEIPT_IMAGES} photos for one receipt.`
+              : "Choose one photo, or enable multiple photos for a long bill."
+            : "Use photos no larger than 5 MB in total."),
+      );
       return;
     }
-    const url = URL.createObjectURL(file);
-    imageUrl.current = url;
-    setImage({ file, url });
+    updateImages(
+      nextFiles.map(
+        (file) =>
+          current.find((image) => image.file === file) || {
+            file,
+            url: URL.createObjectURL(file),
+          },
+      ),
+    );
+  }
+
+  function setMultiplePhotos(checked: boolean) {
+    resetReview();
+    setLongBill(checked);
+    if (!checked) updateImages(imageFiles.current.slice(0, 1));
   }
 
   async function scan() {
     if (
-      !image ||
+      !images.length ||
       !settings?.configured ||
       !signedIn ||
       busy ||
@@ -169,7 +226,7 @@ export function ReceiptScanner({
     setResult(null);
     setApplied(false);
     const form = new FormData();
-    form.set("image", image.file);
+    for (const image of images) form.append("image", image.file);
     form.set("consent", "true");
     form.set(
       "provider",
@@ -268,258 +325,423 @@ export function ReceiptScanner({
           extraction.paymentStatus !== "successful"),
     });
     setApplied(true);
+    closeScanner();
   }
 
+  const photoSlots = longBill
+    ? Math.min(images.length + 1, MAX_RECEIPT_IMAGES)
+    : 1;
+
   return (
-    <section className="receipt-scanner">
-      <button
-        type="button"
-        className="receipt-toggle"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={toggle}
-      >
-        <FileImage size={16} aria-hidden="true" />
-        <span>Add from a receipt</span>
-        <ChevronDown
-          size={15}
-          className={open ? "receipt-chevron open" : "receipt-chevron"}
-          aria-hidden="true"
-        />
-      </button>
+    <>
+      <section className="receipt-scanner" aria-label="Receipt autofill">
+        <div className="receipt-card-heading">
+          <span className="receipt-camera-icon">
+            <Camera size={21} aria-hidden="true" />
+          </span>
+          <div>
+            <h3>Auto-Fill from Receipt</h3>
+            <p>Take a photo or upload an image to fill in the details.</p>
+          </div>
+        </div>
+        <div className="receipt-card-actions">
+          <button
+            type="button"
+            className="receipt-pill receipt-camera-button"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            onClick={openScanner}
+          >
+            <Camera size={19} aria-hidden="true" /> Take Photo
+          </button>
+          <button
+            type="button"
+            className="receipt-pill"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            onClick={openScanner}
+          >
+            <Upload size={19} aria-hidden="true" /> Upload Image
+          </button>
+        </div>
+      </section>
       {open && (
-        <div id={panelId} className="receipt-panel">
-          {!signedIn ? (
-            <p className="receipt-note">
-              Sign in to your private profile to scan a receipt.{" "}
-              <Link href="/profile">Open profile</Link>
-            </p>
-          ) : (
-            <>
-              <label className="receipt-upload">
-                <span>Payment screenshot or shopping receipt</span>
-                <input
-                  type="file"
-                  aria-label="Payment screenshot or shopping receipt"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(event) => {
-                    chooseImage(event.target.files?.[0]);
-                    event.target.value = "";
-                  }}
-                />
-                <small>PNG, JPEG or WebP · up to 5 MB</small>
-              </label>
-              {image && (
-                <div className="receipt-image-row">
-                  {/* A local blob URL stays in this tab and does not use an image proxy. */}
-                  <img
-                    src={image.url}
-                    alt="Selected receipt preview"
-                    className="receipt-preview"
+        <Modal
+          title="Scan receipt"
+          description="Take a photo or select an image from your device."
+          onClose={closeScanner}
+          className="receipt-modal"
+          overlayClassName="receipt-modal-overlay"
+        >
+          <div id={panelId} className="receipt-panel">
+            {!signedIn ? (
+              <p className="receipt-note">
+                Sign in to your private profile to scan a receipt.{" "}
+                <Link href="/profile">Open profile</Link>
+              </p>
+            ) : (
+              <>
+                <label className="receipt-long-bill">
+                  <input
+                    type="checkbox"
+                    checked={longBill}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setMultiplePhotos(event.target.checked)
+                    }
                   />
-                  <div>
-                    <p className="receipt-file-name">{image.file.name}</p>
+                  <span>This receipt spans multiple photos (long bill)</span>
+                </label>
+                <div className="receipt-photo-list">
+                  {Array.from({ length: photoSlots }, (_, index) => {
+                    const image = images[index];
+                    return (
+                      <div className="receipt-photo-slot" key={index}>
+                        <h3>
+                          Photo {index + 1}
+                          {index === 0 ? " (Primary)" : ""}
+                          {index > 0 && !image && <small>Optional</small>}
+                        </h3>
+                        {image && (
+                          <div className="receipt-image-row">
+                            {/* Blob previews stay in this tab; no image proxy or upload. */}
+                            <img
+                              src={image.url}
+                              alt={
+                                index === 0
+                                  ? "Selected receipt preview"
+                                  : `Receipt photo ${index + 1} preview`
+                              }
+                              className="receipt-preview"
+                            />
+                            <div>
+                              <p className="receipt-file-name">
+                                {image.file.name}
+                              </p>
+                              <button
+                                type="button"
+                                className="receipt-remove"
+                                onClick={() => removeImage(index)}
+                              >
+                                <X size={13} aria-hidden="true" />
+                                {index === 0
+                                  ? "Remove image"
+                                  : `Remove photo ${index + 1}`}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        <div className="receipt-photo-actions">
+                          <button
+                            type="button"
+                            className="receipt-pill receipt-camera-button"
+                            aria-label={
+                              index === 0
+                                ? "Camera"
+                                : `Camera for photo ${index + 1}`
+                            }
+                            onClick={() => cameraInputs.current[index]?.click()}
+                          >
+                            <Camera size={18} aria-hidden="true" /> Camera
+                          </button>
+                          <button
+                            type="button"
+                            className="receipt-pill"
+                            aria-label={
+                              index === 0
+                                ? "Upload"
+                                : `Upload photo ${index + 1}`
+                            }
+                            onClick={() => uploadInputs.current[index]?.click()}
+                          >
+                            <ImagePlus size={18} aria-hidden="true" /> Upload
+                          </button>
+                        </div>
+                        <input
+                          ref={(input) => {
+                            uploadInputs.current[index] = input;
+                          }}
+                          className="receipt-file-input"
+                          type="file"
+                          aria-label={
+                            index === 0
+                              ? "Payment screenshot or shopping receipt"
+                              : `Receipt photo ${index + 1}`
+                          }
+                          accept="image/png,image/jpeg,image/webp"
+                          multiple={longBill}
+                          tabIndex={-1}
+                          onChange={(event) => {
+                            chooseImages(
+                              Array.from(event.target.files || []),
+                              index,
+                            );
+                            event.target.value = "";
+                          }}
+                        />
+                        <input
+                          ref={(input) => {
+                            cameraInputs.current[index] = input;
+                          }}
+                          className="receipt-file-input"
+                          type="file"
+                          aria-label={
+                            index === 0
+                              ? "Take a receipt photo"
+                              : `Take receipt photo ${index + 1}`
+                          }
+                          accept="image/png,image/jpeg,image/webp"
+                          capture="environment"
+                          tabIndex={-1}
+                          onChange={(event) => {
+                            chooseImages(
+                              Array.from(event.target.files || []),
+                              index,
+                            );
+                            event.target.value = "";
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="receipt-file-hint">
+                  PNG, JPEG or WebP ·{" "}
+                  {longBill ? `up to ${MAX_RECEIPT_IMAGES} photos, ` : ""}5 MB
+                  total
+                  {longBill && (
+                    <span>
+                      Keep photos in receipt order. They form one transaction.
+                    </span>
+                  )}
+                </p>
+                {checking ? (
+                  <p className="receipt-note" role="status">
+                    Checking receipt AI availability…
+                  </p>
+                ) : settings && !settings.configured ? (
+                  <p className="receipt-note">
+                    Receipt scanning is unavailable. The app owner needs to
+                    enable receipt scanning. You can still add transactions
+                    manually.
+                  </p>
+                ) : null}
+                {settings?.provider === "Google Gemini" ? (
+                  <div className="receipt-warning">
+                    <p id={`${panelId}-gemini-terms`}>
+                      Scanning sends the selected photos to Google Gemini.
+                      Google may use uploads and responses to improve its
+                      products, and human reviewers may review them.
+                    </p>
+                    <p id={`${panelId}-redaction-guidance`}>
+                      Do not upload personal, confidential, or sensitive
+                      information. Remove names, addresses, phone/email,
+                      bank/card/account/UPI details, personal references, and QR
+                      codes/barcodes before scanning.
+                    </p>
+                    {images.length > 0 && (
+                      <label className="receipt-review-check">
+                        <input
+                          type="checkbox"
+                          aria-describedby={`${panelId}-gemini-terms ${panelId}-redaction-guidance`}
+                          checked={redacted}
+                          disabled={busy}
+                          onChange={(event) =>
+                            setRedacted(event.target.checked)
+                          }
+                        />
+                        <span>
+                          I removed personal, banking and other sensitive
+                          information from this image
+                          {longBill && (
+                            <small>Confirm this for every photo.</small>
+                          )}
+                        </span>
+                      </label>
+                    )}
+                  </div>
+                ) : settings?.provider === "Vercel AI Gateway" ? (
+                  <p className="receipt-disclosure">
+                    Image sent to Vercel AI Gateway and OpenAI for extraction.
+                    Review before saving.
+                  </p>
+                ) : (
+                  <p className="receipt-disclosure">
+                    The cloud destination will be shown when receipt AI
+                    availability is confirmed.
+                  </p>
+                )}
+                <div className="receipt-retry-actions">
+                  {!checking && !settings && (
                     <button
                       type="button"
-                      className="button small"
-                      onClick={removeImage}
+                      className="receipt-text-button"
+                      onClick={() => void checkSettings()}
                     >
-                      Remove image
+                      Retry receipt AI
                     </button>
-                  </div>
-                </div>
-              )}
-              {checking ? (
-                <p className="receipt-note" role="status">
-                  Checking receipt AI availability…
-                </p>
-              ) : settings && !settings.configured ? (
-                <p className="receipt-note">
-                  Receipt scanning is unavailable. The app owner needs to enable
-                  receipt scanning. You can still add transactions manually.
-                </p>
-              ) : null}
-              {settings?.provider === "Google Gemini" ? (
-                <div className="receipt-warning">
-                  <p id={`${panelId}-gemini-terms`}>
-                    Scanning sends this image to Google Gemini. Google may use
-                    uploads and responses to improve its products, and human
-                    reviewers may review them.
-                  </p>
-                  <p id={`${panelId}-redaction-guidance`}>
-                    Do not upload personal, confidential, or sensitive
-                    information. Remove names, addresses, phone/email,
-                    bank/card/account/UPI details, personal references, and QR
-                    codes/barcodes before scanning.
-                  </p>
-                  {image && (
-                    <label className="receipt-review-check">
-                      <input
-                        type="checkbox"
-                        aria-describedby={`${panelId}-gemini-terms ${panelId}-redaction-guidance`}
-                        checked={redacted}
-                        disabled={busy}
-                        onChange={(event) => setRedacted(event.target.checked)}
-                      />
-                      <span>
-                        I removed personal, banking and other sensitive
-                        information from this image
-                      </span>
-                    </label>
                   )}
                 </div>
-              ) : settings?.provider === "Vercel AI Gateway" ? (
-                <p className="receipt-disclosure">
-                  Image sent to Vercel AI Gateway and OpenAI for extraction.
-                  Review before saving.
-                </p>
-              ) : (
-                <p className="receipt-disclosure">
-                  The cloud destination will be shown when receipt AI
-                  availability is confirmed.
-                </p>
-              )}
-              <div className="receipt-actions">
+                {busy && (
+                  <p className="receipt-note" role="status">
+                    Reading the image. Your transaction fields stay unchanged
+                    until you use the details.
+                  </p>
+                )}
+                {result && (
+                  <div
+                    ref={reviewPanel}
+                    className="receipt-result"
+                    aria-label="AI receipt review"
+                  >
+                    <h3>Review extracted details</h3>
+                    <dl className="receipt-details">
+                      <div>
+                        <dt>Amount</dt>
+                        <dd>
+                          {result.extraction.amount
+                            ? `${result.extraction.currency || "Currency unconfirmed"} ${result.extraction.amount}`
+                            : "Unconfirmed"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Date</dt>
+                        <dd>{result.extraction.occurredOn || "Unconfirmed"}</dd>
+                      </div>
+                      <div>
+                        <dt>Merchant</dt>
+                        <dd>{result.extraction.merchant || "Unconfirmed"}</dd>
+                      </div>
+                      <div>
+                        <dt>Reference</dt>
+                        <dd>
+                          {result.extraction.externalReference || "Unconfirmed"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Payment method</dt>
+                        <dd>
+                          {result.extraction.accountHint || "Unconfirmed"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Payment status</dt>
+                        <dd>
+                          {result.extraction.paymentStatus.replaceAll("_", " ")}
+                        </dd>
+                      </div>
+                    </dl>
+                    {result.extraction.warnings.length > 0 && (
+                      <div className="receipt-warning" role="status">
+                        <strong>Check before saving</strong>
+                        <ul>
+                          {result.extraction.warnings.map((warning, index) => (
+                            <li key={index}>{warning}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {duplicates.length > 0 && (
+                      <div className="receipt-warning" role="alert">
+                        <strong>Possible duplicate transactions</strong>
+                        <ul>
+                          {duplicates.slice(0, 5).map((transaction) => (
+                            <li key={transaction.id}>
+                              {transaction.description} · ₹{transaction.amount}{" "}
+                              · {transaction.occurredOn || "Date unconfirmed"}
+                            </li>
+                          ))}
+                        </ul>
+                        <p>
+                          Check your ledger before adding this transaction
+                          again.
+                        </p>
+                      </div>
+                    )}
+                    {foreignCurrency && (
+                      <p className="receipt-warning" role="alert">
+                        This image uses {result.extraction.currency}. Your
+                        ledger uses INR, so these details cannot be applied.
+                        Enter a verified INR amount manually.
+                      </p>
+                    )}
+                    <p className="receipt-note">
+                      Choose the payment account yourself. AI does not match or
+                      access your accounts.
+                    </p>
+                    <button
+                      type="button"
+                      className="receipt-text-button"
+                      onClick={() => void scan()}
+                      disabled={
+                        !settings?.configured ||
+                        checking ||
+                        busy ||
+                        Boolean(settings?.requiresRedaction && !redacted)
+                      }
+                    >
+                      Scan again
+                    </button>
+                    {applied && (
+                      <p className="receipt-note" role="status">
+                        Details applied below. Review and save the transaction
+                        when ready.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+            {settingsError && (
+              <p className="error" role="alert">
+                {settingsError}
+              </p>
+            )}
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+          </div>
+          <div className="receipt-footer">
+            <button
+              type="button"
+              className="receipt-pill"
+              onClick={busy ? cancelScan : closeScanner}
+            >
+              {busy ? "Cancel scan" : "Cancel"}
+            </button>
+            {signedIn &&
+              (result ? (
                 <button
                   type="button"
-                  className="button"
+                  className="receipt-pill receipt-primary"
+                  onClick={useDetails}
+                  disabled={foreignCurrency || applied || busy}
+                >
+                  {applied ? "Details applied" : "Use details"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="receipt-pill receipt-primary"
+                  aria-label={busy ? "Scanning…" : "Scan with AI"}
                   onClick={() => void scan()}
                   disabled={
-                    !image ||
+                    !images.length ||
                     !settings?.configured ||
                     checking ||
                     busy ||
                     Boolean(settings?.requiresRedaction && !redacted)
                   }
                 >
-                  <ScanLine size={14} aria-hidden="true" />{" "}
-                  {busy ? "Scanning…" : "Scan with AI"}
+                  <ScanLine size={16} aria-hidden="true" />
+                  {busy ? "Scanning…" : "Start Scan"}
                 </button>
-                {busy && (
-                  <button type="button" className="button" onClick={cancelScan}>
-                    Cancel scan
-                  </button>
-                )}
-                {!checking && !settings && (
-                  <button
-                    type="button"
-                    className="button small"
-                    onClick={() => void checkSettings()}
-                  >
-                    Retry receipt AI
-                  </button>
-                )}
-              </div>
-              {busy && (
-                <p className="receipt-note" role="status">
-                  Reading the image. Your transaction fields stay unchanged
-                  until you use the details.
-                </p>
-              )}
-              {result && (
-                <div className="receipt-result" aria-label="AI receipt review">
-                  <h3>Review extracted details</h3>
-                  <dl className="receipt-details">
-                    <div>
-                      <dt>Amount</dt>
-                      <dd>
-                        {result.extraction.amount
-                          ? `${result.extraction.currency || "Currency unconfirmed"} ${result.extraction.amount}`
-                          : "Unconfirmed"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Date</dt>
-                      <dd>{result.extraction.occurredOn || "Unconfirmed"}</dd>
-                    </div>
-                    <div>
-                      <dt>Merchant</dt>
-                      <dd>{result.extraction.merchant || "Unconfirmed"}</dd>
-                    </div>
-                    <div>
-                      <dt>Reference</dt>
-                      <dd>
-                        {result.extraction.externalReference || "Unconfirmed"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Payment method</dt>
-                      <dd>{result.extraction.accountHint || "Unconfirmed"}</dd>
-                    </div>
-                    <div>
-                      <dt>Payment status</dt>
-                      <dd>
-                        {result.extraction.paymentStatus.replaceAll("_", " ")}
-                      </dd>
-                    </div>
-                  </dl>
-                  {result.extraction.warnings.length > 0 && (
-                    <div className="receipt-warning" role="status">
-                      <strong>Check before saving</strong>
-                      <ul>
-                        {result.extraction.warnings.map((warning, index) => (
-                          <li key={index}>{warning}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {duplicates.length > 0 && (
-                    <div className="receipt-warning" role="alert">
-                      <strong>Possible duplicate transactions</strong>
-                      <ul>
-                        {duplicates.slice(0, 5).map((transaction) => (
-                          <li key={transaction.id}>
-                            {transaction.description} · ₹{transaction.amount} ·{" "}
-                            {transaction.occurredOn || "Date unconfirmed"}
-                          </li>
-                        ))}
-                      </ul>
-                      <p>
-                        Check your ledger before adding this transaction again.
-                      </p>
-                    </div>
-                  )}
-                  {foreignCurrency && (
-                    <p className="receipt-warning" role="alert">
-                      This image uses {result.extraction.currency}. Your ledger
-                      uses INR, so these details cannot be applied. Enter a
-                      verified INR amount manually.
-                    </p>
-                  )}
-                  <p className="receipt-note">
-                    Choose the payment account yourself. AI does not match or
-                    access your accounts.
-                  </p>
-                  <button
-                    type="button"
-                    className="button"
-                    onClick={useDetails}
-                    disabled={foreignCurrency || applied}
-                  >
-                    {applied ? "Details applied" : "Use details"}
-                  </button>
-                  {applied && (
-                    <p className="receipt-note" role="status">
-                      Details applied below. Review and save the transaction
-                      when ready.
-                    </p>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-          {settingsError && (
-            <p className="error" role="alert">
-              {settingsError}
-            </p>
-          )}
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
+              ))}
+          </div>
+        </Modal>
       )}
-    </section>
+    </>
   );
 }

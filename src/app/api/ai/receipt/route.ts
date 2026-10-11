@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       403,
     );
   let release: (() => void) | undefined;
-  let image: Buffer | undefined;
+  let images: Buffer[] = [];
   try {
     // Authenticate and require a configured key before reading uploads or spending provider credits.
     const { ownerId } = await authenticatePrivateProfile(
@@ -51,11 +51,10 @@ export async function POST(request: NextRequest) {
     release = acquireReceiptScan(ownerId);
     const metadata = receiptProviderMetadata(configuration.provider);
     const upload = await readReceiptUpload(request, configuration);
-    image = upload.bytes;
+    images = upload.images;
     const extraction = await scanReceiptWithAI({
       configuration,
-      bytes: image,
-      mediaType: upload.mediaType,
+      images,
       signal: request.signal,
       redacted: upload.redacted,
     });
@@ -84,7 +83,7 @@ export async function POST(request: NextRequest) {
       503,
     );
   } finally {
-    image?.fill(0);
+    for (const image of images) image.fill(0);
     release?.();
   }
 }

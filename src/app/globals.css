@@ -2033,40 +2033,137 @@ td small {
   font-size: 11px;
   padding: 10px 15px;
 }
+.transaction-modal-overlay {
+  background: #14241a70;
+  backdrop-filter: blur(6px);
+}
 .transaction-modal {
-  width: 500px;
-  padding: 20px;
+  --text: #26342b;
+  --muted: #747b75;
+  --border: #dde3dc;
+  --lime: #3e7c5c;
+  --blue: #3e7c5c;
+  color-scheme: light;
+  width: 540px;
+  padding: 24px;
+  background: linear-gradient(160deg, #fff, #f5f6f2);
+  color: var(--text);
+  border: 1px solid #dfe4de;
+  border-radius: 24px;
 }
 .transaction-modal .modal-heading {
-  margin-bottom: 15px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--border);
 }
 .transaction-modal .modal-heading h2 {
-  font-size: 18px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.15;
 }
 .transaction-modal .modal-heading p {
-  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 7px;
+  line-height: 1.5;
 }
-.transaction-modal .receipt-scanner {
-  margin-bottom: 14px;
-}
-.transaction-modal .receipt-toggle {
-  padding: 11px 12px;
+.transaction-modal .icon-button {
+  color: #778078;
 }
 .transaction-modal .form-grid {
-  gap: 12px;
+  gap: 14px 12px;
 }
 .transaction-modal .field {
-  gap: 5px;
+  color: #697269;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 7px;
 }
 .transaction-modal .field input:not([type="checkbox"]),
-.transaction-modal .field select {
-  min-height: 36px;
-  padding: 8px 10px;
+.transaction-modal .field select,
+.transaction-modal .field textarea {
+  min-height: 43px;
+  padding: 10px 14px;
+  color: #29372d;
+  background: #fff;
+  border: 1px solid #dce2da;
+  border-radius: 22px;
+  font-size: 13px;
+  font-weight: 400;
+  width: 100%;
+}
+.transaction-modal .field textarea {
+  min-height: 64px;
+  resize: vertical;
+  border-radius: 17px;
+}
+.transaction-modal .field input::placeholder,
+.transaction-modal .field textarea::placeholder {
+  color: #949b94;
+}
+.transaction-modal .field input:focus-visible,
+.transaction-modal .field select:focus-visible,
+.transaction-modal .field textarea:focus-visible {
+  outline: 2px solid #8bb69e;
+  outline-offset: 2px;
+}
+.transaction-amount-control {
+  position: relative;
+  display: block;
+}
+.transaction-amount-control > span {
+  position: absolute;
+  top: 50%;
+  left: 15px;
+  transform: translateY(-50%);
+  color: #25382b;
+  font-size: 18px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.transaction-modal .transaction-amount input {
+  padding-left: 36px;
+  border-color: #abc8b7;
+  box-shadow: 0 0 0 4px #dceae14d;
+}
+.transaction-source {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  color: #697269;
+  font-size: 12px;
+  font-weight: 600;
+}
+.source-add,
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 11px;
+  color: #4d785d;
+  background: #fff;
+  border: 1px dashed #becdc0;
+  border-radius: 18px;
+  font-size: 12px;
+  max-width: 100%;
+}
+.source-add {
+  width: 34px;
+  padding: 7px;
+}
+.source-chip span {
+  overflow-wrap: anywhere;
 }
 .transaction-details {
   min-width: 0;
-  border: 1px solid #ffffff15;
-  border-radius: 8px;
+  border: 1px solid #dce3da;
+  border-radius: 13px;
+  background: #fff9;
 }
 .transaction-details > summary {
   display: flex;
@@ -2074,9 +2171,9 @@ td small {
   gap: 8px;
   min-height: 40px;
   padding: 10px 12px;
-  color: #ced6ec;
+  color: #4e6253;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   list-style: none;
 }
 .transaction-details > summary::-webkit-details-marker {
@@ -2095,33 +2192,74 @@ td small {
 .transaction-details > summary:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
-  border-radius: 8px;
+  border-radius: 13px;
 }
 .transaction-details > .form-grid {
-  border-top: 1px solid #ffffff0d;
+  border-top: 1px solid var(--border);
   padding: 12px;
+}
+.transaction-modal .form-note {
+  background: #eff4ed;
+  color: #647361;
 }
 .transaction-hint {
   margin: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
 }
 .transaction-modal .form-actions {
-  margin-top: 16px;
-  padding-top: 14px;
+  margin-top: 18px;
+  padding-top: 16px;
 }
-.transaction-modal .receipt-save-review {
-  margin-top: 14px;
+.transaction-modal .form-actions .button {
+  min-height: 42px;
+  padding: 10px 19px;
+  background: #fff;
+  color: #38483c;
+  border: 1px solid #d7dfd4;
+  border-radius: 24px;
+  font-size: 12px;
+  font-weight: 600;
 }
-@media (max-width: 420px) {
+.transaction-modal .form-actions .button.primary {
+  color: #fff;
+  background: #3e7c5c;
+  border-color: #3e7c5c;
+  box-shadow: 0 5px 12px #3e7c5c1c;
+}
+.transaction-modal .error {
+  color: #9b3535;
+  background: #fff0ed;
+  border-color: #f1c7c0;
+}
+@media (max-width: 600px) {
   .modal.transaction-modal {
-    padding: 16px;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    transform: none;
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - 28px);
+    padding: 20px 18px calc(18px + env(safe-area-inset-bottom));
+    border-radius: 24px 24px 0 0;
+  }
+  .transaction-modal .form-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .transaction-modal .modal-heading h2 {
+    font-size: 23px;
   }
   .transaction-modal .field input:not([type="checkbox"]),
-  .transaction-modal .field select {
-    min-height: 40px;
-    font-size: 12px;
+  .transaction-modal .field select,
+  .transaction-modal .field textarea {
+    font-size: 16px;
+    min-height: 42px;
+  }
+  .transaction-modal .field textarea {
+    min-height: 64px;
   }
 }
 .error {

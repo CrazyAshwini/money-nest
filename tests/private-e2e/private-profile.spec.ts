@@ -261,7 +261,7 @@ test("private profile setup, protected records, persistence, and demo isolation"
     await page
       .getByRole("button", { name: "Add transaction", exact: true })
       .click();
-    let dialog = page.getByRole("dialog");
+    let dialog = page.locator(".transaction-modal");
     const moreDetails = dialog
       .locator("details")
       .filter({ hasText: "More details" });
@@ -277,43 +277,59 @@ test("private profile setup, protected records, persistence, and demo isolation"
     ).toBeHidden();
     await expect(dialog.locator('select[name="status"]')).toHaveCount(1);
     await expect(dialog.locator('select[name="status"]')).toBeHidden();
+    await expect(
+      dialog.getByLabel("Transaction type", { exact: true }),
+    ).toBeHidden();
+    await expect(
+      dialog.getByRole("textbox", { name: "Description", exact: true }),
+    ).toHaveJSProperty("tagName", "TEXTAREA");
+    await expect(
+      dialog.getByRole("button", { name: "Take Photo", exact: true }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Upload Image", exact: true }),
+    ).toBeVisible();
     await mkdir(path.resolve("artifacts"), { recursive: true });
     await dialog.screenshot({
-      path: path.resolve("artifacts/transaction-compact-desktop.png"),
+      path: path.resolve("artifacts/transaction-reference-desktop.png"),
     });
     await page.setViewportSize({ width: 360, height: 800 });
     await assertNoPageOverflow(page);
     await dialog.screenshot({
-      path: path.resolve("artifacts/transaction-compact-mobile.png"),
+      path: path.resolve("artifacts/transaction-reference-mobile.png"),
     });
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await moreDetails.locator("summary").click();
     const transactionType = dialog.getByRole("combobox", {
       name: "Transaction type",
       exact: true,
     });
     await transactionType.selectOption("income");
+    await moreDetails.locator("summary").click();
     await expect(
       dialog.getByRole("combobox", { name: "To account", exact: true }),
     ).toBeVisible();
     await expect(dialog.locator('select[name="fromAccountId"]')).toHaveCount(1);
     await expect(dialog.locator('select[name="fromAccountId"]')).toBeHidden();
+    await moreDetails.locator("summary").click();
     await transactionType.selectOption("transfer");
+    await moreDetails.locator("summary").click();
     await expect(
       dialog.getByRole("combobox", { name: "From account", exact: true }),
     ).toBeVisible();
     await expect(
       dialog.getByRole("combobox", { name: "To account", exact: true }),
     ).toBeVisible();
+    await moreDetails.locator("summary").click();
     await transactionType.selectOption("expense");
     await dialog
-      .getByLabel("Description", { exact: true })
+      .getByRole("textbox", { name: "Description", exact: true })
       .fill(transactionName);
     await dialog.getByLabel("Amount · ₹", { exact: true }).fill("12.34");
     await dialog.getByLabel("Date", { exact: true }).fill("2026-10-09");
     await dialog
       .getByRole("combobox", { name: "From account", exact: true })
       .selectOption({ label: bankName });
-    await moreDetails.locator("summary").click();
     await dialog.getByLabel("Notes", { exact: true }).fill(transactionNote);
     await dialog
       .getByLabel("Bank reference", { exact: true })
@@ -330,7 +346,7 @@ test("private profile setup, protected records, persistence, and demo isolation"
     await page
       .getByRole("button", { name: `Edit ${transactionName}`, exact: true })
       .click();
-    dialog = page.getByRole("dialog");
+    dialog = page.locator(".transaction-modal");
     await expect(dialog.getByLabel("Notes", { exact: true })).toBeHidden();
     await dialog.locator("summary", { hasText: "More details" }).click();
     await expect(dialog.getByLabel("Notes", { exact: true })).toHaveValue(

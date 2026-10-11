@@ -78,15 +78,48 @@ async function openEditor(page: Page) {
   await page
     .getByRole("button", { name: "Add transaction", exact: true })
     .click();
-  const dialog = page.getByRole("dialog");
-  await dialog
-    .getByRole("button", { name: "Add from a receipt", exact: true })
-    .click();
+  const dialog = page.locator(".transaction-modal");
+  await expect(
+    dialog.getByRole("textbox", { name: "Description", exact: true }),
+  ).toBeVisible();
   return dialog;
 }
 
-async function upload(dialog: Locator, filename = "synthetic-payment.png") {
+function receipt(dialog: Locator) {
+  return dialog.page().locator(".receipt-modal");
+}
+
+async function openScanner(dialog: Locator) {
+  if (!(await receipt(dialog).isVisible())) {
+    await dialog
+      .getByRole("button", { name: "Upload Image", exact: true })
+      .click();
+  }
+  await expect(receipt(dialog)).toBeVisible();
+  return receipt(dialog);
+}
+
+async function closeEditor(dialog: Locator) {
+  if (await receipt(dialog).isVisible()) {
+    await receipt(dialog)
+      .getByRole("button", { name: "Close dialog", exact: true })
+      .click();
+  }
   await dialog
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+}
+
+async function moreDetails(dialog: Locator) {
+  const details = dialog.locator("details").filter({ hasText: "More details" });
+  if (!(await details.evaluate((node) => (node as HTMLDetailsElement).open))) {
+    await details.locator("summary").click();
+  }
+}
+
+async function upload(dialog: Locator, filename = "synthetic-payment.png") {
+  await openScanner(dialog);
+  await receipt(dialog)
     .getByLabel("Payment screenshot or shopping receipt")
     .setInputFiles({ name: filename, mimeType: "image/png", buffer: png });
 }
@@ -186,11 +219,11 @@ async function mockScan(page: Page, response = scanResult()) {
 
 async function scan(dialog: Locator) {
   await upload(dialog);
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Scan with AI", exact: true })
     .click();
   await expect(
-    dialog.getByRole("button", { name: "Use details", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Use details", exact: true }),
   ).toBeVisible();
 }
 
@@ -408,15 +441,28 @@ test("unconfigured AI asks the owner to enable scanning without changing manual 
   await mockSettings(page, false);
   const before = await transactions(page);
   const dialog = await openEditor(page);
-  await expect(dialog.getByText(/app owner/).first()).toBeVisible();
-  await expect(dialog.getByText("Connect AI", { exact: true })).toHaveCount(0);
+  await openScanner(dialog);
+  await expect(
+    receipt(dialog)
+      .getByText(/app owner/)
+      .first(),
+  ).toBeVisible();
+  await expect(
+    receipt(dialog).getByText("Connect AI", { exact: true }),
+  ).toHaveCount(0);
   await expect(dialog.locator('input[type="password"]')).toHaveCount(0);
+  await expect(receipt(dialog).locator('input[type="password"]')).toHaveCount(
+    0,
+  );
   await upload(dialog);
   await expect(
-    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Scan with AI", exact: true }),
   ).toBeDisabled();
+  await receipt(dialog)
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
   await dialog
-    .getByLabel("Description", { exact: true })
+    .locator('textarea[name="description"]')
     .fill("Manual synthetic payment");
   await dialog.getByLabel("Amount · ₹", { exact: true }).fill("21.43");
   await dialog
@@ -433,10 +479,256 @@ test("unconfigured AI asks the owner to enable scanning without changing manual 
   ).toBe("21.43");
 });
 
+test("receipt sheet offers camera and upload, and closing it preserves the expense draft", async ({
+  page,
+}) => {
+  await mockSettings(page);
+  const before = await transactions(page);
+  const dialog = await openEditor(page);
+  await dialog
+    .locator('textarea[name="description"]')
+    .fill("Synthetic camera draft");
+  await dialog.getByLabel("Amount · ₹", { exact: true }).fill("37.19");
+  await dialog.getByRole("button", { name: "Take Photo", exact: true }).click();
+  const sheet = receipt(dialog);
+  await expect(
+    sheet.getByRole("heading", { name: "Scan receipt", exact: true }),
+  ).toBeVisible();
+  const cameraInput = sheet.getByLabel("Take a receipt photo", { exact: true });
+  await expect(cameraInput).toHaveAttribute("capture", "environment");
+  await expect(cameraInput).toHaveAttribute(
+    "accept",
+    "image/png,image/jpeg,image/webp",
+  );
+  await expect(
+    sheet.getByLabel("Payment screenshot or shopping receipt", { exact: true }),
+  ).not.toHaveAttribute("capture");
+  await expect(
+    sheet.getByRole("checkbox", {
+      name: "This receipt spans multiple photos (long bill)",
+      exact: true,
+    }),
+  ).not.toBeChecked();
+  await expect(
+    sheet.getByRole("button", { name: "Scan with AI", exact: true }),
+  ).toBeDisabled();
+  await mkdir(path.resolve("artifacts"), { recursive: true });
+  await page.screenshot({
+    path: path.resolve("artifacts/receipt-sheet-camera-desktop.png"),
+  });
+  await page.setViewportSize({ width: 360, height: 800 });
+  await assertNoOverflow(page);
+  await page.screenshot({
+    path: path.resolve("artifacts/receipt-sheet-camera-mobile.png"),
+  });
+  const fileChooser = page.waitForEvent("filechooser");
+  await sheet.getByRole("button", { name: "Camera", exact: true }).click();
+  await (
+    await fileChooser
+  ).setFiles({
+    name: "synthetic-camera.png",
+    mimeType: "image/png",
+    buffer: png,
+  });
+  await expect(
+    sheet.getByRole("button", { name: "Scan with AI", exact: true }),
+  ).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
+    "Synthetic camera draft",
+  );
+  await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
+    "37.19",
+  );
+  await openScanner(dialog);
+  await sheet.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await closeEditor(dialog);
+  expect((await transactions(page)).length).toBe(before.length);
+});
+
+test("long receipts send up to three ordered photos together and reset privacy acknowledgement when a photo changes", async ({
+  page,
+}) => {
+  await mockSettings(page, true, "Google Gemini");
+  const before = await transactions(page);
+  let scanRequests = 0;
+  await page.route("**/api/ai/receipt", async (route) => {
+    scanRequests++;
+    const form = await new Response(
+      new Uint8Array(route.request().postDataBuffer() ?? []),
+      {
+        headers: { "Content-Type": route.request().headers()["content-type"] },
+      },
+    ).formData();
+    const images = form.getAll("image") as File[];
+    expect(images.map((image) => image.name)).toEqual([
+      "synthetic-primary.png",
+      "synthetic-page-2.png",
+      "synthetic-page-3.png",
+    ]);
+    expect(images.map((image) => image.size)).toEqual([
+      png.length,
+      png.length,
+      png.length,
+    ]);
+    expect(form.getAll("provider")).toEqual(["gemini"]);
+    expect(form.getAll("model")).toEqual([syntheticModel("Google Gemini")]);
+    expect(form.getAll("redacted")).toEqual(["true"]);
+    expect(form.getAll("consent")).toEqual(["true"]);
+    expect([...form.keys()].sort()).toEqual([
+      "consent",
+      "image",
+      "image",
+      "image",
+      "model",
+      "provider",
+      "redacted",
+    ]);
+    const body = route.request().postDataBuffer()?.toString("utf8") ?? "";
+    expect(body.includes(profileName)).toBe(false);
+    expect(body.toLowerCase().includes(email)).toBe(false);
+    expect(body.includes(owner)).toBe(false);
+    await route.fulfill({
+      status: 200,
+      json: scanResult(
+        { externalReference: null, accountHint: null },
+        "Google Gemini",
+      ),
+    });
+  });
+  const dialog = await openEditor(page);
+  await dialog
+    .locator('textarea[name="description"]')
+    .fill("Synthetic long receipt draft");
+  const sheet = await openScanner(dialog);
+  const longBill = sheet.getByRole("checkbox", {
+    name: "This receipt spans multiple photos (long bill)",
+    exact: true,
+  });
+  await longBill.check();
+  const primary = sheet.getByLabel("Payment screenshot or shopping receipt", {
+    exact: true,
+  });
+  await expect(primary).toHaveAttribute("multiple", "");
+  const photos = [
+    "synthetic-primary.png",
+    "synthetic-page-2.png",
+    "synthetic-page-3.png",
+  ].map((name) => ({ name, mimeType: "image/png", buffer: png }));
+  await primary.setInputFiles(photos);
+  const confirmation = sheet.getByRole("checkbox", {
+    name: new RegExp(redactionLabel),
+  });
+  await expect(
+    sheet.getByText("Confirm this for every photo.", { exact: true }),
+  ).toBeVisible();
+  const scanButton = sheet.getByRole("button", {
+    name: "Scan with AI",
+    exact: true,
+  });
+  await confirmation.check();
+  await expect(scanButton).toBeEnabled();
+  await sheet
+    .getByLabel("Receipt photo 2", { exact: true })
+    .setInputFiles(photos[1]);
+  await expect(confirmation).not.toBeChecked();
+  await expect(scanButton).toBeDisabled();
+  await confirmation.check();
+  await sheet
+    .getByRole("button", { name: "Remove photo 3", exact: true })
+    .click();
+  await expect(confirmation).not.toBeChecked();
+  await sheet
+    .getByLabel("Receipt photo 3", { exact: true })
+    .setInputFiles(photos[2]);
+  await confirmation.check();
+  await scanButton.click();
+  await expect(
+    sheet.getByRole("button", { name: "Use details", exact: true }),
+  ).toBeVisible();
+  expect(scanRequests).toBe(1);
+  expect((await transactions(page)).length).toBe(before.length);
+  await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
+    "Synthetic long receipt draft",
+  );
+  await sheet.getByRole("button", { name: "Use details", exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
+    "125.50",
+  );
+  await expect(
+    dialog.getByRole("button", { name: "Save transaction", exact: true }),
+  ).toBeDisabled();
+  await closeEditor(dialog);
+  expect((await transactions(page)).length).toBe(before.length);
+});
+
+test("too many photos or more than five megabytes combined stay local", async ({
+  page,
+}) => {
+  await mockSettings(page);
+  let scanRequests = 0;
+  await page.route("**/api/ai/receipt", async (route) => {
+    scanRequests++;
+    await route.fulfill({
+      status: 500,
+      json: { error: "Unexpected synthetic request." },
+    });
+  });
+  const before = await transactions(page);
+  const dialog = await openEditor(page);
+  await dialog
+    .locator('textarea[name="description"]')
+    .fill("Synthetic large receipt draft");
+  const sheet = await openScanner(dialog);
+  await sheet
+    .getByRole("checkbox", {
+      name: "This receipt spans multiple photos (long bill)",
+      exact: true,
+    })
+    .check();
+  const primary = sheet.getByLabel("Payment screenshot or shopping receipt", {
+    exact: true,
+  });
+  await primary.setInputFiles(
+    [1, 2, 3, 4].map((pageNumber) => ({
+      name: `synthetic-${pageNumber}.png`,
+      mimeType: "image/png",
+      buffer: png,
+    })),
+  );
+  await expect(sheet.getByRole("alert")).toContainText(/3 photos|three photos/);
+  await expect(
+    sheet.getByRole("button", { name: "Scan with AI", exact: true }),
+  ).toBeDisabled();
+  const paddedImage = Buffer.concat([png, Buffer.alloc(3 * 1024 * 1024)]);
+  await primary.setInputFiles(
+    [1, 2].map((pageNumber) => ({
+      name: `synthetic-large-${pageNumber}.png`,
+      mimeType: "image/png",
+      buffer: paddedImage,
+    })),
+  );
+  await expect(sheet.getByRole("alert")).toContainText(/5 MB/);
+  await expect(
+    sheet.getByRole("button", { name: "Scan with AI", exact: true }),
+  ).toBeDisabled();
+  expect(scanRequests).toBe(0);
+  await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
+    "Synthetic large receipt draft",
+  );
+  await closeEditor(dialog);
+  expect((await transactions(page)).length).toBe(before.length);
+});
+
 test("Gemini requires redaction confirmation, resets it for a replacement image, and scans only the acknowledged upload", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 360, height: 850 });
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await mockSettings(page, true, "Google Gemini");
   let scanRequests = 0;
   await page.route("**/api/ai/receipt", async (route) => {
@@ -470,24 +762,38 @@ test("Gemini requires redaction confirmation, resets it for a replacement image,
   const before = await transactions(page);
   const dialog = await openEditor(page);
   await dialog
-    .getByLabel("Description", { exact: true })
+    .locator('textarea[name="description"]')
     .fill("Synthetic Gemini manual draft");
   await dialog.getByLabel("Amount · ₹", { exact: true }).fill("41.28");
+  await openScanner(dialog);
   await expect(
-    dialog.getByText(/Google may use uploads and responses/),
+    receipt(dialog).getByText(/Google may use uploads and responses/),
   ).toBeVisible();
-  await expect(dialog.getByText(/human reviewers may review/)).toBeVisible();
   await expect(
-    dialog.getByText(/Remove names, addresses, phone\/email/),
+    receipt(dialog).getByText(/human reviewers may review/),
   ).toBeVisible();
-  await expect(dialog.getByText(/QR codes\/barcodes/)).toBeVisible();
-  await expect(dialog.getByText(/Vercel AI Gateway|OpenAI/)).toHaveCount(0);
+  await expect(
+    receipt(dialog).getByText(/Remove names, addresses, phone\/email/),
+  ).toBeVisible();
+  await expect(receipt(dialog).getByText(/QR codes\/barcodes/)).toBeVisible();
+  await expect(
+    receipt(dialog).getByText(/Vercel AI Gateway|OpenAI/),
+  ).toHaveCount(0);
+  await mkdir(path.resolve("artifacts"), { recursive: true });
+  await page.screenshot({
+    path: path.resolve("artifacts/receipt-sheet-reference-desktop.png"),
+  });
+  await page.setViewportSize({ width: 360, height: 850 });
+  await assertNoOverflow(page);
+  await page.screenshot({
+    path: path.resolve("artifacts/receipt-sheet-reference-mobile.png"),
+  });
   await upload(dialog);
-  const confirmation = dialog.getByRole("checkbox", {
+  const confirmation = receipt(dialog).getByRole("checkbox", {
     name: redactionLabel,
     exact: true,
   });
-  const scanButton = dialog.getByRole("button", {
+  const scanButton = receipt(dialog).getByRole("button", {
     name: "Scan with AI",
     exact: true,
   });
@@ -508,27 +814,25 @@ test("Gemini requires redaction confirmation, resets it for a replacement image,
     path: path.resolve("artifacts/receipt-gemini-redaction-mobile.png"),
   });
   await scanButton.click();
-  await expect(dialog.getByLabel("AI receipt review")).toContainText(
+  await expect(receipt(dialog).getByLabel("AI receipt review")).toContainText(
     "INR 125.50",
   );
   expect(scanRequests).toBe(1);
-  await expect(dialog.getByLabel("Description", { exact: true })).toHaveValue(
+  await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
     "Synthetic Gemini manual draft",
   );
   await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
     "41.28",
   );
   expect((await transactions(page)).length).toBe(before.length);
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Remove image", exact: true })
     .click();
   await expect(confirmation).toHaveCount(0);
   await upload(dialog, "new-synthetic-image.png");
   await expect(confirmation).not.toBeChecked();
   await expect(scanButton).toBeDisabled();
-  await dialog
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
+  await closeEditor(dialog);
   expect((await transactions(page)).length).toBe(before.length);
 });
 
@@ -538,51 +842,53 @@ test("provider changes clear Gemini acknowledgement and Gateway keeps its origin
   await mockSettings(page, true, "Google Gemini");
   const dialog = await openEditor(page);
   await upload(dialog);
-  await dialog
+  await receipt(dialog)
     .getByRole("checkbox", { name: redactionLabel, exact: true })
     .check();
-  await dialog
-    .getByRole("button", { name: "Add from a receipt", exact: true })
+  await receipt(dialog)
+    .getByRole("button", { name: "Close dialog", exact: true })
     .click();
   await page.unroute("**/api/ai/settings");
   await mockSettings(page);
   await mockScan(page);
-  await dialog
-    .getByRole("button", { name: "Add from a receipt", exact: true })
-    .click();
-  await expect(dialog.getByText(/Vercel AI Gateway and OpenAI/)).toBeVisible();
+  await openScanner(dialog);
   await expect(
-    dialog.getByRole("checkbox", { name: redactionLabel, exact: true }),
+    receipt(dialog).getByText(/Vercel AI Gateway and OpenAI/),
+  ).toBeVisible();
+  await expect(
+    receipt(dialog).getByRole("checkbox", {
+      name: redactionLabel,
+      exact: true,
+    }),
   ).toHaveCount(0);
   await expect(
-    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Scan with AI", exact: true }),
   ).toBeEnabled();
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Scan with AI", exact: true })
     .click();
   await expect(
-    dialog.getByRole("button", { name: "Use details", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Use details", exact: true }),
   ).toBeVisible();
-  await dialog
-    .getByRole("button", { name: "Add from a receipt", exact: true })
+  await receipt(dialog)
+    .getByRole("button", { name: "Close dialog", exact: true })
     .click();
   await page.unroute("**/api/ai/settings");
   await mockSettings(page, true, "Google Gemini");
-  await dialog
-    .getByRole("button", { name: "Add from a receipt", exact: true })
-    .click();
+  await openScanner(dialog);
   await expect(
-    dialog.getByRole("checkbox", { name: redactionLabel, exact: true }),
+    receipt(dialog).getByRole("checkbox", {
+      name: redactionLabel,
+      exact: true,
+    }),
   ).not.toBeChecked();
   await expect(
-    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Scan with AI", exact: true }),
   ).toBeDisabled();
   await expect(
-    dialog.getByRole("button", { name: "Use details", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Use details", exact: true }),
   ).toHaveCount(0);
-  await dialog
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
+  await closeEditor(dialog);
 });
 
 test("stale provider rejection preserves the draft and requires fresh provider acknowledgement", async ({
@@ -627,26 +933,26 @@ test("stale provider rejection preserves the draft and requires fresh provider a
   const before = await transactions(page);
   const dialog = await openEditor(page);
   await dialog
-    .getByLabel("Description", { exact: true })
+    .locator('textarea[name="description"]')
     .fill("Synthetic stale provider draft");
   await dialog.getByLabel("Amount · ₹", { exact: true }).fill("61.82");
   await upload(dialog);
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Scan with AI", exact: true })
     .click();
   await expect(
-    dialog.getByText(
+    receipt(dialog).getByText(
       "Receipt AI settings changed. Refresh availability and try again.",
       { exact: true },
     ),
   ).toBeVisible();
   await expect(
-    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Scan with AI", exact: true }),
   ).toBeDisabled();
   await expect(
-    dialog.getByRole("button", { name: "Use details", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Use details", exact: true }),
   ).toHaveCount(0);
-  await expect(dialog.getByLabel("Description", { exact: true })).toHaveValue(
+  await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
     "Synthetic stale provider draft",
   );
   await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
@@ -654,21 +960,22 @@ test("stale provider rejection preserves the draft and requires fresh provider a
   );
   expect(scanRequests).toBe(1);
   expect((await transactions(page)).length).toBe(before.length);
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Retry receipt AI", exact: true })
     .click();
   await expect(
-    dialog.getByText(/Google may use uploads and responses/),
+    receipt(dialog).getByText(/Google may use uploads and responses/),
   ).toBeVisible();
   await expect(
-    dialog.getByRole("checkbox", { name: redactionLabel, exact: true }),
+    receipt(dialog).getByRole("checkbox", {
+      name: redactionLabel,
+      exact: true,
+    }),
   ).not.toBeChecked();
   await expect(
-    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Scan with AI", exact: true }),
   ).toBeDisabled();
-  await dialog
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
+  await closeEditor(dialog);
 });
 
 test("unknown or incomplete provider metadata fails closed without a misleading disclosure", async ({
@@ -711,77 +1018,78 @@ test("unknown or incomplete provider metadata fails closed without a misleading 
   const dialog = await openEditor(page);
   await upload(dialog);
   await expect(
-    dialog.getByText(
+    receipt(dialog).getByText(
       "Receipt AI provider information could not be confirmed. Try again.",
       { exact: true },
     ),
   ).toBeVisible();
   await expect(
-    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Scan with AI", exact: true }),
   ).toBeDisabled();
   await expect(
-    dialog.getByText(/Vercel AI Gateway|OpenAI|Google may use/),
+    receipt(dialog).getByText(/Vercel AI Gateway|OpenAI|Google may use/),
   ).toHaveCount(0);
   expect(scanRequests).toBe(0);
   await upload(dialog, "synthetic-metadata-replacement.png");
   await expect(
-    dialog.getByText(
+    receipt(dialog).getByText(
       "Receipt AI provider information could not be confirmed. Try again.",
       { exact: true },
     ),
   ).toBeVisible();
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Remove image", exact: true })
     .click();
   await expect(
-    dialog.getByText(
+    receipt(dialog).getByText(
       "Receipt AI provider information could not be confirmed. Try again.",
       { exact: true },
     ),
   ).toBeVisible();
   await upload(dialog, "synthetic-metadata-new.png");
   await expect(
-    dialog.getByText(
+    receipt(dialog).getByText(
       "Receipt AI provider information could not be confirmed. Try again.",
       { exact: true },
     ),
   ).toBeVisible();
   metadataState = "unknown";
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Retry receipt AI", exact: true })
     .click();
   await expect(
-    dialog.getByText(
+    receipt(dialog).getByText(
       "Receipt AI provider information could not be confirmed. Try again.",
       { exact: true },
     ),
   ).toBeVisible();
   await expect(
-    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Scan with AI", exact: true }),
   ).toBeDisabled();
   await expect(
-    dialog.getByText(/Vercel AI Gateway|OpenAI|Google may use/),
+    receipt(dialog).getByText(/Vercel AI Gateway|OpenAI|Google may use/),
   ).toHaveCount(0);
   expect(scanRequests).toBe(0);
   metadataState = "valid";
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Retry receipt AI", exact: true })
     .click();
   await expect(
-    dialog.getByRole("checkbox", { name: redactionLabel, exact: true }),
+    receipt(dialog).getByRole("checkbox", {
+      name: redactionLabel,
+      exact: true,
+    }),
   ).not.toBeChecked();
   await expect(
-    dialog.getByText(
+    receipt(dialog).getByText(
       "Receipt AI provider information could not be confirmed. Try again.",
       { exact: true },
     ),
   ).toHaveCount(0);
   await expect(
-    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Scan with AI", exact: true }),
   ).toBeDisabled();
-  await dialog
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
+  await closeEditor(dialog);
 });
 
 test("invalid or oversized images stay local and preserve manual form values", async ({
@@ -799,10 +1107,11 @@ test("invalid or oversized images stay local and preserve manual form values", a
   const before = await transactions(page);
   const dialog = await openEditor(page);
   await dialog
-    .getByLabel("Description", { exact: true })
+    .locator('textarea[name="description"]')
     .fill("Manual draft stays intact");
   await dialog.getByLabel("Amount · ₹", { exact: true }).fill("81.27");
-  const fileInput = dialog.getByLabel(
+  await openScanner(dialog);
+  const fileInput = receipt(dialog).getByLabel(
     "Payment screenshot or shopping receipt",
     { exact: false },
   );
@@ -812,30 +1121,30 @@ test("invalid or oversized images stay local and preserve manual form values", a
     buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
   });
   await expect(
-    dialog.getByText("Choose a PNG, JPG, or WebP image.", { exact: true }),
+    receipt(dialog).getByText("Choose a PNG, JPG, or WebP image.", {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(
-    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Scan with AI", exact: true }),
   ).toBeDisabled();
   await fileInput.setInputFiles({
     name: "oversized-synthetic.png",
     mimeType: "image/png",
     buffer: Buffer.alloc(6 * 1024 * 1024),
   });
-  await expect(dialog.getByText(/5 MB/).last()).toBeVisible();
+  await expect(receipt(dialog).getByText(/5 MB/).last()).toBeVisible();
   await expect(
-    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Scan with AI", exact: true }),
   ).toBeDisabled();
-  await expect(dialog.getByLabel("Description", { exact: true })).toHaveValue(
+  await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
     "Manual draft stays intact",
   );
   await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
     "81.27",
   );
   expect(providerRequests).toBe(0);
-  await dialog
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
+  await closeEditor(dialog);
   expect((await transactions(page)).length).toBe(before.length);
 });
 
@@ -847,27 +1156,29 @@ test("AI scan fills a reviewed draft only, then a chosen account saves to the re
   const before = await transactions(page);
   const dialog = await openEditor(page);
   await scan(dialog);
-  await expect(dialog.getByLabel("AI receipt review")).toContainText(
+  await expect(receipt(dialog).getByLabel("AI receipt review")).toContainText(
     "INR 125.50",
   );
-  await expect(dialog.getByLabel("AI receipt review")).toContainText(merchant);
-  await expect(dialog.getByLabel("AI receipt review")).toContainText(reference);
+  await expect(receipt(dialog).getByLabel("AI receipt review")).toContainText(
+    merchant,
+  );
+  await expect(receipt(dialog).getByLabel("AI receipt review")).toContainText(
+    reference,
+  );
   await mkdir(path.resolve("artifacts"), { recursive: true });
   await page.screenshot({
     path: path.resolve("artifacts/receipt-review-desktop.png"),
   });
-  await expect(dialog.getByLabel("Description", { exact: true })).toHaveValue(
-    "",
-  );
+  await expect(dialog.locator('textarea[name="description"]')).toHaveValue("");
   await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
     "",
   );
   expect((await transactions(page)).length).toBe(before.length);
 
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Use details", exact: true })
     .click();
-  await expect(dialog.getByLabel("Description", { exact: true })).toHaveValue(
+  await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
     receiptDescription,
   );
   await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
@@ -909,6 +1220,7 @@ test("AI scan fills a reviewed draft only, then a chosen account saves to the re
   await dialog
     .getByRole("combobox", { name: "From account", exact: true })
     .selectOption({ label: bankName });
+  await moreDetails(dialog);
   await dialog
     .getByRole("combobox", { name: "Status", exact: true })
     .selectOption("posted");
@@ -947,9 +1259,12 @@ test("AI scan fills a reviewed draft only, then a chosen account saves to the re
   await page
     .getByRole("button", { name: `Edit ${receiptDescription}`, exact: true })
     .click();
-  const editDialog = page.getByRole("dialog");
+  const editDialog = page.locator(".transaction-modal");
   await expect(
-    editDialog.getByRole("button", { name: "Add from a receipt", exact: true }),
+    editDialog.getByRole("button", { name: "Upload Image", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    editDialog.getByRole("button", { name: "Take Photo", exact: true }),
   ).toHaveCount(0);
   await expect(
     editDialog.getByLabel("Amount · ₹", { exact: true }),
@@ -973,14 +1288,14 @@ test("possible duplicates warn before review and cancellation adds nothing", asy
   const dialog = await openEditor(page);
   await scan(dialog);
   await expect(
-    dialog.getByText("Possible duplicate transactions", { exact: true }),
+    receipt(dialog).getByText("Possible duplicate transactions", {
+      exact: true,
+    }),
   ).toBeVisible();
-  await expect(dialog.getByLabel("AI receipt review")).toContainText(
+  await expect(receipt(dialog).getByLabel("AI receipt review")).toContainText(
     receiptDescription,
   );
-  await dialog
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
+  await closeEditor(dialog);
   expect((await transactions(page)).length).toBe(before.length);
 });
 
@@ -991,32 +1306,28 @@ test("foreign currency stays in review and cannot populate the INR form", async 
   await mockScan(page, scanResult({ currency: "USD", amount: "9.95" }));
   const before = await transactions(page);
   const dialog = await openEditor(page);
-  await dialog
-    .getByLabel("Description", { exact: true })
-    .fill("Manual INR draft");
+  await dialog.locator('textarea[name="description"]').fill("Manual INR draft");
   await dialog.getByLabel("Amount · ₹", { exact: true }).fill("77.89");
   await upload(dialog);
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Scan with AI", exact: true })
     .click();
-  await expect(dialog.getByLabel("AI receipt review")).toContainText(
+  await expect(receipt(dialog).getByLabel("AI receipt review")).toContainText(
     "USD 9.95",
   );
   await expect(
-    dialog.getByRole("button", { name: "Use details", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Use details", exact: true }),
   ).toBeDisabled();
   await expect(
-    dialog.getByText(/these details cannot be applied/),
+    receipt(dialog).getByText(/these details cannot be applied/),
   ).toBeVisible();
-  await expect(dialog.getByLabel("Description", { exact: true })).toHaveValue(
+  await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
     "Manual INR draft",
   );
   await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
     "77.89",
   );
-  await dialog
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
+  await closeEditor(dialog);
   expect((await transactions(page)).length).toBe(before.length);
 });
 
@@ -1035,16 +1346,20 @@ test("failed payment remains Needs review even when Posted is selected", async (
   );
   const dialog = await openEditor(page);
   await scan(dialog);
-  await expect(dialog.getByLabel("AI receipt review")).toContainText("failed");
-  await dialog
+  await expect(receipt(dialog).getByLabel("AI receipt review")).toContainText(
+    "failed",
+  );
+  await receipt(dialog)
     .getByRole("button", { name: "Use details", exact: true })
     .click();
+  await moreDetails(dialog);
   await expect(
     dialog.getByRole("combobox", { name: "Status", exact: true }),
   ).toHaveValue("pending_review");
   await dialog
     .getByRole("combobox", { name: "From account", exact: true })
     .selectOption({ label: bankName });
+  await moreDetails(dialog);
   await dialog
     .getByRole("combobox", { name: "Status", exact: true })
     .selectOption("posted");
@@ -1078,13 +1393,14 @@ test("unknown date stays empty instead of becoming today and saves to Needs revi
   );
   const dialog = await openEditor(page);
   await scan(dialog);
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Use details", exact: true })
     .click();
   await expect(dialog.getByLabel("Date", { exact: true })).toHaveValue("");
   await dialog
     .getByRole("combobox", { name: "From account", exact: true })
     .selectOption({ label: bankName });
+  await moreDetails(dialog);
   await dialog
     .getByRole("combobox", { name: "Status", exact: true })
     .selectOption("posted");
@@ -1109,7 +1425,7 @@ test("removing the image or cancelling ignores a late AI result and preserves ma
   const before = await transactions(page);
   const dialog = await openEditor(page);
   await dialog
-    .getByLabel("Description", { exact: true })
+    .locator('textarea[name="description"]')
     .fill("Synthetic untouched draft");
   await dialog.getByLabel("Amount · ₹", { exact: true }).fill("42.81");
 
@@ -1128,14 +1444,16 @@ test("removing the image or cancelling ignores a late AI result and preserves ma
     });
     await upload(dialog);
     const requestStarted = page.waitForRequest("**/api/ai/receipt");
-    await dialog
+    await receipt(dialog)
       .getByRole("button", { name: "Scan with AI", exact: true })
       .click();
     await requestStarted;
     await expect(
-      dialog.getByRole("button", { name: "Cancel scan", exact: true }),
+      receipt(dialog).getByRole("button", { name: "Cancel scan", exact: true }),
     ).toBeVisible();
-    await dialog.getByRole("button", { name: buttonName, exact: true }).click();
+    await receipt(dialog)
+      .getByRole("button", { name: buttonName, exact: true })
+      .click();
     release();
     await expect.poll(() => handled).toBe(true);
     await page.evaluate(
@@ -1145,9 +1463,9 @@ test("removing the image or cancelling ignores a late AI result and preserves ma
         ),
     );
     await expect(
-      dialog.getByRole("button", { name: "Use details", exact: true }),
+      receipt(dialog).getByRole("button", { name: "Use details", exact: true }),
     ).toHaveCount(0);
-    await expect(dialog.getByLabel("Description", { exact: true })).toHaveValue(
+    await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
       "Synthetic untouched draft",
     );
     await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
@@ -1155,9 +1473,7 @@ test("removing the image or cancelling ignores a late AI result and preserves ma
     );
     await page.unroute("**/api/ai/receipt");
   }
-  await dialog
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
+  await closeEditor(dialog);
   expect((await transactions(page)).length).toBe(before.length);
 });
 
@@ -1174,22 +1490,22 @@ test("provider failure can be retried without overwriting a manual draft", async
   const before = await transactions(page);
   const dialog = await openEditor(page);
   await dialog
-    .getByLabel("Description", { exact: true })
+    .locator('textarea[name="description"]')
     .fill("Synthetic draft before outage");
   await dialog.getByLabel("Amount · ₹", { exact: true }).fill("33.21");
   await upload(dialog);
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Scan with AI", exact: true })
     .click();
   await expect(
-    dialog.getByText("Receipt scanning is temporarily unavailable.", {
+    receipt(dialog).getByText("Receipt scanning is temporarily unavailable.", {
       exact: true,
     }),
   ).toBeVisible();
   await expect(
-    dialog.getByRole("button", { name: "Use details", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Use details", exact: true }),
   ).toHaveCount(0);
-  await expect(dialog.getByLabel("Description", { exact: true })).toHaveValue(
+  await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
     "Synthetic draft before outage",
   );
   await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
@@ -1197,18 +1513,16 @@ test("provider failure can be retried without overwriting a manual draft", async
   );
   await page.unroute("**/api/ai/receipt");
   await mockScan(page);
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Scan with AI", exact: true })
     .click();
   await expect(
-    dialog.getByRole("button", { name: "Use details", exact: true }),
+    receipt(dialog).getByRole("button", { name: "Use details", exact: true }),
   ).toBeVisible();
-  await expect(dialog.getByLabel("Description", { exact: true })).toHaveValue(
+  await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
     "Synthetic draft before outage",
   );
-  await dialog
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
+  await closeEditor(dialog);
   expect((await transactions(page)).length).toBe(before.length);
 });
 
@@ -1222,11 +1536,13 @@ test("receipt review fits a 360px screen and editing resets confirmation", async
   const dialog = await openEditor(page);
   await scan(dialog);
   await assertNoOverflow(page);
-  await dialog.getByLabel("AI receipt review").scrollIntoViewIfNeeded();
+  await receipt(dialog)
+    .getByLabel("AI receipt review")
+    .scrollIntoViewIfNeeded();
   await page.screenshot({
     path: path.resolve("artifacts/receipt-review-mobile.png"),
   });
-  await dialog
+  await receipt(dialog)
     .getByRole("button", { name: "Use details", exact: true })
     .click();
   await dialog
@@ -1246,8 +1562,6 @@ test("receipt review fits a 360px screen and editing resets confirmation", async
     dialog.getByRole("button", { name: "Save transaction", exact: true }),
   ).toBeDisabled();
   await assertNoOverflow(page);
-  await dialog
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
+  await closeEditor(dialog);
   expect((await transactions(page)).length).toBe(before.length);
 });

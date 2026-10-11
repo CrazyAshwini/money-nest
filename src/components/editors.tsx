@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Decimal from "decimal.js";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { Modal, Field } from "./ui";
 import {
@@ -133,6 +133,7 @@ export function RecordEditor({
     ),
   );
   const [receipt, setReceipt] = useState<AppliedReceipt | null>(null);
+  const transactionDetails = useRef<HTMLDetailsElement>(null);
   const [receiptReviewed, setReceiptReviewed] = useState(false);
   function updateTransaction<K extends keyof TransactionValues>(
     key: K,
@@ -421,6 +422,7 @@ export function RecordEditor({
       name={name}
       type={type}
       value={transaction[name]}
+      aria-label={name === "amount" ? "Amount · ₹" : undefined}
       onChange={(event) => updateTransaction(name, event.target.value)}
       required={required}
       step={type === "number" ? "0.01" : undefined}
@@ -470,12 +472,20 @@ export function RecordEditor({
       </select>
     </Field>
   );
+  const transactionTitle = `${editor.type === "transaction" && editor.record ? "Edit" : "Add New"} ${human(transaction.kind).replace(/\b\w/g, (letter) => letter.toUpperCase())}`;
   return (
     <Modal
-      title={`${record && editor.type !== "snapshot" ? "Edit" : "Add"} ${names[editor.type]}`}
+      title={
+        editor.type === "transaction"
+          ? transactionTitle
+          : `${record && editor.type !== "snapshot" ? "Edit" : "Add"} ${names[editor.type]}`
+      }
       onClose={onClose}
       className={
         editor.type === "transaction" ? "transaction-modal" : undefined
+      }
+      overlayClassName={
+        editor.type === "transaction" ? "transaction-modal-overlay" : undefined
       }
       description={
         editor.type === "allocation"
@@ -483,7 +493,7 @@ export function RecordEditor({
           : editor.type === "transaction"
             ? editor.record
               ? "Review the transaction details."
-              : "Add the essentials, or scan a receipt."
+              : "Fill in the details or scan a receipt to auto-populate."
             : undefined
       }
     >
@@ -549,29 +559,11 @@ export function RecordEditor({
           )}
           {editor.type === "transaction" && (
             <>
-              <Field label="Description" className="full">
-                {transactionInput("description", "text", true)}
-              </Field>
-              <Field label="Amount · ₹">
-                {transactionInput("amount", "number", true)}
-              </Field>
-              <Field label="Date">
-                {transactionInput("occurredOn", "date")}
-              </Field>
-              <Field label="Transaction type">
-                <select
-                  name="kind"
-                  value={transaction.kind}
-                  onChange={(event) =>
-                    updateTransaction("kind", event.target.value)
-                  }
-                >
-                  {TRANSACTION_KINDS.map((k) => (
-                    <option key={k} value={k}>
-                      {human(k)[0].toUpperCase() + human(k).slice(1)}
-                    </option>
-                  ))}
-                </select>
+              <Field label="Amount · ₹" className="transaction-amount">
+                <span className="transaction-amount-control">
+                  <span aria-hidden="true">₹</span>
+                  {transactionInput("amount", "number", true)}
+                </span>
               </Field>
               <Field label="Category">
                 <select
@@ -586,6 +578,30 @@ export function RecordEditor({
                   ))}
                 </select>
               </Field>
+              <div className="transaction-source full">
+                <span>Platform / Source</span>
+                <button
+                  type="button"
+                  className={
+                    transaction.merchant ? "source-chip" : "source-add"
+                  }
+                  aria-label={
+                    transaction.merchant
+                      ? "Edit platform or source"
+                      : "Add platform or source"
+                  }
+                  onClick={() => {
+                    if (!transactionDetails.current) return;
+                    transactionDetails.current.open = true;
+                    transactionDetails.current
+                      .querySelector<HTMLInputElement>('input[name="merchant"]')
+                      ?.focus();
+                  }}
+                >
+                  <Plus size={17} aria-hidden="true" />
+                  {transaction.merchant && <span>{transaction.merchant}</span>}
+                </button>
+              </div>
               {!incomingTransaction &&
                 transactionAccount(
                   "fromAccountId",
@@ -599,13 +615,47 @@ export function RecordEditor({
                   !twoAccountTransaction && !showTransactionStatus,
                 )}
               {showTransactionStatus && transactionStatus}
-              <details className="transaction-details full">
+              <Field label="Description" className="full">
+                <textarea
+                  name="description"
+                  value={transaction.description}
+                  onChange={(event) =>
+                    updateTransaction("description", event.target.value)
+                  }
+                  placeholder={`What was this ${human(transaction.kind)} for?`}
+                  rows={2}
+                  maxLength={200}
+                  required
+                />
+              </Field>
+              <Field label="Date" className="full">
+                {transactionInput("occurredOn", "date")}
+              </Field>
+              <details
+                ref={transactionDetails}
+                className="transaction-details full"
+              >
                 <summary>
                   <span>More details</span>
                   <small>Optional</small>
                   <ChevronDown size={15} aria-hidden="true" />
                 </summary>
                 <div className="form-grid">
+                  <Field label="Transaction type">
+                    <select
+                      name="kind"
+                      value={transaction.kind}
+                      onChange={(event) =>
+                        updateTransaction("kind", event.target.value)
+                      }
+                    >
+                      {TRANSACTION_KINDS.map((k) => (
+                        <option key={k} value={k}>
+                          {human(k)[0].toUpperCase() + human(k).slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
                   {!twoAccountTransaction &&
                     transactionAccount(
                       incomingTransaction ? "fromAccountId" : "toAccountId",

@@ -9,12 +9,14 @@ export function Modal({
   children,
   onClose,
   className = "",
+  overlayClassName = "",
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   onClose: () => void;
   className?: string;
+  overlayClassName?: string;
 }) {
   return (
     <Dialog.Root
@@ -24,7 +26,7 @@ export function Modal({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Overlay className="modal-overlay" />
+        <Dialog.Overlay className={`modal-overlay ${overlayClassName}`} />
         <Dialog.Content className={`modal ${className}`}>
           <div className="modal-heading">
             <div>
