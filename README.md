@@ -59,7 +59,7 @@ Vercel AI Gateway remains an explicit alternative: set `RECEIPT_AI_PROVIDER=gate
 
 The image preview stays in memory and the app does not retain the original receipt. Cloud providers handle the selected image under their service policies. Scanning never saves a transaction: use the details, select the correct source or destination account, check the editable values and review confirmation, then save. Uncertain or failed payments remain in Needs review. This feature currently requires the local private profile; demo transactions and the CSV importer remain separate.
 
-Upload, review, authentication, server-key isolation and saving are tested with synthetic data. Live Gemini extraction still requires an owner-configured Google key; automated tests use synthetic credentials and mock extraction. See [receipt AI verification](docs/receipt-ai-verification.md).
+Upload, review, authentication, server-key isolation and saving are tested with synthetic data. Live Gemini extraction was verified with a fully fictional receipt: amount, currency and date matched the source, and identifying fields were omitted. Automated tests use synthetic credentials and mock extraction; no service key is published. See [receipt AI verification](docs/receipt-ai-verification.md).
 
 ## Connect a dedicated Supabase project
 
