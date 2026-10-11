@@ -4,12 +4,21 @@ import { CATEGORIES, TRANSACTION_KINDS, type Transaction } from "./types";
 import { isoDateSchema, positiveMoneySchema } from "./validation";
 
 export const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
-export const RECEIPT_AI_MODELS = [
+export const RECEIPT_GATEWAY_MODELS = [
   { id: "openai/gpt-5.4-nano", label: "Everyday receipts" },
   { id: "openai/gpt-6-luna", label: "Advanced receipts" },
   { id: "openai/gpt-6.1-sol", label: "Hard-to-read receipts" },
 ] as const;
-export const DEFAULT_RECEIPT_AI_MODEL = RECEIPT_AI_MODELS[0].id;
+export const RECEIPT_GEMINI_MODELS = [
+  { id: "gemini-3.5-flash-lite", label: "Everyday receipts" },
+] as const;
+export const RECEIPT_AI_MODELS = [
+  ...RECEIPT_GEMINI_MODELS.map((model) => ({ ...model, provider: "gemini" as const })),
+  ...RECEIPT_GATEWAY_MODELS.map((model) => ({ ...model, provider: "gateway" as const })),
+] as const;
+export type ReceiptAIProvider = "gemini" | "gateway";
+export const DEFAULT_RECEIPT_AI_MODEL = RECEIPT_GEMINI_MODELS[0].id;
+export const DEFAULT_RECEIPT_GATEWAY_MODEL = RECEIPT_GATEWAY_MODELS[0].id;
 const optionalText = (max: number) => z.string().max(max).nullable();
 /** All absent/uncertain fields must be null. No account IDs or ownership come from AI. */
 export const receiptExtractionSchema = z.object({
@@ -48,6 +57,7 @@ export interface ReceiptAISettings {
   configured: boolean;
   provider: string;
   model: string;
+  requiresRedaction: boolean;
   models?: ReadonlyArray<{ id: string; label: string }>;
 }
 

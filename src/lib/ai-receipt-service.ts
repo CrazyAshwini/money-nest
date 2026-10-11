@@ -2,7 +2,9 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { createGateway, generateText, Output } from "ai";
+import { createGoogle } from "@ai-sdk/google";
 import { z } from "zod";
+import { prepareGeminiReceiptImage, ReceiptImageError } from "./receipt-image";
 import {
   MAX_RECEIPT_BYTES,
   receiptExtractionSchema,
@@ -10,10 +12,15 @@ import {
   type ReceiptExtraction,
   RECEIPT_AI_MODELS,
   DEFAULT_RECEIPT_AI_MODEL,
+  DEFAULT_RECEIPT_GATEWAY_MODEL,
+  RECEIPT_GEMINI_MODELS,
+  RECEIPT_GATEWAY_MODELS,
+  type ReceiptAIProvider,
+  type ReceiptAISettings,
   detectReceiptMediaType,
 } from "./receipt-scan";
 
-export const RECEIPT_PROVIDER = "Vercel AI Gateway";
+export const RECEIPT_PROVIDER = "Google Gemini";
 export const RECEIPT_MODELS = RECEIPT_AI_MODELS;
 export const DEFAULT_RECEIPT_MODEL = DEFAULT_RECEIPT_AI_MODEL;
 const MAX_MULTIPART_BYTES = 6 * 1024 * 1024;
@@ -32,29 +39,74 @@ export class ReceiptAIError extends Error {
 }
 
 export interface ReceiptAIConfiguration {
+  provider: ReceiptAIProvider;
   apiKey: string;
   model: string;
 }
 
-const ownerConfigurationSchema = z.object({
-  apiKey: z
-    .string()
-    .trim()
-    .min(20)
-    .max(512)
-    .regex(/^[!-~]+$/),
-  model: z
-    .string()
-    .refine((model) => RECEIPT_MODELS.some((item) => item.id === model)),
-});
+const ownerConfigurationSchema = z
+  .object({
+    provider: z.enum(["gemini", "gateway"]),
+    apiKey: z.string().trim().min(20).max(512).regex(/^[!-~]+$/),
+    model: z.string(),
+  })
+  .refine(({ provider, model }) =>
+    RECEIPT_MODELS.some((item) => item.provider === provider && item.id === model),
+  );
+
+const selectedProvider = () => {
+  const value = process.env.RECEIPT_AI_PROVIDER?.trim() || "gemini";
+  return value === "gemini" || value === "gateway" ? value : null;
+};
+
+export function receiptProviderMetadata(provider: ReceiptAIProvider) {
+  return provider === "gemini"
+    ? { provider: "Google Gemini", requiresRedaction: true }
+    : { provider: "Vercel AI Gateway", requiresRedaction: false };
+}
 
 /** The app owner configures one server key. No user-supplied profile key is read. */
 export function readReceiptAIConfiguration(): ReceiptAIConfiguration | null {
+  const provider = selectedProvider();
+  if (!provider) return null;
   const result = ownerConfigurationSchema.safeParse({
-    apiKey: process.env.AI_GATEWAY_API_KEY,
-    model: process.env.AI_GATEWAY_MODEL?.trim() || DEFAULT_RECEIPT_MODEL,
+    provider,
+    apiKey:
+      provider === "gemini"
+        ? process.env.GOOGLE_GENERATIVE_AI_API_KEY
+        : process.env.AI_GATEWAY_API_KEY,
+    model:
+      provider === "gemini"
+        ? process.env.GOOGLE_GENERATIVE_AI_MODEL?.trim() || DEFAULT_RECEIPT_MODEL
+        : process.env.AI_GATEWAY_MODEL?.trim() || DEFAULT_RECEIPT_GATEWAY_MODEL,
   });
   return result.success ? result.data : null;
+}
+
+/** Public metadata reflects the chosen provider even before its owner key exists. */
+export function readReceiptAISettings(): ReceiptAISettings {
+  const provider = selectedProvider();
+  if (!provider)
+    return {
+      configured: false,
+      provider: "Unavailable",
+      model: "",
+      models: [],
+      requiresRedaction: true,
+    };
+  const models =
+    provider === "gemini" ? RECEIPT_GEMINI_MODELS : RECEIPT_GATEWAY_MODELS;
+  const requestedModel =
+    provider === "gemini"
+      ? process.env.GOOGLE_GENERATIVE_AI_MODEL?.trim()
+      : process.env.AI_GATEWAY_MODEL?.trim();
+  const configuration = readReceiptAIConfiguration();
+  return {
+    ...receiptProviderMetadata(provider),
+    configured: Boolean(configuration),
+    model: models.find((model) => model.id === requestedModel)?.id ?? models[0].id,
+    models,
+  };
 }
 
 /** Count actual streamed bytes rather than trusting Content-Length. */
@@ -84,7 +136,10 @@ export async function readBoundedBody(request: Request, maxBytes: number) {
   return Buffer.concat(chunks, size);
 }
 
-export async function readReceiptUpload(request: Request) {
+export async function readReceiptUpload(
+  request: Request,
+  expected: Pick<ReceiptAIConfiguration, "provider" | "model">,
+) {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().startsWith("multipart/form-data;"))
     throw new ReceiptAIError(
@@ -107,15 +162,40 @@ export async function readReceiptUpload(request: Request) {
   } finally {
     raw.fill(0);
   }
+  // Bind this consent to the provider and model that the user actually reviewed.
+  if (
+    form.getAll("provider").length !== 1 ||
+    form.get("provider") !== expected.provider ||
+    form.getAll("model").length !== 1 ||
+    form.get("model") !== expected.model
+  )
+    throw new ReceiptAIError(
+      "provider_changed",
+      "The receipt AI service or model changed. Refresh the scanner and review the connection before uploading again.",
+      409,
+    );
   if (form.getAll("consent").length !== 1 || form.get("consent") !== "true")
     throw new ReceiptAIError(
       "consent_required",
       "Confirm that this image may be sent to cloud AI.",
       400,
     );
+  const redacted = form.getAll("redacted");
+  if (
+    expected.provider === "gemini" &&
+    (redacted.length !== 1 || redacted[0] !== "true")
+  )
+    throw new ReceiptAIError(
+      "redaction_required",
+      "Remove personal, sensitive and confidential details from the image, then confirm it is redacted before using Gemini.",
+      400,
+    );
   if (
     form.getAll("image").length !== 1 ||
-    [...form.keys()].some((key) => key !== "image" && key !== "consent")
+    (redacted.length > 0 && (redacted.length !== 1 || redacted[0] !== "true")) ||
+    [...form.keys()].some(
+      (key) => !["image", "consent", "redacted", "provider", "model"].includes(key),
+    )
   )
     throw new ReceiptAIError(
       "invalid_image",
@@ -148,6 +228,7 @@ export async function readReceiptUpload(request: Request) {
   return {
     bytes,
     mediaType,
+    redacted: redacted.length === 1 && redacted[0] === "true",
     fingerprint: createHash("sha256").update(bytes).digest("hex"),
   };
 }
@@ -203,23 +284,50 @@ export async function scanReceiptWithAI(input: {
   bytes: Uint8Array;
   mediaType: "image/png" | "image/jpeg" | "image/webp";
   signal?: AbortSignal;
+  redacted?: boolean;
 }): Promise<ReceiptExtraction> {
-  if (!RECEIPT_MODELS.some((model) => model.id === input.configuration.model))
+  const validated = ownerConfigurationSchema.safeParse(input.configuration);
+  if (!validated.success)
     throw new ReceiptAIError(
       "invalid_settings",
       "Receipt AI is unavailable. Contact the app owner to check its configuration.",
       400,
     );
-  const gateway = createGateway({ apiKey: input.configuration.apiKey });
+  const configuration = validated.data;
+  if (configuration.provider === "gemini" && input.redacted !== true)
+    throw new ReceiptAIError(
+      "redaction_required",
+      "Confirm that personal, sensitive and confidential details have been removed before using Gemini.",
+      400,
+    );
+  let sanitizedImage: Buffer | undefined;
   try {
+    let imageBytes = input.bytes;
+    let mediaType = input.mediaType;
+    if (configuration.provider === "gemini") {
+      // Re-encoding strips hidden EXIF/XMP/GPS data before any Google request exists.
+      const prepared = await prepareGeminiReceiptImage(imageBytes, mediaType);
+      sanitizedImage = prepared.bytes;
+      imageBytes = sanitizedImage;
+      mediaType = prepared.mediaType;
+    }
+    // Exactly one selected provider is instantiated. Failures never fall back to a paid service.
+    const model =
+      configuration.provider === "gemini"
+        ? createGoogle({ apiKey: configuration.apiKey })(configuration.model)
+        : createGateway({ apiKey: configuration.apiKey })(configuration.model);
     const { output } = await generateText({
-      model: gateway(input.configuration.model),
-      system: RECEIPT_EXTRACTION_PROMPT,
+      model,
+      system:
+        RECEIPT_EXTRACTION_PROMPT +
+        (configuration.provider === "gemini"
+          ? "\nThis image was supplied as redacted data. Do not reconstruct concealed details or extract personal identifiers. Leave accountHint and externalReference null."
+          : ""),
       messages: [
         {
           role: "user",
           content: [
-            { type: "file", data: input.bytes, mediaType: input.mediaType },
+            { type: "file", data: imageBytes, mediaType },
           ],
         },
       ],
@@ -235,9 +343,23 @@ export async function scanReceiptWithAI(input: {
         recordOutputs: false,
       },
     });
-    return normalizeReceiptExtraction(output);
+    const extraction = normalizeReceiptExtraction(output);
+    // Redacted Gemini inputs must never produce reconstructed identifying references.
+    return configuration.provider === "gemini"
+      ? { ...extraction, accountHint: null, externalReference: null }
+      : extraction;
   } catch (error) {
+    if (error instanceof ReceiptImageError)
+      throw new ReceiptAIError(
+        error.code,
+        error.code === "image_too_large"
+          ? "Choose an image smaller than 25 megapixels and 5 MB."
+          : "Choose a valid PNG, JPEG or WebP image.",
+        error.code === "image_too_large" ? 413 : 400,
+      );
     throw receiptProviderFailure(error);
+  } finally {
+    sanitizedImage?.fill(0);
   }
 }
 
@@ -280,7 +402,9 @@ export function receiptProviderFailure(error: unknown): ReceiptAIError {
   if (
     name === "NoOutputGeneratedError" ||
     name === "AI_NoOutputGeneratedError" ||
-    name === "TypeValidationError"
+    name === "TypeValidationError" ||
+    name === "AI_TypeValidationError" ||
+    name === "ZodError"
   )
     return new ReceiptAIError(
       "unreadable_receipt",

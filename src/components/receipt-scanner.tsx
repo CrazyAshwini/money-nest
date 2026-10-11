@@ -9,6 +9,7 @@ import {
   normalizeReceiptExtraction,
   receiptDraft,
   validateReceiptFile,
+  type ReceiptAISettings,
   type ReceiptScanResult,
 } from "@/lib/receipt-scan";
 import type { Transaction } from "@/lib/types";
@@ -20,12 +21,6 @@ export type AppliedReceipt = {
   requiresPendingReview: boolean;
 };
 
-type AiSettings = {
-  configured: boolean;
-  provider: string;
-  model: string;
-};
-
 export function ReceiptScanner({
   onApply,
 }: {
@@ -34,13 +29,15 @@ export function ReceiptScanner({
   const { mode, data, userId } = useFinance();
   const panelId = useId();
   const [open, setOpen] = useState(false);
-  const [settings, setSettings] = useState<AiSettings | null>(null);
+  const [settings, setSettings] = useState<ReceiptAISettings | null>(null);
   const [checking, setChecking] = useState(false);
   const [image, setImage] = useState<{ file: File; url: string } | null>(null);
   const [result, setResult] = useState<ReceiptScanResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [settingsError, setSettingsError] = useState("");
   const [applied, setApplied] = useState(false);
+  const [redacted, setRedacted] = useState(false);
   const scanRequest = useRef<AbortController | null>(null);
   const settingsRequest = useRef<AbortController | null>(null);
   const imageUrl = useRef<string | null>(null);
@@ -64,11 +61,14 @@ export function ReceiptScanner({
   }
 
   async function checkSettings() {
+    const previousProvider = settings?.provider;
     settingsRequest.current?.abort();
     const request = new AbortController();
     settingsRequest.current = request;
     setChecking(true);
-    setError("");
+    setSettings(null);
+    setRedacted(false);
+    setSettingsError("");
     try {
       const response = await fetch("/api/ai/settings", {
         cache: "no-store",
@@ -78,15 +78,34 @@ export function ReceiptScanner({
       if (request.signal.aborted || settingsRequest.current !== request) return;
       if (!response.ok)
         throw new Error(body.error || "AI settings could not be loaded.");
+      if (
+        typeof body.configured !== "boolean" ||
+        typeof body.model !== "string" ||
+        !body.model ||
+        !(
+          (body.provider === "Google Gemini" &&
+            body.requiresRedaction === true) ||
+          (body.provider === "Vercel AI Gateway" &&
+            body.requiresRedaction === false)
+        )
+      )
+        throw new Error(
+          "Receipt AI provider information could not be confirmed. Try again.",
+        );
       setSettings({
-        configured: body.configured === true,
-        provider: "Vercel AI Gateway",
-        model: typeof body.model === "string" ? body.model : "",
+        configured: body.configured,
+        provider: body.provider,
+        model: body.model,
+        requiresRedaction: body.requiresRedaction,
       });
+      if (body.provider !== previousProvider) {
+        setResult(null);
+        setApplied(false);
+      }
     } catch (failure) {
       if (request.signal.aborted || settingsRequest.current !== request) return;
       setSettings(null);
-      setError(
+      setSettingsError(
         failure instanceof Error
           ? failure.message
           : "AI settings could not be loaded.",
@@ -115,6 +134,7 @@ export function ReceiptScanner({
     setImage(null);
     setResult(null);
     setApplied(false);
+    setRedacted(false);
     setError("");
   }
 
@@ -132,7 +152,14 @@ export function ReceiptScanner({
   }
 
   async function scan() {
-    if (!image || !settings?.configured || !signedIn || busy) return;
+    if (
+      !image ||
+      !settings?.configured ||
+      !signedIn ||
+      busy ||
+      (settings.requiresRedaction && !redacted)
+    )
+      return;
     cancelScan();
     const request = new AbortController();
     scanRequest.current = request;
@@ -144,6 +171,12 @@ export function ReceiptScanner({
     const form = new FormData();
     form.set("image", image.file);
     form.set("consent", "true");
+    form.set(
+      "provider",
+      settings.provider === "Google Gemini" ? "gemini" : "gateway",
+    );
+    form.set("model", settings.model);
+    if (settings.requiresRedaction) form.set("redacted", "true");
     try {
       const response = await fetch("/api/ai/receipt", {
         method: "POST",
@@ -152,10 +185,29 @@ export function ReceiptScanner({
       });
       const body = await response.json();
       if (request.signal.aborted || version !== generation.current) return;
-      if (!response.ok)
+      if (!response.ok) {
+        if (body.code === "provider_changed") {
+          setSettings(null);
+          setRedacted(false);
+          setSettingsError(
+            typeof body.error === "string"
+              ? body.error
+              : "Receipt AI settings changed. Refresh availability and try again.",
+          );
+          return;
+        }
         throw new Error(
           body.error || "The image could not be scanned. Try again.",
         );
+      }
+      if (body.provider !== settings.provider) {
+        setSettings(null);
+        setRedacted(false);
+        setSettingsError(
+          "Receipt AI provider changed. Check availability and try again.",
+        );
+        return;
+      }
       if (
         typeof body.fingerprint !== "string" ||
         !/^[a-f0-9]{64}$/.test(body.fingerprint)
@@ -170,7 +222,7 @@ export function ReceiptScanner({
       setResult({
         extraction,
         fingerprint: body.fingerprint,
-        provider: "Vercel AI Gateway",
+        provider: body.provider,
         model: typeof body.model === "string" ? body.model : settings.model,
       });
     } catch (failure) {
@@ -287,16 +339,58 @@ export function ReceiptScanner({
                   receipt scanning. You can still add transactions manually.
                 </p>
               ) : null}
-              <p className="receipt-disclosure">
-                Image sent to Vercel AI Gateway and OpenAI for extraction.
-                Review before saving.
-              </p>
+              {settings?.provider === "Google Gemini" ? (
+                <div className="receipt-warning">
+                  <p id={`${panelId}-gemini-terms`}>
+                    Scanning sends this image to Google Gemini. Google may use
+                    uploads and responses to improve its products, and human
+                    reviewers may review them.
+                  </p>
+                  <p id={`${panelId}-redaction-guidance`}>
+                    Do not upload personal, confidential, or sensitive
+                    information. Remove names, addresses, phone/email,
+                    bank/card/account/UPI details, personal references, and QR
+                    codes/barcodes before scanning.
+                  </p>
+                  {image && (
+                    <label className="receipt-review-check">
+                      <input
+                        type="checkbox"
+                        aria-describedby={`${panelId}-gemini-terms ${panelId}-redaction-guidance`}
+                        checked={redacted}
+                        disabled={busy}
+                        onChange={(event) => setRedacted(event.target.checked)}
+                      />
+                      <span>
+                        I removed personal, banking and other sensitive
+                        information from this image
+                      </span>
+                    </label>
+                  )}
+                </div>
+              ) : settings?.provider === "Vercel AI Gateway" ? (
+                <p className="receipt-disclosure">
+                  Image sent to Vercel AI Gateway and OpenAI for extraction.
+                  Review before saving.
+                </p>
+              ) : (
+                <p className="receipt-disclosure">
+                  The cloud destination will be shown when receipt AI
+                  availability is confirmed.
+                </p>
+              )}
               <div className="receipt-actions">
                 <button
                   type="button"
                   className="button"
                   onClick={() => void scan()}
-                  disabled={!image || !settings?.configured || checking || busy}
+                  disabled={
+                    !image ||
+                    !settings?.configured ||
+                    checking ||
+                    busy ||
+                    Boolean(settings?.requiresRedaction && !redacted)
+                  }
                 >
                   <ScanLine size={14} aria-hidden="true" />{" "}
                   {busy ? "Scanning…" : "Scan with AI"}
@@ -413,6 +507,11 @@ export function ReceiptScanner({
                 </div>
               )}
             </>
+          )}
+          {settingsError && (
+            <p className="error" role="alert">
+              {settingsError}
+            </p>
           )}
           {error && (
             <p className="error" role="alert">

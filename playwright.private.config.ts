@@ -20,6 +20,12 @@ process.env.FINANCE_PRIVATE_E2E_ROOT = testRoot;
 process.env.FINANCE_PRIVATE_DIR = testRoot;
 process.env.FINANCE_PRIVATE_TEST_MODE = "true";
 process.env.FINANCE_PRIVATE_ENABLED = "true";
+// Private-profile tests never inherit an owner's cloud credentials.
+process.env.RECEIPT_AI_PROVIDER = "gemini";
+process.env.AI_GATEWAY_API_KEY = "";
+process.env.GOOGLE_GENERATIVE_AI_API_KEY = "";
+process.env.GEMINI_API_KEY = "";
+process.env.GOOGLE_API_KEY = "";
 
 export default defineConfig({
   testDir: "./tests/private-e2e",
@@ -53,6 +59,11 @@ export default defineConfig({
       FINANCE_PRIVATE_ENABLED: "true",
       FINANCE_PRIVATE_TEST_MODE: "true",
       FINANCE_PRIVATE_DIR: testRoot,
+      RECEIPT_AI_PROVIDER: "gemini",
+      AI_GATEWAY_API_KEY: "",
+      GOOGLE_GENERATIVE_AI_API_KEY: "",
+      GEMINI_API_KEY: "",
+      GOOGLE_API_KEY: "",
       // An extra isolation guard if the explicit test override is unavailable.
       LOCALAPPDATA: testRoot,
     },

@@ -17,7 +17,6 @@ import {
 import type { WorkspaceData } from "../../src/lib/types";
 import {
   DEFAULT_RECEIPT_AI_MODEL,
-  RECEIPT_AI_MODELS,
   type ReceiptExtraction,
   type ReceiptScanResult,
 } from "../../src/lib/receipt-scan";
@@ -32,6 +31,13 @@ const merchant = "Synthetic Shopping Corner";
 const reference = "SYNTHETIC-PAYMENT-RECEIPT-1";
 const receiptDescription = "Synthetic receipt shopping";
 const fingerprint = "1".repeat(64);
+const redactionLabel =
+  "I removed personal, banking and other sensitive information from this image";
+type ReceiptProvider = "Google Gemini" | "Vercel AI Gateway";
+const syntheticModel = (provider: ReceiptProvider) =>
+  provider === "Google Gemini"
+    ? "synthetic-gemini-model"
+    : "synthetic-gateway-model";
 const reviewLabel =
   "I checked the extracted details, selected the correct account, and reviewed possible duplicates.";
 let png = Buffer.from(
@@ -93,7 +99,11 @@ async function assertNoOverflow(page: Page) {
   expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.viewport + 1);
 }
 
-async function mockSettings(page: Page, configured = true) {
+async function mockSettings(
+  page: Page,
+  configured = true,
+  provider: ReceiptProvider = "Vercel AI Gateway",
+) {
   await page.route("**/api/ai/settings", async (route) => {
     // Browser mocks never create a real credential or contact a cloud provider.
     expect(route.request().method()).toBe("GET");
@@ -104,9 +114,9 @@ async function mockSettings(page: Page, configured = true) {
         available: true,
         configured,
         ownerManaged: true,
-        provider: "Vercel AI Gateway",
-        model: DEFAULT_RECEIPT_AI_MODEL,
-        models: RECEIPT_AI_MODELS,
+        provider,
+        model: syntheticModel(provider),
+        requiresRedaction: provider === "Google Gemini",
       },
     });
   });
@@ -114,6 +124,7 @@ async function mockSettings(page: Page, configured = true) {
 
 function scanResult(
   overrides: Partial<ReceiptExtraction> = {},
+  provider: ReceiptProvider = "Vercel AI Gateway",
 ): ReceiptScanResult {
   return {
     extraction: {
@@ -133,8 +144,8 @@ function scanResult(
       ...overrides,
     },
     fingerprint,
-    provider: "Vercel AI Gateway",
-    model: DEFAULT_RECEIPT_AI_MODEL,
+    provider,
+    model: syntheticModel(provider),
   };
 }
 
@@ -144,8 +155,24 @@ async function mockScan(page: Page, response = scanResult()) {
     const contentType = route.request().headers()["content-type"];
     expect(contentType).toContain("multipart/form-data");
     const body = route.request().postDataBuffer()?.toString("utf8") ?? "";
-    expect(body.includes('name="consent"')).toBe(true);
-    expect(body.includes("true")).toBe(true);
+    const form = await new Response(
+      new Uint8Array(route.request().postDataBuffer() ?? []),
+      {
+        headers: { "Content-Type": contentType },
+      },
+    ).formData();
+    const requiresRedaction = response.provider === "Google Gemini";
+    expect(form.getAll("consent")).toEqual(["true"]);
+    expect(form.getAll("provider")).toEqual([
+      requiresRedaction ? "gemini" : "gateway",
+    ]);
+    expect(form.getAll("model")).toEqual([response.model]);
+    expect(form.getAll("redacted")).toEqual(requiresRedaction ? ["true"] : []);
+    expect([...form.keys()].sort()).toEqual(
+      requiresRedaction
+        ? ["consent", "image", "model", "provider", "redacted"]
+        : ["consent", "image", "model", "provider"],
+    );
     expect(body.includes(profileName)).toBe(false);
     expect(body.toLowerCase().includes(email)).toBe(false);
     expect(body.includes(owner)).toBe(false);
@@ -287,11 +314,15 @@ test("real AI endpoints protect sessions and origins and reject user-owned confi
     available: true,
     configured: false,
     ownerManaged: true,
+    provider: "Google Gemini",
+    requiresRedaction: true,
   });
   const noKey = await page.request.post("/api/ai/receipt", {
     headers: { Origin: baseURL },
     multipart: {
       consent: "true",
+      provider: "gemini",
+      model: DEFAULT_RECEIPT_AI_MODEL,
       image: { name: "synthetic.png", mimeType: "image/png", buffer: png },
     },
   });
@@ -342,6 +373,9 @@ test("AI settings are read-only and offer no user key controls", async ({
   const panel = page.locator("#ai");
   await expect(panel).toBeVisible();
   await expect(panel.getByText(/app owner/).first()).toBeVisible();
+  await expect(panel.getByText("Google Gemini", { exact: true })).toBeVisible();
+  await expect(panel.getByText(/human reviewers/)).toBeVisible();
+  await expect(panel.getByText(/Vercel AI Gateway|OpenAI/)).toHaveCount(0);
   await expect(panel.locator("input, select, textarea")).toHaveCount(0);
   await expect(
     panel.getByRole("button", {
@@ -352,7 +386,9 @@ test("AI settings are read-only and offer no user key controls", async ({
     panel.getByRole("link", { name: /Get.*(?:API )?key|Gateway dashboard/i }),
   ).toHaveCount(0);
   await expect(
-    panel.getByText(/AI_GATEWAY_API_KEY|AI_GATEWAY_MODEL|\.env/),
+    panel.getByText(
+      /AI_GATEWAY_API_KEY|AI_GATEWAY_MODEL|GEMINI_API_KEY|RECEIPT_AI_PROVIDER|\.env/,
+    ),
   ).toHaveCount(0);
   await panel
     .getByRole("button", { name: "Check availability", exact: true })
@@ -395,6 +431,357 @@ test("unconfigured AI asks the owner to enable scanning without changing manual 
   expect(
     after.find((row) => row.description === "Manual synthetic payment")?.amount,
   ).toBe("21.43");
+});
+
+test("Gemini requires redaction confirmation, resets it for a replacement image, and scans only the acknowledged upload", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 850 });
+  await mockSettings(page, true, "Google Gemini");
+  let scanRequests = 0;
+  await page.route("**/api/ai/receipt", async (route) => {
+    scanRequests++;
+    const contentType = route.request().headers()["content-type"];
+    const form = await new Response(
+      new Uint8Array(route.request().postDataBuffer() ?? []),
+      {
+        headers: { "Content-Type": contentType },
+      },
+    ).formData();
+    expect(form.getAll("consent")).toEqual(["true"]);
+    expect(form.getAll("redacted")).toEqual(["true"]);
+    expect(form.getAll("provider")).toEqual(["gemini"]);
+    expect(form.getAll("model")).toEqual([syntheticModel("Google Gemini")]);
+    expect([...form.keys()].sort()).toEqual([
+      "consent",
+      "image",
+      "model",
+      "provider",
+      "redacted",
+    ]);
+    await route.fulfill({
+      status: 200,
+      json: scanResult(
+        { externalReference: null, accountHint: null },
+        "Google Gemini",
+      ),
+    });
+  });
+  const before = await transactions(page);
+  const dialog = await openEditor(page);
+  await dialog
+    .getByLabel("Description", { exact: true })
+    .fill("Synthetic Gemini manual draft");
+  await dialog.getByLabel("Amount · ₹", { exact: true }).fill("41.28");
+  await expect(
+    dialog.getByText(/Google may use uploads and responses/),
+  ).toBeVisible();
+  await expect(dialog.getByText(/human reviewers may review/)).toBeVisible();
+  await expect(
+    dialog.getByText(/Remove names, addresses, phone\/email/),
+  ).toBeVisible();
+  await expect(dialog.getByText(/QR codes\/barcodes/)).toBeVisible();
+  await expect(dialog.getByText(/Vercel AI Gateway|OpenAI/)).toHaveCount(0);
+  await upload(dialog);
+  const confirmation = dialog.getByRole("checkbox", {
+    name: redactionLabel,
+    exact: true,
+  });
+  const scanButton = dialog.getByRole("button", {
+    name: "Scan with AI",
+    exact: true,
+  });
+  await expect(confirmation).not.toBeChecked();
+  await expect(scanButton).toBeDisabled();
+  expect(scanRequests).toBe(0);
+  await confirmation.check();
+  await expect(scanButton).toBeEnabled();
+  await upload(dialog, "replacement-synthetic-image.png");
+  await expect(confirmation).not.toBeChecked();
+  await expect(scanButton).toBeDisabled();
+  expect(scanRequests).toBe(0);
+  await confirmation.check();
+  await assertNoOverflow(page);
+  await confirmation.scrollIntoViewIfNeeded();
+  await mkdir(path.resolve("artifacts"), { recursive: true });
+  await page.screenshot({
+    path: path.resolve("artifacts/receipt-gemini-redaction-mobile.png"),
+  });
+  await scanButton.click();
+  await expect(dialog.getByLabel("AI receipt review")).toContainText(
+    "INR 125.50",
+  );
+  expect(scanRequests).toBe(1);
+  await expect(dialog.getByLabel("Description", { exact: true })).toHaveValue(
+    "Synthetic Gemini manual draft",
+  );
+  await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
+    "41.28",
+  );
+  expect((await transactions(page)).length).toBe(before.length);
+  await dialog
+    .getByRole("button", { name: "Remove image", exact: true })
+    .click();
+  await expect(confirmation).toHaveCount(0);
+  await upload(dialog, "new-synthetic-image.png");
+  await expect(confirmation).not.toBeChecked();
+  await expect(scanButton).toBeDisabled();
+  await dialog
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+  expect((await transactions(page)).length).toBe(before.length);
+});
+
+test("provider changes clear Gemini acknowledgement and Gateway keeps its original scan flow", async ({
+  page,
+}) => {
+  await mockSettings(page, true, "Google Gemini");
+  const dialog = await openEditor(page);
+  await upload(dialog);
+  await dialog
+    .getByRole("checkbox", { name: redactionLabel, exact: true })
+    .check();
+  await dialog
+    .getByRole("button", { name: "Add from a receipt", exact: true })
+    .click();
+  await page.unroute("**/api/ai/settings");
+  await mockSettings(page);
+  await mockScan(page);
+  await dialog
+    .getByRole("button", { name: "Add from a receipt", exact: true })
+    .click();
+  await expect(dialog.getByText(/Vercel AI Gateway and OpenAI/)).toBeVisible();
+  await expect(
+    dialog.getByRole("checkbox", { name: redactionLabel, exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+  ).toBeEnabled();
+  await dialog
+    .getByRole("button", { name: "Scan with AI", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Use details", exact: true }),
+  ).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Add from a receipt", exact: true })
+    .click();
+  await page.unroute("**/api/ai/settings");
+  await mockSettings(page, true, "Google Gemini");
+  await dialog
+    .getByRole("button", { name: "Add from a receipt", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("checkbox", { name: redactionLabel, exact: true }),
+  ).not.toBeChecked();
+  await expect(
+    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByRole("button", { name: "Use details", exact: true }),
+  ).toHaveCount(0);
+  await dialog
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+});
+
+test("stale provider rejection preserves the draft and requires fresh provider acknowledgement", async ({
+  page,
+}) => {
+  let switchedProvider = false;
+  await page.route("**/api/ai/settings", async (route) => {
+    const provider: ReceiptProvider = switchedProvider
+      ? "Google Gemini"
+      : "Vercel AI Gateway";
+    await route.fulfill({
+      status: 200,
+      json: {
+        configured: true,
+        provider,
+        model: syntheticModel(provider),
+        requiresRedaction: switchedProvider,
+      },
+    });
+  });
+  let scanRequests = 0;
+  await page.route("**/api/ai/receipt", async (route) => {
+    scanRequests++;
+    const form = await new Response(
+      new Uint8Array(route.request().postDataBuffer() ?? []),
+      {
+        headers: { "Content-Type": route.request().headers()["content-type"] },
+      },
+    ).formData();
+    expect(form.getAll("provider")).toEqual(["gateway"]);
+    expect(form.getAll("model")).toEqual([syntheticModel("Vercel AI Gateway")]);
+    switchedProvider = true;
+    await route.fulfill({
+      status: 409,
+      json: {
+        code: "provider_changed",
+        error:
+          "Receipt AI settings changed. Refresh availability and try again.",
+      },
+    });
+  });
+  const before = await transactions(page);
+  const dialog = await openEditor(page);
+  await dialog
+    .getByLabel("Description", { exact: true })
+    .fill("Synthetic stale provider draft");
+  await dialog.getByLabel("Amount · ₹", { exact: true }).fill("61.82");
+  await upload(dialog);
+  await dialog
+    .getByRole("button", { name: "Scan with AI", exact: true })
+    .click();
+  await expect(
+    dialog.getByText(
+      "Receipt AI settings changed. Refresh availability and try again.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByRole("button", { name: "Use details", exact: true }),
+  ).toHaveCount(0);
+  await expect(dialog.getByLabel("Description", { exact: true })).toHaveValue(
+    "Synthetic stale provider draft",
+  );
+  await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
+    "61.82",
+  );
+  expect(scanRequests).toBe(1);
+  expect((await transactions(page)).length).toBe(before.length);
+  await dialog
+    .getByRole("button", { name: "Retry receipt AI", exact: true })
+    .click();
+  await expect(
+    dialog.getByText(/Google may use uploads and responses/),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("checkbox", { name: redactionLabel, exact: true }),
+  ).not.toBeChecked();
+  await expect(
+    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+  ).toBeDisabled();
+  await dialog
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+});
+
+test("unknown or incomplete provider metadata fails closed without a misleading disclosure", async ({
+  page,
+}) => {
+  let metadataState: "incomplete" | "unknown" | "valid" = "incomplete";
+  await page.route("**/api/ai/settings", async (route) => {
+    await route.fulfill({
+      status: 200,
+      json:
+        metadataState === "valid"
+          ? {
+              configured: true,
+              provider: "Google Gemini",
+              model: "synthetic-gemini-model",
+              requiresRedaction: true,
+            }
+          : metadataState === "unknown"
+            ? {
+                configured: true,
+                provider: "Unknown synthetic provider",
+                model: "synthetic-model",
+                requiresRedaction: false,
+              }
+            : {
+                configured: true,
+                provider: "Google Gemini",
+                model: "synthetic-gemini-model",
+              },
+    });
+  });
+  let scanRequests = 0;
+  await page.route("**/api/ai/receipt", async (route) => {
+    scanRequests++;
+    await route.fulfill({
+      status: 500,
+      json: { error: "Unexpected synthetic request." },
+    });
+  });
+  const dialog = await openEditor(page);
+  await upload(dialog);
+  await expect(
+    dialog.getByText(
+      "Receipt AI provider information could not be confirmed. Try again.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByText(/Vercel AI Gateway|OpenAI|Google may use/),
+  ).toHaveCount(0);
+  expect(scanRequests).toBe(0);
+  await upload(dialog, "synthetic-metadata-replacement.png");
+  await expect(
+    dialog.getByText(
+      "Receipt AI provider information could not be confirmed. Try again.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Remove image", exact: true })
+    .click();
+  await expect(
+    dialog.getByText(
+      "Receipt AI provider information could not be confirmed. Try again.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await upload(dialog, "synthetic-metadata-new.png");
+  await expect(
+    dialog.getByText(
+      "Receipt AI provider information could not be confirmed. Try again.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  metadataState = "unknown";
+  await dialog
+    .getByRole("button", { name: "Retry receipt AI", exact: true })
+    .click();
+  await expect(
+    dialog.getByText(
+      "Receipt AI provider information could not be confirmed. Try again.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByText(/Vercel AI Gateway|OpenAI|Google may use/),
+  ).toHaveCount(0);
+  expect(scanRequests).toBe(0);
+  metadataState = "valid";
+  await dialog
+    .getByRole("button", { name: "Retry receipt AI", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("checkbox", { name: redactionLabel, exact: true }),
+  ).not.toBeChecked();
+  await expect(
+    dialog.getByText(
+      "Receipt AI provider information could not be confirmed. Try again.",
+      { exact: true },
+    ),
+  ).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Scan with AI", exact: true }),
+  ).toBeDisabled();
+  await dialog
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
 });
 
 test("invalid or oversized images stay local and preserve manual form values", async ({

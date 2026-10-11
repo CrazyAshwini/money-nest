@@ -2,7 +2,10 @@ import { defineConfig, devices } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DEFAULT_RECEIPT_AI_MODEL } from "./src/lib/receipt-scan";
+import {
+  DEFAULT_RECEIPT_AI_MODEL,
+  DEFAULT_RECEIPT_GATEWAY_MODEL,
+} from "./src/lib/receipt-scan";
 
 const prefix = "finance-os-private-e2e-";
 const testRoot = process.env.FINANCE_PRIVATE_RECEIPT_E2E_ROOT
@@ -23,7 +26,12 @@ process.env.FINANCE_PRIVATE_TEST_MODE = "true";
 process.env.FINANCE_PRIVATE_ENABLED = "true";
 // Never inherit an app owner's real cloud credentials into test processes.
 process.env.AI_GATEWAY_API_KEY = "";
-process.env.AI_GATEWAY_MODEL = DEFAULT_RECEIPT_AI_MODEL;
+process.env.AI_GATEWAY_MODEL = DEFAULT_RECEIPT_GATEWAY_MODEL;
+process.env.RECEIPT_AI_PROVIDER = "gemini";
+process.env.GOOGLE_GENERATIVE_AI_API_KEY = "";
+process.env.GEMINI_API_KEY = "";
+process.env.GOOGLE_API_KEY = "";
+process.env.GOOGLE_GENERATIVE_AI_MODEL = DEFAULT_RECEIPT_AI_MODEL;
 
 export default defineConfig({
   testDir: "./tests/private-e2e",
@@ -58,7 +66,12 @@ export default defineConfig({
       FINANCE_PRIVATE_TEST_MODE: "true",
       FINANCE_PRIVATE_DIR: testRoot,
       AI_GATEWAY_API_KEY: "",
-      AI_GATEWAY_MODEL: DEFAULT_RECEIPT_AI_MODEL,
+      AI_GATEWAY_MODEL: DEFAULT_RECEIPT_GATEWAY_MODEL,
+      RECEIPT_AI_PROVIDER: "gemini",
+      GOOGLE_GENERATIVE_AI_API_KEY: "",
+      GEMINI_API_KEY: "",
+      GOOGLE_API_KEY: "",
+      GOOGLE_GENERATIVE_AI_MODEL: DEFAULT_RECEIPT_AI_MODEL,
       // Extra isolation if an explicit test override becomes unavailable.
       LOCALAPPDATA: testRoot,
     },

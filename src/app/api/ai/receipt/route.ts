@@ -9,7 +9,7 @@ import { privateRequestAllowed } from "@/lib/private-request";
 import { privateResponse } from "@/lib/private-profile-http";
 import {
   acquireReceiptScan,
-  RECEIPT_PROVIDER,
+  receiptProviderMetadata,
   ReceiptAIError,
   readReceiptUpload,
   scanReceiptWithAI,
@@ -49,18 +49,20 @@ export async function POST(request: NextRequest) {
         409,
       );
     release = acquireReceiptScan(ownerId);
-    const upload = await readReceiptUpload(request);
+    const metadata = receiptProviderMetadata(configuration.provider);
+    const upload = await readReceiptUpload(request, configuration);
     image = upload.bytes;
     const extraction = await scanReceiptWithAI({
       configuration,
       bytes: image,
       mediaType: upload.mediaType,
       signal: request.signal,
+      redacted: upload.redacted,
     });
     return privateResponse({
       extraction,
       fingerprint: upload.fingerprint,
-      provider: RECEIPT_PROVIDER,
+      provider: metadata.provider,
       model: configuration.model,
     });
   } catch (error) {

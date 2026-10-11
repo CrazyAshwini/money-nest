@@ -39,17 +39,27 @@ All money arithmetic uses decimal strings and `decimal.js`; chart positions alon
 
 ## Owner setup for receipt AI
 
-The app owner configures receipt AI once. Users do not supply, replace or remove service keys. Get a Vercel AI Gateway API key from the [official setup guide](https://vercel.com/docs/ai-gateway/getting-started#create-an-api-key), set `AI_GATEWAY_API_KEY` in the ignored root `.env.local` file, and restart the app. On a hosted server, set it through the hosting provider's secret environment settings. Keep the variable server-only, without a `NEXT_PUBLIC_` prefix. Scans use the owner's AI service credits.
+The app owner configures receipt AI once. Users do not supply, replace or remove service keys. The default provider is Google Gemini, using `gemini-3.5-flash-lite` for image input and structured extraction. Get an owner key from [Google AI Studio](https://aistudio.google.com/apikey), verify that its project is on Free Tier, and set these server-only variables in the ignored root `.env.local` file:
 
-An optional `AI_GATEWAY_MODEL` selects `openai/gpt-5.4-nano` (the default, eligible for free Gateway credits), `openai/gpt-6-luna` or `openai/gpt-6.1-sol` (paid Gateway credits required). The model and credentials are controlled by the server. Settings → Receipt AI shows availability only; the browser API rejects attempts to configure keys.
+```dotenv
+RECEIPT_AI_PROVIDER=gemini
+GOOGLE_GENERATIVE_AI_API_KEY=your-owner-key
+GOOGLE_GENERATIVE_AI_MODEL=gemini-3.5-flash-lite
+```
 
-As verified on 9 October 2026, Vercel offers [$5/month in free Gateway credits](https://vercel.com/docs/ai-gateway/pricing) for a restricted model catalog with lower rate limits. The default model appears in the [eligible catalog](https://vercel.com/ai-gateway/models?freeTier=true). A [valid payment method is required](https://vercel.com/docs/ai-gateway/getting-started#create-an-api-key) to unlock free credits. This is limited usage, not an unlimited free API; buying credits moves the account to the paid tier and ends its monthly free allocation.
+Restart the app after changing the environment. On a hosted server, use the hosting provider's secret environment settings. Never use a `NEXT_PUBLIC_` prefix. Settings → Receipt AI shows provider availability only; the browser API rejects attempts to configure keys. A missing Gemini key, invalid model, exhausted quota or provider error does not switch to Gateway or a paid model.
 
-Signed-in users choose Add transaction → Add from a receipt, select an image no larger than 5 MB, then Scan with AI. This sends only the selected image to Vercel AI Gateway and the configured OpenAI model; existing accounts, transactions and profile details are not sent. The app uses AI SDK 7 and structured output, validates the result, and performs duplicate checks locally.
+As verified on 11 October 2026, Gemini 3.5 Flash-Lite has free standard input/output tokens on Google's limited [Free Tier](https://ai.google.dev/gemini-api/docs/pricing). A free project does not require upgrading billing; a billing-enabled project can incur charges even with this model. Quotas vary by project and are shared across its keys. [ChatGPT and API billing are separate](https://developers.openai.com/api/docs/pricing); a free ChatGPT account does not provide an ongoing free API for this app.
+
+Google's [unpaid-service terms](https://ai.google.dev/gemini-api/terms) permit product improvement and human review and prohibit personal, sensitive or confidential submissions. Remove all such information before uploading, including names, contact details, account/card/UPI details, identifying references, QR codes and barcodes. The app requires a fresh redaction confirmation for each image; it does not automatically redact or prove that an image is safe. Use only non-sensitive, redacted receipts with the free provider. The Gemini API terms also restrict use to professional/business purposes and users aged 18 or older; regional availability and billing requirements apply. Private consumer receipts should use a provider whose terms permit that use.
+
+Signed-in users choose Add transaction → Add from a receipt, select an image no larger than 5 MB, confirm redaction for Gemini, then Scan with AI. Gemini images are decoded and re-encoded without hidden metadata; visible content still requires manual redaction. The upload is bound to the provider and model displayed before scanning; a server configuration change requires refreshing availability and confirming again. Existing accounts, transactions and profile details are not sent. The app uses AI SDK 7 and structured output, validates the result, and performs duplicate checks locally.
+
+Vercel AI Gateway remains an explicit alternative: set `RECEIPT_AI_PROVIDER=gateway` and `AI_GATEWAY_API_KEY`. Optional `AI_GATEWAY_MODEL` accepts `openai/gpt-5.4-nano` (default), `openai/gpt-6-luna` or `openai/gpt-6.1-sol`. Gateway [free credits](https://vercel.com/docs/ai-gateway/pricing) have a restricted catalog and require account verification; [setup](https://vercel.com/docs/ai-gateway/getting-started#create-an-api-key) may require a valid payment method. The app never enables billing or purchases credits.
 
 The image preview stays in memory and the app does not retain the original receipt. Cloud providers handle the selected image under their service policies. Scanning never saves a transaction: use the details, select the correct source or destination account, check the editable values and review confirmation, then save. Uncertain or failed payments remain in Needs review. This feature currently requires the local private profile; demo transactions and the CSV importer remain separate.
 
-Upload, review, authentication, server-key isolation and saving are tested with synthetic data. Live cloud extraction awaits an owner-configured service key; automated browser tests mock the extraction response. See [receipt AI verification](docs/receipt-ai-verification.md).
+Upload, review, authentication, server-key isolation and saving are tested with synthetic data. Live Gemini extraction still requires an owner-configured Google key; automated tests use synthetic credentials and mock extraction. See [receipt AI verification](docs/receipt-ai-verification.md).
 
 ## Connect a dedicated Supabase project
 

@@ -25,16 +25,26 @@ export function ReceiptAISettingsPanel() {
           throw new Error(
             result.error || "Receipt AI availability could not be loaded.",
           );
-        if (typeof result.configured !== "boolean")
-          throw new Error("Receipt AI availability could not be loaded.");
+        if (
+          typeof result.configured !== "boolean" ||
+          typeof result.model !== "string" ||
+          !result.model ||
+          !(
+            (result.provider === "Google Gemini" &&
+              result.requiresRedaction === true) ||
+            (result.provider === "Vercel AI Gateway" &&
+              result.requiresRedaction === false)
+          )
+        )
+          throw new Error(
+            "Receipt AI provider information could not be confirmed. Try again.",
+          );
         if (!controller.signal.aborted) {
           setSettings({
             configured: result.configured,
-            provider:
-              typeof result.provider === "string"
-                ? result.provider
-                : "Vercel AI Gateway",
-            model: typeof result.model === "string" ? result.model : "",
+            provider: result.provider,
+            model: result.model,
+            requiresRedaction: result.requiresRedaction,
           });
           setError("");
         }
@@ -72,7 +82,7 @@ export function ReceiptAISettingsPanel() {
           <>
             <div className="settings-row">
               <div>
-                <strong>Receipt scanning</strong>
+                <strong>{settings?.provider || "Receipt scanning"}</strong>
                 <p>
                   Receipt scanning is provided by the app. You do not need an
                   API key.
@@ -103,10 +113,27 @@ export function ReceiptAISettingsPanel() {
                 Checking receipt AI availability…
               </p>
             ) : null}
-            <p className="muted">
-              When you scan an image, it is sent to Vercel AI Gateway and OpenAI
-              for reading. Images are not saved by this app.
-            </p>
+            {settings?.provider === "Google Gemini" ? (
+              <>
+                <p className="muted">
+                  Scans send your image to Google Gemini. Google may use uploads
+                  and responses to improve its products, and human reviewers may
+                  review them.
+                </p>
+                <p className="muted">
+                  Do not upload personal, confidential, or sensitive
+                  information. Remove names, addresses, phone/email,
+                  bank/card/account/UPI details, personal references, and QR
+                  codes/barcodes before scanning. Images are not saved by this
+                  app.
+                </p>
+              </>
+            ) : settings?.provider === "Vercel AI Gateway" ? (
+              <p className="muted">
+                When you scan an image, it is sent to Vercel AI Gateway and
+                OpenAI for reading. Images are not saved by this app.
+              </p>
+            ) : null}
             {error && (
               <p className="error" role="alert">
                 {error}
