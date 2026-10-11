@@ -4,8 +4,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Transaction, WorkspaceData } from "./types";
+import { NextRequest } from "next/server";
+import { emptyCommerce, type ReviewedOrderDraft } from "./commerce";
+vi.mock("server-only", () => ({}));
+import { GET as ordersGET, POST as ordersPOST } from "../app/api/orders/route";
 import {
   commitPrivateImport,
+  commitPrivateCommerce,
+  readPrivateCommerce,
   getPrivateProfileStatus,
   loginPrivateProfile,
   logoutPrivateProfile,
@@ -104,6 +110,59 @@ afterEach(async () => {
 });
 
 describe("isolated private profile storage", () => {
+  function orderDraft(overrides: Partial<ReviewedOrderDraft> = {}): ReviewedOrderDraft {
+    return { candidateId: "synthetic-order", sourceType: "manual", platform: "Imaginary shop", merchant: "Imaginary shop", description: "Synthetic order for isolated storage", orderReferenceHash: null, orderReferenceMasked: null, occurredOn: "2026-10-09", status: "completed", amount: "100.00", amountRole: "amount_paid", currency: "INR", paymentStatus: "successful", financialEvent: "purchase", category: "Shopping", items: [], sourceImageIndices: [], confidence: "high", warnings: [], expectedRefundAmount: null, expectedRefundBy: null, action: "create", confirmed: true, fromAccountId: ACCOUNT, externalPayer: null, matchedTransactionId: null, confirmedDistinct: false, sourceFingerprint: null, ...overrides };
+  }
+  const orderCommand = (orders = [orderDraft()]) => ({ action: "commit_orders", idempotencyKey: "a".repeat(64), orders });
+  function orderRequest(sessionToken: string, value?: unknown, headers: Record<string, string> = {}) {
+    return new NextRequest("http://127.0.0.1:3000/api/orders", { method: value === undefined ? "GET" : "POST", headers: { host: "127.0.0.1:3000", origin: "http://127.0.0.1:3000", cookie: `finance-os-private-session=${sessionToken}`, "content-type": "application/json", ...headers }, ...(value === undefined ? {} : { body: JSON.stringify(value) }) });
+  }
+  it("loads an older encrypted profile with empty commerce without rewriting it", async () => {
+    const { sessionToken } = await established();
+    const file = path.join(testDirectory, "profile.enc.json"); const before = await fs.readFile(file, "utf8");
+    expect((await readPrivateCommerce(sessionToken)).commerce).toEqual(emptyCommerce());
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+  });
+  it("atomically saves encrypted orders and ledger entries and replays without another write", async () => {
+    const { sessionToken } = await established();
+    const first = await commitPrivateCommerce(sessionToken, orderCommand());
+    expect(first.commerce.orders).toHaveLength(1);
+    expect((await readPrivateProfile(sessionToken))?.workspace.transactions).toHaveLength(1);
+    const file = path.join(testDirectory, "profile.enc.json"); const encrypted = await fs.readFile(file, "utf8");
+    expect(encrypted).not.toContain("Synthetic order for isolated storage");
+    const replay = await commitPrivateCommerce(sessionToken, orderCommand());
+    expect(replay.result.duplicate).toBe(true); expect(await fs.readFile(file, "utf8")).toBe(encrypted);
+  });
+  it("rejects a failing later order without changing encrypted ledger or commerce", async () => {
+    const { sessionToken } = await established();
+    const file = path.join(testDirectory, "profile.enc.json"); const before = await fs.readFile(file, "utf8");
+    await expect(commitPrivateCommerce(sessionToken, orderCommand([orderDraft(), orderDraft({ candidateId: "forged-second", fromAccountId: randomUUID() })]))).rejects.toMatchObject({ code: "invalid" });
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+    expect((await readPrivateCommerce(sessionToken)).commerce.orders).toHaveLength(0);
+    expect((await readPrivateProfile(sessionToken))?.workspace.transactions).toHaveLength(0);
+  });
+  it("protects linked transaction money while allowing a merchant-description correction", async () => {
+    const { sessionToken } = await established(); await commitPrivateCommerce(sessionToken, orderCommand());
+    const purchase = (await readPrivateProfile(sessionToken))!.workspace.transactions[0];
+    await expect(savePrivateRecord(sessionToken, "transactions", { ...purchase, amount: "110.00" })).rejects.toMatchObject({ code: "invalid" });
+    await savePrivateRecord(sessionToken, "transactions", { ...purchase, description: "Corrected synthetic description" });
+    expect((await readPrivateProfile(sessionToken))?.workspace.transactions[0].description).toBe("Corrected synthetic description");
+  });
+  it("rejects unauthorized order read/write and foreign origins before parsing request content", async () => {
+    const { sessionToken } = await established();
+    expect((await ordersGET(orderRequest("0".repeat(64)))).status).toBe(401);
+    expect((await ordersPOST(orderRequest("0".repeat(64), orderCommand(), { "content-length": "99999999" }))).status).toBe(401);
+    expect((await ordersPOST(orderRequest(sessionToken, orderCommand(), { origin: "https://foreign.example.test" }))).status).toBe(403);
+    expect((await ordersPOST(orderRequest(sessionToken, orderCommand(), { "content-length": "99999999" }))).status).toBe(413);
+    expect((await readPrivateCommerce(sessionToken)).commerce.orders).toHaveLength(0);
+  });
+  it("returns private no-store order responses and handles an approved write", async () => {
+    const { sessionToken } = await established();
+    const response = await ordersPOST(orderRequest(sessionToken, orderCommand()));
+    expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const json = await response.json(); expect(json.commerce.orders).toHaveLength(1); expect(json.result.transactionsCreated).toBe(1);
+    const loaded = await ordersGET(orderRequest(sessionToken)); expect((await loaded.json()).commerce.orders).toHaveLength(1);
+  });
   it("authenticates server API access with only an owner ID and leaves the encrypted profile unchanged", async () => {
     const { sessionToken } = await established();
     const file = path.join(testDirectory, "profile.enc.json");

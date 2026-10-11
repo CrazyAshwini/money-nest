@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { PrivateProfilePage } from "./private-profile";
+import { OrdersPage } from "./orders-page";
 import { Section, Stat, Badge, Empty, downloadFile } from "./ui";
 import {
   AccountBreakdown,
@@ -84,6 +85,7 @@ const nav = [
   { href: "/loans", title: "Loans & EMIs", icon: HandCoins },
   { href: "/split-bills", title: "Split bills", icon: Users },
   { href: "/imports", title: "Imports", icon: Upload },
+  { href: "/orders", title: "Orders & refunds", icon: ArrowLeftRight },
   { href: "/analytics", title: "Analytics", icon: ChartNoAxesCombined },
 ];
 const kindLabel = (s: string) => s.replaceAll("_", " ");
@@ -148,6 +150,8 @@ export function FinanceApp() {
                       ? "Split bills"
                       : page === "imports"
                         ? "Statement imports"
+                        : page === "orders"
+                          ? "Orders & refunds"
                         : page === "analytics"
                           ? "Spending analytics"
                           : page === "notifications"
@@ -360,6 +364,8 @@ export function FinanceApp() {
             <GroupsPage id={id} open={open} />
           ) : page === "imports" ? (
             <ImportsPage />
+          ) : page === "orders" ? (
+            <OrdersPage />
           ) : page === "analytics" ? (
             <AnalyticsPage />
           ) : page === "notifications" ? (

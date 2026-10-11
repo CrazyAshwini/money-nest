@@ -14,6 +14,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { OwnedRecord, Transaction, WorkspaceData } from "./types";
 import { validateWorkspaceRecord, workspaceRecordSchemas } from "./validation";
+import { applyCommerceCommand, assertCommerceTransactionEdit, commerceDataSchema, commerceSummary, emptyCommerce, CommerceError, type CommerceData } from "./commerce";
 
 export interface PrivateProfile {
   id: string;
@@ -39,6 +40,7 @@ interface PrivateStore {
   setup?: { tokenHash: string; expiresAt: string };
   sessions: Session[];
   imports: { inputHash: string; imported: number; duplicates: number }[];
+  commerce?: CommerceData;
   failedLogins?: { count: number; windowStartedAt: string };
 }
 interface EncryptedEnvelope {
@@ -256,6 +258,7 @@ async function readStore(dir: string): Promise<PrivateStore | null> {
       !Array.isArray(store.imports)
     )
       throw storageError();
+    if (store.commerce !== undefined) store.commerce = commerceDataSchema.parse(store.commerce);
     return store;
   } catch {
     throw storageError();
@@ -567,6 +570,7 @@ export async function savePrivateRecord<K extends keyof WorkspaceData>(
         { ...input, userId: store.profile.id },
         store.profile.id,
       );
+      if (collection === "transactions") assertCommerceTransactionEdit(store.commerce ?? emptyCommerce(), store.workspace.transactions.find(row => row.id === record.id), record as Transaction);
     } catch {
       throw new PrivateProfileError(
         "invalid",
@@ -593,6 +597,31 @@ export async function savePrivateRecord<K extends keyof WorkspaceData>(
       );
     await writeStore(dir, store);
     return store.workspace;
+  });
+}
+export async function readPrivateCommerce(sessionToken: string) {
+  return withStore(async (_dir, maybeStore) => {
+    const store = requireSession(maybeStore, sessionToken);
+    const commerce = store.commerce ?? emptyCommerce();
+    if (commerce.orders.some(row => row.userId !== store.profile.id) || commerce.refunds.some(row => row.userId !== store.profile.id)) throw storageError();
+    return { commerce, summary: commerceSummary(commerce, store.workspace) };
+  });
+}
+export async function commitPrivateCommerce(sessionToken: string, command: unknown) {
+  return withStore(async (dir, maybeStore) => {
+    const store = requireSession(maybeStore, sessionToken);
+    try {
+      const applied = applyCommerceCommand(store.workspace, store.commerce ?? emptyCommerce(), store.profile.id, command);
+      if (!applied.result.duplicate || applied.result.ordersSaved || applied.result.refundsSaved) {
+        store.workspace = applied.workspace;
+        store.commerce = applied.commerce;
+        await writeStore(dir, store);
+      }
+      return { commerce: applied.commerce, summary: commerceSummary(applied.commerce, applied.workspace), result: applied.result };
+    } catch (error) {
+      if (error instanceof CommerceError) throw new PrivateProfileError("invalid", error.message);
+      throw error;
+    }
   });
 }
 export async function commitPrivateImport(

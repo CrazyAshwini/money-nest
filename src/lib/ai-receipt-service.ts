@@ -6,6 +6,12 @@ import { createGoogle } from "@ai-sdk/google";
 import { z } from "zod";
 import { prepareGeminiReceiptImage, ReceiptImageError } from "./receipt-image";
 import {
+  ORDER_EXTRACTION_PROMPT,
+  orderExtractionSchema,
+  orderGenerationSchema,
+  normalizeOrderExtraction,
+} from "./scan-orders";
+import {
   MAX_RECEIPT_BYTES,
   MAX_RECEIPT_IMAGES,
   receiptExtractionSchema,
@@ -49,11 +55,18 @@ export interface ReceiptAIConfiguration {
 const ownerConfigurationSchema = z
   .object({
     provider: z.enum(["gemini", "gateway"]),
-    apiKey: z.string().trim().min(20).max(512).regex(/^[!-~]+$/),
+    apiKey: z
+      .string()
+      .trim()
+      .min(20)
+      .max(512)
+      .regex(/^[!-~]+$/),
     model: z.string(),
   })
   .refine(({ provider, model }) =>
-    RECEIPT_MODELS.some((item) => item.provider === provider && item.id === model),
+    RECEIPT_MODELS.some(
+      (item) => item.provider === provider && item.id === model,
+    ),
   );
 
 const selectedProvider = () => {
@@ -79,7 +92,8 @@ export function readReceiptAIConfiguration(): ReceiptAIConfiguration | null {
         : process.env.AI_GATEWAY_API_KEY,
     model:
       provider === "gemini"
-        ? process.env.GOOGLE_GENERATIVE_AI_MODEL?.trim() || DEFAULT_RECEIPT_MODEL
+        ? process.env.GOOGLE_GENERATIVE_AI_MODEL?.trim() ||
+          DEFAULT_RECEIPT_MODEL
         : process.env.AI_GATEWAY_MODEL?.trim() || DEFAULT_RECEIPT_GATEWAY_MODEL,
   });
   return result.success ? result.data : null;
@@ -106,7 +120,8 @@ export function readReceiptAISettings(): ReceiptAISettings {
   return {
     ...receiptProviderMetadata(provider),
     configured: Boolean(configuration),
-    model: models.find((model) => model.id === requestedModel)?.id ?? models[0].id,
+    model:
+      models.find((model) => model.id === requestedModel)?.id ?? models[0].id,
     models,
   };
 }
@@ -198,9 +213,11 @@ export async function readReceiptUpload(
   if (
     files.length < 1 ||
     files.length > MAX_RECEIPT_IMAGES ||
-    (redacted.length > 0 && (redacted.length !== 1 || redacted[0] !== "true")) ||
+    (redacted.length > 0 &&
+      (redacted.length !== 1 || redacted[0] !== "true")) ||
     [...form.keys()].some(
-      (key) => !["image", "consent", "redacted", "provider", "model"].includes(key),
+      (key) =>
+        !["image", "consent", "redacted", "provider", "model"].includes(key),
     )
   )
     throw new ReceiptAIError(
@@ -215,7 +232,9 @@ export async function readReceiptUpload(
       400,
     );
   const imageFiles = files as File[];
-  if (imageFiles.reduce((total, file) => total + file.size, 0) > MAX_RECEIPT_BYTES)
+  if (
+    imageFiles.reduce((total, file) => total + file.size, 0) > MAX_RECEIPT_BYTES
+  )
     throw new ReceiptAIError(
       "too_large",
       "Keep all receipt photos within 5 MB in total.",
@@ -327,7 +346,12 @@ type ReceiptScanInput = {
   | { bytes: Uint8Array; mediaType: ReceiptMediaType; images?: never }
 );
 
-export async function scanReceiptWithAI(input: ReceiptScanInput): Promise<ReceiptExtraction> {
+async function scanStructuredImages<T>(
+  input: ReceiptScanInput,
+  schema: z.ZodType<T>,
+  prompt: string,
+  maxOutputTokens = 4096,
+): Promise<T> {
   const validated = ownerConfigurationSchema.safeParse(input.configuration);
   if (!validated.success)
     throw new ReceiptAIError(
@@ -349,14 +373,20 @@ export async function scanReceiptWithAI(input: ReceiptScanInput): Promise<Receip
       `Upload one receipt with 1–${MAX_RECEIPT_IMAGES} photos.`,
       400,
     );
-  if (images.reduce((total, image) => total + image.byteLength, 0) > MAX_RECEIPT_BYTES)
+  if (
+    images.reduce((total, image) => total + image.byteLength, 0) >
+    MAX_RECEIPT_BYTES
+  )
     throw new ReceiptAIError(
       "too_large",
       "Keep all receipt photos within 5 MB in total.",
       413,
     );
   const mediaTypes = images.map((image) => detectReceiptMediaType(image));
-  if (mediaTypes.some((type) => !type) || (input.mediaType && mediaTypes[0] !== input.mediaType))
+  if (
+    mediaTypes.some((type) => !type) ||
+    (input.mediaType && mediaTypes[0] !== input.mediaType)
+  )
     throw new ReceiptAIError(
       "invalid_image",
       "Choose a valid PNG, JPEG or WebP image for every photo.",
@@ -364,7 +394,11 @@ export async function scanReceiptWithAI(input: ReceiptScanInput): Promise<Receip
     );
   const sanitizedImages: Buffer[] = [];
   try {
-    const content: { type: "file"; data: Uint8Array; mediaType: ReceiptMediaType }[] = [];
+    const content: {
+      type: "file";
+      data: Uint8Array;
+      mediaType: ReceiptMediaType;
+    }[] = [];
     let preparedBytes = 0;
     for (const [index, image] of images.entries()) {
       let imageBytes = image;
@@ -393,7 +427,7 @@ export async function scanReceiptWithAI(input: ReceiptScanInput): Promise<Receip
     const { output } = await generateText({
       model,
       system:
-        RECEIPT_EXTRACTION_PROMPT +
+        prompt +
         (configuration.provider === "gemini"
           ? "\nEvery photo was supplied as redacted data. Do not reconstruct concealed details or extract personal identifiers. Leave accountHint and externalReference null."
           : ""),
@@ -403,8 +437,8 @@ export async function scanReceiptWithAI(input: ReceiptScanInput): Promise<Receip
           content,
         },
       ],
-      output: Output.object({ schema: receiptExtractionSchema }),
-      maxOutputTokens: 4096,
+      output: Output.object({ schema }),
+      maxOutputTokens,
       reasoning: "low",
       maxRetries: 0,
       timeout: 45_000,
@@ -415,11 +449,7 @@ export async function scanReceiptWithAI(input: ReceiptScanInput): Promise<Receip
         recordOutputs: false,
       },
     });
-    const extraction = normalizeReceiptExtraction(output);
-    // Redacted Gemini inputs must never produce reconstructed identifying references.
-    return configuration.provider === "gemini"
-      ? { ...extraction, accountHint: null, externalReference: null }
-      : extraction;
+    return schema.parse(output);
   } catch (error) {
     if (error instanceof ReceiptAIError) throw error;
     if (error instanceof ReceiptImageError)
@@ -434,6 +464,95 @@ export async function scanReceiptWithAI(input: ReceiptScanInput): Promise<Receip
   } finally {
     for (const image of sanitizedImages) image.fill(0);
   }
+}
+
+export async function scanReceiptWithAI(
+  input: ReceiptScanInput,
+): Promise<ReceiptExtraction> {
+  const extraction = normalizeReceiptExtraction(
+    await scanStructuredImages(
+      input,
+      receiptExtractionSchema,
+      RECEIPT_EXTRACTION_PROMPT,
+    ),
+  );
+  // Redacted Gemini inputs must never produce reconstructed identifying references.
+  return input.configuration.provider === "gemini"
+    ? { ...extraction, accountHint: null, externalReference: null }
+    : extraction;
+}
+
+/** All cards are drafts. No existing ledger, account IDs or personal profile data are sent to AI. */
+export async function scanOrderHistoryWithAI(
+  input: ReceiptScanInput & { fingerprint: string; ownerId: string },
+) {
+  try {
+    const output = orderExtractionSchema.parse(
+      await scanStructuredImages(
+        input,
+        orderGenerationSchema,
+        ORDER_EXTRACTION_PROMPT +
+          (input.configuration.provider === "gemini"
+            ? "\nThese are redacted images. Set orderReference to null; never reconstruct or extract an identifying order/reference number."
+            : ""),
+        12288,
+      ),
+    );
+    const referenceHashes = new Map<string, string>();
+    for (const order of output.orders) {
+      const reference = order.orderReference?.replace(/\s+/g, " ").trim();
+      if (reference && input.configuration.provider !== "gemini")
+        referenceHashes.set(
+          reference,
+          createHash("sha256")
+            .update(`private-order-reference:v1:${input.ownerId}:`)
+            .update(reference.toLowerCase())
+            .digest("hex"),
+        );
+    }
+    const normalized = normalizeOrderExtraction(output, {
+      fingerprint: input.fingerprint,
+      provider: input.configuration.provider,
+      imageCount: input.images?.length ?? 1,
+      referenceHashes,
+    });
+    const occurrences = new Map<string, number>();
+    for (const order of normalized.orders) {
+      const identity = createHash("sha256")
+        .update(`private-order-card:v1:${input.ownerId}:`)
+        .update(
+          JSON.stringify({
+            platform: order.platform?.toLowerCase(),
+            merchant: order.merchant?.toLowerCase(),
+            description: order.description?.toLowerCase(),
+            occurredOn: order.occurredOn,
+            amount: order.amount,
+            amountRole: order.amountRole,
+            status: order.status,
+            items: order.items,
+          }),
+        )
+        .digest("hex");
+      const occurrence = occurrences.get(identity) ?? 0;
+      occurrences.set(identity, occurrence + 1);
+      order.candidateId = `${identity}:${occurrence}`;
+    }
+    return normalized;
+  } catch (error) {
+    if (error instanceof ReceiptAIError) throw error;
+    throw receiptProviderFailure(error);
+  }
+}
+
+/** The same order-history screenshots have one batch identity even when reordered. */
+export function orderBatchFingerprint(images: readonly Uint8Array[]): string {
+  const hashes = images
+    .map((image) => createHash("sha256").update(image).digest("hex"))
+    .sort();
+  return createHash("sha256")
+    .update("private-order-images:v1:")
+    .update(JSON.stringify(hashes))
+    .digest("hex");
 }
 
 /** Never return upstream error text, which can contain input, credentials or account details. */

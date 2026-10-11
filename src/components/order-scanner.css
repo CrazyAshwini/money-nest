@@ -1,0 +1,25 @@
+.modal.order-scan-modal {
+  width: 600px;
+}
+.order-scan-intro {
+  color: #687661;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0 0 16px;
+}
+.order-scan-summary > p {
+  color: #687661;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0 0 12px;
+}
+.order-scan-summary a {
+  color: #326a4b;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 600px) {
+  .modal.order-scan-modal {
+    width: 100%;
+  }
+}

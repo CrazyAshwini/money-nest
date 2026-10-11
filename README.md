@@ -27,6 +27,8 @@ Imports retain missing dates, unknown limits, and provisional matches. Known unp
 - Account create/edit/archive, opening dates, reported snapshots, account history, and reconciliation at the reported cutoff.
 - Transaction create/edit/void, account/month/type/review filters, description/reference search, explicit refund links and sanitized CSV exports.
 - Cloud AI receipt scanning inside Add transaction: upload a PNG/JPEG/WebP payment screenshot or shopping receipt, review the extracted details, choose an account, and confirm before saving. Missing dates, unreadable values, failed payments, foreign currency and possible duplicates receive explicit review treatment.
+- Local image previews with photo navigation and 100–300% zoom in both receipt and order scanners.
+- Orders & refunds in the private profile: scan up to three order-history screenshots, review separate orders and items, save history or pending drafts, create a confirmed expense, or link an existing payment. Track cancellation/refund expectations separately and confirm actual incoming credits without duplicating cash movements. See [order and refund verification](docs/commerce-verification.md).
 - Issued statements and payment matching: statement amount, verified paid amount, provisional matches, credits, remaining amount and confirmed due date. Repayments do not count as expenses.
 - Reviewed CSV imports with row errors, duplicate suggestions, explicit approval, deterministic source IDs, and atomic idempotent cloud commits. A fictional sample is available on the Imports screen.
 - Fixed deposit records and pledged card links; institutional/personal loans, exact-dated installments and partial payment allocations.
@@ -78,6 +80,7 @@ npm run test:e2e
 npm run build
 npx playwright test --config playwright.private.config.ts
 npx playwright test --config playwright.receipt.config.ts
+npx playwright test --config playwright.commerce.config.ts
 ```
 
 Finance and import tests exercise exact cents, repayment exclusion, refund caps, missing dates, and idempotency. Database tests execute the migration in embedded PostgreSQL with two owners and mocked Supabase Auth/Storage schemas; this tests actual RLS and SQL constraints, but does not substitute for live Supabase verification. Browser tests cover desktop and mobile workflows and persistence. Private-profile tests use synthetic data in an isolated temporary folder and verify setup, authentication, ownership, origin checks, persistence, encryption, and demo separation; build the production app first.
