@@ -110,13 +110,6 @@ async function closeEditor(dialog: Locator) {
     .click();
 }
 
-async function moreDetails(dialog: Locator) {
-  const details = dialog.locator("details").filter({ hasText: "More details" });
-  if (!(await details.evaluate((node) => (node as HTMLDetailsElement).open))) {
-    await details.locator("summary").click();
-  }
-}
-
 async function upload(dialog: Locator, filename = "synthetic-payment.png") {
   await openScanner(dialog);
   await receipt(dialog)
@@ -477,6 +470,106 @@ test("unconfigured AI asks the owner to enable scanning without changing manual 
   expect(
     after.find((row) => row.description === "Manual synthetic payment")?.amount,
   ).toBe("21.43");
+});
+
+test("expense categories offer matching platforms and custom Stationery saves without extra inputs", async ({
+  page,
+}) => {
+  await mockSettings(page, false);
+  await page.setViewportSize({ width: 320, height: 800 });
+  const before = await transactions(page);
+  const dialog = await openEditor(page);
+  const category = dialog.getByRole("combobox", {
+    name: "Category",
+    exact: true,
+  });
+  const platform = dialog.getByRole("combobox", {
+    name: "Platform / Source",
+    exact: true,
+  });
+  await expect(
+    category.getByRole("option", { name: "Stationery", exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    dialog.getByRole("combobox", { name: "Status", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    dialog.locator("summary", { hasText: "More details" }),
+  ).toHaveCount(0);
+  await category.selectOption("Food");
+  for (const source of ["Swiggy", "Zomato", "Domino's", "Other"])
+    await expect(
+      platform.getByRole("option", { name: source, exact: true }),
+    ).toHaveCount(1);
+  await platform.selectOption("Swiggy");
+  await category.selectOption("Stationery");
+  await expect(platform).toHaveValue("");
+  await expect(
+    platform.getByRole("option", { name: "Swiggy", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    platform.getByRole("option", {
+      name: "Local stationery shop",
+      exact: true,
+    }),
+  ).toHaveCount(1);
+  await platform.selectOption("Other");
+  const customSource = "Synthetic Paper Shop";
+  await dialog
+    .getByLabel("Other platform / source", { exact: true })
+    .fill(customSource);
+  await dialog
+    .getByRole("textbox", { name: "Description", exact: true })
+    .fill("Synthetic stationery expense");
+  await dialog.getByLabel("Amount · ₹", { exact: true }).fill("18.45");
+  await dialog.getByLabel("Date", { exact: true }).fill("2026-10-09");
+  await dialog
+    .getByRole("combobox", { name: "From account", exact: true })
+    .selectOption({ label: bankName });
+  await assertNoOverflow(page);
+  await mkdir(path.resolve("artifacts"), { recursive: true });
+  await dialog.screenshot({
+    path: path.resolve("artifacts/expense-platform-mobile.png"),
+  });
+  await dialog
+    .getByRole("button", { name: "Save transaction", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  const saved = (await transactions(page)).find(
+    (row) => row.description === "Synthetic stationery expense",
+  );
+  expect(await transactions(page)).toHaveLength(before.length + 1);
+  expect(saved).toMatchObject({
+    category: "Stationery",
+    merchant: customSource,
+    amount: "18.45",
+    status: "posted",
+  });
+  await page
+    .getByRole("textbox", { name: "Search transactions", exact: true })
+    .fill("Synthetic stationery expense");
+  await page
+    .getByRole("button", {
+      name: "Edit Synthetic stationery expense",
+      exact: true,
+    })
+    .click();
+  const editDialog = page.locator(".transaction-modal");
+  await expect(
+    editDialog.getByRole("combobox", { name: "Category", exact: true }),
+  ).toHaveValue("Stationery");
+  await editDialog.getByLabel("Amount · ₹", { exact: true }).fill("19.45");
+  await editDialog
+    .getByRole("button", { name: "Save transaction", exact: true })
+    .click();
+  await expect(editDialog).toHaveCount(0);
+  expect(
+    (await transactions(page)).find((row) => row.id === saved?.id),
+  ).toMatchObject({
+    category: "Stationery",
+    merchant: customSource,
+    amount: "19.45",
+  });
 });
 
 test("receipt sheet offers camera and upload, and closing it preserves the expense draft", async ({
@@ -1188,16 +1281,14 @@ test("AI scan fills a reviewed draft only, then a chosen account saves to the re
     "2026-10-09",
   );
   await expect(
-    dialog.getByLabel("Merchant (optional)", { exact: true }),
-  ).toBeHidden();
-  await dialog.locator("summary", { hasText: "More details" }).click();
+    dialog.getByRole("combobox", { name: "Status", exact: true }),
+  ).toHaveCount(0);
   await expect(
-    dialog.getByLabel("Merchant (optional)", { exact: true }),
-  ).toHaveValue(merchant);
+    dialog.locator("summary", { hasText: "More details" }),
+  ).toHaveCount(0);
   await expect(
     dialog.getByLabel("Bank reference", { exact: true }),
-  ).toHaveValue(reference);
-  await dialog.locator("summary", { hasText: "More details" }).click();
+  ).toHaveCount(0);
   await expect(
     dialog.getByRole("combobox", { name: "From account", exact: true }),
   ).toHaveValue("");
@@ -1220,10 +1311,6 @@ test("AI scan fills a reviewed draft only, then a chosen account saves to the re
   await dialog
     .getByRole("combobox", { name: "From account", exact: true })
     .selectOption({ label: bankName });
-  await moreDetails(dialog);
-  await dialog
-    .getByRole("combobox", { name: "Status", exact: true })
-    .selectOption("posted");
   // Editing fields after confirmation requires another deliberate review.
   await dialog
     .getByRole("checkbox", { name: reviewLabel, exact: true })
@@ -1275,8 +1362,15 @@ test("AI scan fills a reviewed draft only, then a chosen account saves to the re
     .click();
   await expect(editDialog).toHaveCount(0);
   expect(
-    (await transactions(page)).find((row) => row.id === saved?.id)?.amount,
-  ).toBe("126.75");
+    (await transactions(page)).find((row) => row.id === saved?.id),
+  ).toMatchObject({
+    amount: "126.75",
+    merchant,
+    externalReference: reference,
+    status: "posted",
+    sourceSystem: "receipt_ai",
+    sourceObjectId: fingerprint,
+  });
 });
 
 test("possible duplicates warn before review and cancellation adds nothing", async ({
@@ -1331,7 +1425,61 @@ test("foreign currency stays in review and cannot populate the INR form", async 
   expect((await transactions(page)).length).toBe(before.length);
 });
 
-test("failed payment remains Needs review even when Posted is selected", async ({
+test("receipt autofill preserves the chosen expense type when AI suggests income", async ({
+  page,
+}) => {
+  const description = "Synthetic mismatched receipt type";
+  await mockSettings(page);
+  await mockScan(
+    page,
+    scanResult({
+      kind: "income",
+      description,
+      amount: "42.17",
+      externalReference: "SYNTHETIC-MISMATCHED-TYPE-1",
+    }),
+  );
+  const before = await transactions(page);
+  const dialog = await openEditor(page);
+  await scan(dialog);
+  await receipt(dialog)
+    .getByRole("button", { name: "Use details", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("heading", { name: "Add New Expense", exact: true }),
+  ).toBeVisible();
+  await expect(dialog.getByText(/receipt suggests.*income/i)).toBeVisible();
+  await expect(
+    dialog.getByRole("combobox", { name: "From account", exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("combobox", { name: "To account", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    dialog.getByRole("combobox", { name: "Status", exact: true }),
+  ).toHaveCount(0);
+  await dialog
+    .getByRole("combobox", { name: "From account", exact: true })
+    .selectOption({ label: bankName });
+  await dialog
+    .getByRole("checkbox", { name: reviewLabel, exact: true })
+    .check();
+  await dialog
+    .getByRole("button", { name: "Save transaction", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  const after = await transactions(page);
+  expect(after).toHaveLength(before.length + 1);
+  expect(after.find((row) => row.description === description)).toMatchObject({
+    kind: "expense",
+    amount: "42.17",
+    status: "pending_review",
+    sourceSystem: "receipt_ai",
+    toAccountId: null,
+  });
+});
+
+test("failed payment remains Needs review without an expense status control", async ({
   page,
 }) => {
   const description = "Synthetic failed payment";
@@ -1352,17 +1500,12 @@ test("failed payment remains Needs review even when Posted is selected", async (
   await receipt(dialog)
     .getByRole("button", { name: "Use details", exact: true })
     .click();
-  await moreDetails(dialog);
   await expect(
     dialog.getByRole("combobox", { name: "Status", exact: true }),
-  ).toHaveValue("pending_review");
+  ).toHaveCount(0);
   await dialog
     .getByRole("combobox", { name: "From account", exact: true })
     .selectOption({ label: bankName });
-  await moreDetails(dialog);
-  await dialog
-    .getByRole("combobox", { name: "Status", exact: true })
-    .selectOption("posted");
   await dialog
     .getByRole("checkbox", { name: reviewLabel, exact: true })
     .check();
@@ -1370,10 +1513,28 @@ test("failed payment remains Needs review even when Posted is selected", async (
     .getByRole("button", { name: "Save transaction", exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
+  const saved = (await transactions(page)).find(
+    (row) => row.description === description,
+  );
+  expect(saved?.status).toBe("pending_review");
+  await page
+    .getByRole("textbox", { name: "Search transactions", exact: true })
+    .fill(description);
+  await page
+    .getByRole("button", { name: `Edit ${description}`, exact: true })
+    .click();
+  const editDialog = page.locator(".transaction-modal");
+  await expect(
+    editDialog.getByRole("combobox", { name: "Status", exact: true }),
+  ).toHaveCount(0);
+  await editDialog.getByLabel("Amount · ₹", { exact: true }).fill("126.25");
+  await editDialog
+    .getByRole("button", { name: "Save transaction", exact: true })
+    .click();
+  await expect(editDialog).toHaveCount(0);
   expect(
-    (await transactions(page)).find((row) => row.description === description)
-      ?.status,
-  ).toBe("pending_review");
+    (await transactions(page)).find((row) => row.id === saved?.id),
+  ).toMatchObject({ amount: "126.25", status: "pending_review" });
 });
 
 test("unknown date stays empty instead of becoming today and saves to Needs review", async ({
@@ -1400,10 +1561,9 @@ test("unknown date stays empty instead of becoming today and saves to Needs revi
   await dialog
     .getByRole("combobox", { name: "From account", exact: true })
     .selectOption({ label: bankName });
-  await moreDetails(dialog);
-  await dialog
-    .getByRole("combobox", { name: "Status", exact: true })
-    .selectOption("posted");
+  await expect(
+    dialog.getByRole("combobox", { name: "Status", exact: true }),
+  ).toHaveCount(0);
   await dialog
     .getByRole("checkbox", { name: reviewLabel, exact: true })
     .check();
@@ -1561,6 +1721,24 @@ test("receipt review fits a 360px screen and editing resets confirmation", async
   await expect(
     dialog.getByRole("button", { name: "Save transaction", exact: true }),
   ).toBeDisabled();
+  await dialog
+    .getByRole("checkbox", { name: reviewLabel, exact: true })
+    .check();
+  await dialog
+    .getByRole("combobox", { name: "Category", exact: true })
+    .selectOption("Stationery");
+  await expect(
+    dialog.getByRole("checkbox", { name: reviewLabel, exact: true }),
+  ).not.toBeChecked();
+  await dialog
+    .getByRole("checkbox", { name: reviewLabel, exact: true })
+    .check();
+  await dialog
+    .getByRole("combobox", { name: "Platform / Source", exact: true })
+    .selectOption("Amazon");
+  await expect(
+    dialog.getByRole("checkbox", { name: reviewLabel, exact: true }),
+  ).not.toBeChecked();
   await assertNoOverflow(page);
   await closeEditor(dialog);
   expect((await transactions(page)).length).toBe(before.length);

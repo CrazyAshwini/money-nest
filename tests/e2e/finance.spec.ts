@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import Decimal from "decimal.js";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import type { WorkspaceData } from "../../src/lib/types";
 
 const BANK = "Meridian Everyday";
 const BILL_ID = "00000000-0000-4000-8000-000000000201";
@@ -25,21 +26,37 @@ async function addTransaction(
     externalLender?: string;
   },
 ) {
-  await page
-    .getByRole("button", { name: "Add transaction", exact: true })
-    .click();
+  const transactionKind = values.kind ?? "expense";
+  const returnUrl = page.url();
+  if (transactionKind === "expense") {
+    await page
+      .getByRole("button", { name: "Add transaction", exact: true })
+      .click();
+  } else {
+    await page.goto("/transactions");
+    await page
+      .getByRole("combobox", { name: "New transaction type", exact: true })
+      .selectOption(transactionKind);
+    await page
+      .getByRole("button", {
+        name: `Add ${transactionKind.replaceAll("_", " ")}`,
+        exact: true,
+      })
+      .click();
+  }
   const dialog = page.locator(".transaction-modal");
   await dialog
     .getByRole("textbox", { name: "Description", exact: true })
     .fill(values.description);
   await dialog.getByLabel("Amount · ₹", { exact: true }).fill(values.amount);
   await dialog.getByLabel("Date", { exact: true }).fill("2026-10-09");
-  await dialog.locator("summary", { hasText: "More details" }).click();
   await dialog
-    .getByLabel("Transaction type")
-    .selectOption(values.kind ?? "expense");
-  await dialog
-    .getByRole("combobox", { name: "From account", exact: true })
+    .getByRole("combobox", {
+      name: ["income", "refund"].includes(transactionKind)
+        ? "To account"
+        : "From account",
+      exact: true,
+    })
     .selectOption({ label: BANK });
   if (values.to)
     await dialog
@@ -59,6 +76,7 @@ async function addTransaction(
     .getByRole("button", { name: "Save transaction", exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
+  if (transactionKind !== "expense") await page.goto(returnUrl);
 }
 async function navigate(page: Page, label: string, mobile: boolean) {
   if (mobile)
@@ -260,6 +278,162 @@ test("expense creation/edit persists and increases spending exactly once; transf
   await noPageOverflow(page);
 });
 
+test("manual pending expenses require explicit confirmation and voided edits stay voided", async ({
+  page,
+}) => {
+  const baseline = await spending(page);
+  const pendingId = "00000000-0000-4000-8000-000000009801";
+  const voidedId = "00000000-0000-4000-8000-000000009802";
+  const pendingDescription = "E2E manual pending confirmation";
+  const voidedDescription = "E2E preserved voided expense";
+  await page.evaluate(
+    ({
+      storageKey,
+      pendingId,
+      voidedId,
+      pendingDescription,
+      voidedDescription,
+    }) => {
+      if (sessionStorage.getItem("finance-os:mode") !== "demo")
+        throw new Error("This fixture requires an isolated demo workspace.");
+      const workspace = JSON.parse(
+        localStorage.getItem(storageKey)!,
+      ) as WorkspaceData;
+      const template = workspace.transactions.find(
+        (transaction) =>
+          transaction.kind === "expense" && transaction.status === "posted",
+      );
+      const bank = workspace.accounts.find(
+        (account) => account.name === "Meridian Everyday" && account.active,
+      );
+      if (!template || !bank)
+        throw new Error("Synthetic expense and bank fixtures are required.");
+      const common = {
+        ...template,
+        kind: "expense" as const,
+        category: "Food",
+        merchant: "Swiggy",
+        fromAccountId: bank.id,
+        toAccountId: null,
+        externalPayer: null,
+        externalReference: null,
+        refundOfTransactionId: null,
+        receiptDocumentId: null,
+        sourceSystem: "manual",
+        sourceObjectId: null,
+        notes: "Synthetic review fixture",
+      };
+      workspace.transactions.push(
+        {
+          ...common,
+          id: pendingId,
+          description: pendingDescription,
+          amount: "15.25",
+          status: "pending_review",
+          occurredOn: null,
+        },
+        {
+          ...common,
+          id: voidedId,
+          description: voidedDescription,
+          amount: "29.75",
+          status: "voided",
+          occurredOn: "2026-10-09",
+        },
+      );
+      localStorage.setItem(storageKey, JSON.stringify(workspace));
+    },
+    {
+      storageKey: STORAGE_KEY,
+      pendingId,
+      voidedId,
+      pendingDescription,
+      voidedDescription,
+    },
+  );
+  await page.goto("/transactions");
+  const storedTransaction = (id: string) =>
+    page.evaluate(
+      ({ storageKey, id }) =>
+        (
+          JSON.parse(localStorage.getItem(storageKey)!) as WorkspaceData
+        ).transactions.find((transaction) => transaction.id === id),
+      { storageKey: STORAGE_KEY, id },
+    );
+  const edit = async (description: string) => {
+    await page
+      .getByRole("textbox", { name: "Search transactions", exact: true })
+      .fill(description);
+    await page
+      .getByRole("button", { name: `Edit ${description}`, exact: true })
+      .click();
+    return page.locator(".transaction-modal");
+  };
+  let dialog = await edit(pendingDescription);
+  await dialog.getByLabel("Date", { exact: true }).fill("2026-10-09");
+  await expect(
+    dialog.getByRole("checkbox", {
+      name: "I confirmed this payment and account",
+      exact: true,
+    }),
+  ).not.toBeChecked();
+  await dialog
+    .getByRole("button", { name: "Save transaction", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(async () => (await storedTransaction(pendingId))?.status)
+    .toBe("pending_review");
+  await page.goto("/dashboard");
+  await expect.poll(() => spending(page)).toBe(baseline);
+
+  await page.goto("/transactions");
+  dialog = await edit(pendingDescription);
+  await dialog
+    .getByRole("checkbox", {
+      name: "I confirmed this payment and account",
+      exact: true,
+    })
+    .check();
+  await dialog
+    .getByRole("button", { name: "Save transaction", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(async () => (await storedTransaction(pendingId))?.status)
+    .toBe("posted");
+
+  dialog = await edit(voidedDescription);
+  await expect(
+    dialog.getByRole("checkbox", {
+      name: "I confirmed this payment and account",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await dialog.getByLabel("Amount · ₹", { exact: true }).fill("32.50");
+  await dialog
+    .getByRole("button", { name: "Save transaction", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(async () => (await storedTransaction(voidedId))?.status)
+    .toBe("voided");
+  await expect
+    .poll(async () => (await storedTransaction(voidedId))?.amount)
+    .toBe("32.50");
+  await page.reload();
+  await expect
+    .poll(async () => (await storedTransaction(pendingId))?.status)
+    .toBe("posted");
+  await expect
+    .poll(async () => (await storedTransaction(voidedId))?.status)
+    .toBe("voided");
+  await page.goto("/dashboard");
+  await expect
+    .poll(() => spending(page))
+    .toBe(new Decimal(baseline).plus("15.25").toFixed(2));
+});
+
 test("statement partial payment uses an existing valid payment and rejects mismatched accounts", async ({
   page,
 }) => {
@@ -294,11 +468,9 @@ test("statement partial payment uses an existing valid payment and rejects misma
     .getByRole("button", { name: "Allocate payment", exact: true })
     .click();
   dialog = page.getByRole("dialog");
-  await dialog
-    .getByLabel("Existing posted payment")
-    .selectOption({
-      label: "E2E Aster statement payment · ₹3000.00 · 2026-10-09",
-    });
+  await dialog.getByLabel("Existing posted payment").selectOption({
+    label: "E2E Aster statement payment · ₹3000.00 · 2026-10-09",
+  });
   await dialog.getByLabel("Amount to apply · ₹").fill("1000.00");
   await dialog
     .getByRole("button", { name: "Save payment allocation", exact: true })
@@ -377,11 +549,9 @@ test("a confirmed external lender debit closes an installment without counting a
     .getByRole("button", { name: "Match payment", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
-  await dialog
-    .getByLabel("Existing posted payment")
-    .selectOption({
-      label: "E2E Willow installment remainder · ₹7300.00 · 2026-10-09",
-    });
+  await dialog.getByLabel("Existing posted payment").selectOption({
+    label: "E2E Willow installment remainder · ₹7300.00 · 2026-10-09",
+  });
   await dialog.getByLabel("Amount to apply · ₹").fill("7300.00");
   await dialog
     .getByRole("button", { name: "Save payment allocation", exact: true })
@@ -464,13 +634,11 @@ test("PDF uploads show the unsupported-format message without ledger changes", a
   page,
 }) => {
   await page.goto("/imports");
-  await page
-    .getByLabel("Upload statement CSV", { exact: true })
-    .setInputFiles({
-      name: "statement.pdf",
-      mimeType: "application/pdf",
-      buffer: Buffer.from("%PDF-1.7\nsynthetic fixture"),
-    });
+  await page.getByLabel("Upload statement CSV", { exact: true }).setInputFiles({
+    name: "statement.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.7\nsynthetic fixture"),
+  });
   await expect(page.getByRole("main").getByRole("alert")).toContainText(
     "PDF and image parsing are not available",
   );

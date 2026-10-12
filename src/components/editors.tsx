@@ -1,15 +1,14 @@
 "use client";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Decimal from "decimal.js";
-import { ChevronDown, Plus } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { Modal, Field } from "./ui";
 import {
   ACCOUNT_KINDS,
   CATEGORIES,
-  TRANSACTION_KINDS,
   type Account,
   type Transaction,
+  type TransactionKind,
   type Bill,
   type FixedDeposit,
   type Loan,
@@ -18,6 +17,10 @@ import {
 } from "@/lib/types";
 import { validateBillAllocation, validateEmiAllocation } from "@/lib/finance";
 import { ReceiptScanner, type AppliedReceipt } from "./receipt-scanner";
+import {
+  getCategoryPlatformOptions,
+  OTHER_PLATFORM,
+} from "@/lib/category-platforms";
 
 type TransactionValues = {
   description: string;
@@ -41,12 +44,13 @@ function transactionValues(
   record: Transaction | undefined,
   today: string,
   externalLender: string,
+  kind: TransactionKind = "expense",
 ): TransactionValues {
   return {
     description: record?.description || "",
     amount: record?.amount || "",
     occurredOn: record ? record.occurredOn || "" : today,
-    kind: record?.kind || "expense",
+    kind: record?.kind || kind,
     category: record?.category || "Other",
     merchant: record?.merchant || "",
     fromAccountId: record?.fromAccountId || "",
@@ -64,7 +68,7 @@ function transactionValues(
 
 export type EditorState =
   | { type: "account"; record?: Account }
-  | { type: "transaction"; record?: Transaction }
+  | { type: "transaction"; record?: Transaction; kind?: TransactionKind }
   | { type: "bill"; record?: Bill }
   | { type: "fd"; record?: FixedDeposit }
   | { type: "loan"; record?: Loan }
@@ -134,17 +138,22 @@ export function RecordEditor({
       editor.type === "transaction" ? editor.record : undefined,
       today,
       externalLender,
+      editor.type === "transaction" ? editor.kind : undefined,
     ),
   );
   const [receipt, setReceipt] = useState<AppliedReceipt | null>(null);
-  const transactionDetails = useRef<HTMLDetailsElement>(null);
+  const [otherPlatform, setOtherPlatform] = useState(
+    editor.type === "transaction" && editor.record?.merchant === OTHER_PLATFORM,
+  );
   const [receiptReviewed, setReceiptReviewed] = useState(false);
+  const [pendingConfirmed, setPendingConfirmed] = useState(false);
   function updateTransaction<K extends keyof TransactionValues>(
     key: K,
     value: TransactionValues[K],
   ) {
     setTransaction((current) => ({ ...current, [key]: value }));
     setReceiptReviewed(false);
+    setPendingConfirmed(false);
   }
   function applyReceipt(applied: AppliedReceipt) {
     const draft = applied.draft;
@@ -155,13 +164,53 @@ export function RecordEditor({
       occurredOn: draft.occurredOn || "",
       merchant: draft.merchant || "",
       externalReference: draft.externalReference || "",
-      kind: draft.kind || "expense",
+      kind: transaction.kind,
       category: draft.category || "Other",
       status: "pending_review",
     });
-    setReceipt(applied);
+    setReceipt({
+      ...applied,
+      requiresPendingReview:
+        applied.requiresPendingReview ||
+        Boolean(draft.kind && draft.kind !== transaction.kind),
+    });
+    setOtherPlatform(false);
     setReceiptReviewed(false);
+    setPendingConfirmed(false);
     setError("");
+  }
+  function changeCategory(category: string) {
+    setTransaction((current) => {
+      const previousPresets = getCategoryPlatformOptions(current.category);
+      const nextPresets = getCategoryPlatformOptions(category);
+      const incompatiblePreset =
+        current.merchant !== OTHER_PLATFORM &&
+        previousPresets.includes(current.merchant) &&
+        !nextPresets.includes(current.merchant);
+      return {
+        ...current,
+        category,
+        merchant: incompatiblePreset ? "" : current.merchant,
+      };
+    });
+    setReceiptReviewed(false);
+    setPendingConfirmed(false);
+  }
+  function changePlatform(platform: string) {
+    setOtherPlatform(platform === OTHER_PLATFORM);
+    setTransaction((current) => ({
+      ...current,
+      merchant:
+        platform === OTHER_PLATFORM
+          ? getCategoryPlatformOptions(current.category).includes(
+              current.merchant,
+            ) && current.merchant !== OTHER_PLATFORM
+            ? ""
+            : current.merchant
+          : platform,
+    }));
+    setReceiptReviewed(false);
+    setPendingConfirmed(false);
   }
   const text = (f: FormData, key: string) => String(f.get(key) || "").trim();
   const options = data.accounts
@@ -201,11 +250,11 @@ export function RecordEditor({
           throw new Error(
             "Review the extracted details and confirm before saving.",
           );
-        const kind = text(f, "kind") as Transaction["kind"];
-        const from = text(f, "fromAccountId") || null;
-        const to = text(f, "toAccountId") || null;
-        const externalPayer = text(f, "externalPayer") || null;
-        const date = text(f, "occurredOn") || null;
+        const kind = transaction.kind as Transaction["kind"];
+        const from = transaction.fromAccountId || null;
+        const to = transaction.toAccountId || null;
+        const externalPayer = transaction.externalPayer.trim() || null;
+        const date = transaction.occurredOn || null;
         if (!from && !to && !externalPayer)
           throw new Error("Choose an account or name the external payer.");
         if (from && from === to)
@@ -214,11 +263,11 @@ export function RecordEditor({
           throw new Error("Expenses need a source account or external payer.");
         if ((kind === "income" || kind === "refund") && !to)
           throw new Error("Choose the account that received the money.");
-        const value = amount(f.get("amount"))!;
+        const value = amount(transaction.amount)!;
         if (new Decimal(value).lte(0))
           throw new Error("Transaction amount must be greater than zero.");
-        const externalRepayment = f.get("externalRepayment") === "on";
-        const lender = text(f, "externalLender");
+        const externalRepayment = transaction.externalRepayment;
+        const lender = transaction.externalLender.trim();
         if (
           externalRepayment &&
           (!from ||
@@ -229,10 +278,16 @@ export function RecordEditor({
           throw new Error(
             "For an external loan repayment, choose its bank source, leave the destination external, and name the lender.",
           );
-        const notes = externalRepayment
-          ? `Confirmed external lender: ${lender}. ${text(f, "notes")}`.trim()
-          : text(f, "notes") || null;
         const prev = editor.record;
+        const canConfirmPending =
+          prev?.status === "pending_review" &&
+          prev.sourceSystem !== "receipt_ai";
+        const notes =
+          kind === "expense"
+            ? prev?.notes || null
+            : externalRepayment
+              ? `Confirmed external lender: ${lender}. ${transaction.notes.trim()}`.trim()
+              : transaction.notes.trim() || null;
         await save("transactions", {
           ...prev,
           ...base,
@@ -240,21 +295,27 @@ export function RecordEditor({
           currency: "INR",
           kind,
           status:
-            !date ||
-            receipt?.requiresPendingReview ||
-            ((kind === "transfer" || kind === "bill_payment") &&
-              (!from || (!to && !externalRepayment)))
-              ? "pending_review"
-              : (text(f, "status") as Transaction["status"]),
+            prev?.status === "voided"
+              ? "voided"
+              : !date ||
+                  receipt?.requiresPendingReview ||
+                  ((kind === "transfer" || kind === "bill_payment") &&
+                    (!from || (!to && !externalRepayment)))
+                ? "pending_review"
+                : receipt
+                  ? "posted"
+                  : canConfirmPending && pendingConfirmed
+                    ? "posted"
+                    : (transaction.status as Transaction["status"]),
           occurredOn: date,
-          description: text(f, "description"),
-          merchant: text(f, "merchant") || null,
+          description: transaction.description.trim(),
+          merchant: transaction.merchant.trim() || null,
           fromAccountId: from,
           toAccountId: to,
-          category: text(f, "category") || "Other",
+          category: transaction.category || "Other",
           externalPayer,
-          externalReference: text(f, "externalReference") || null,
-          refundOfTransactionId: text(f, "refundOfTransactionId") || null,
+          externalReference: transaction.externalReference || null,
+          refundOfTransactionId: transaction.refundOfTransactionId || null,
           notes,
           sourceSystem: receipt ? "receipt_ai" : prev?.sourceSystem || "manual",
           sourceObjectId: receipt?.fingerprint || prev?.sourceObjectId || null,
@@ -439,10 +500,6 @@ export function RecordEditor({
     "bill_payment",
     "adjustment",
   ].includes(transaction.kind);
-  const showTransactionStatus =
-    Boolean(receipt) ||
-    (editor.type === "transaction" &&
-      Boolean(editor.record && editor.record.status !== "posted"));
   const transactionAccount = (
     name: "fromAccountId" | "toAccountId",
     label: string,
@@ -460,19 +517,6 @@ export function RecordEditor({
             : "Merchant / external"}
         </option>
         {options}
-      </select>
-    </Field>
-  );
-  const transactionStatus = (
-    <Field label="Status">
-      <select
-        name="status"
-        value={transaction.status}
-        onChange={(event) => updateTransaction("status", event.target.value)}
-      >
-        <option value="posted">Posted</option>
-        <option value="pending_review">Needs review</option>
-        <option value="voided">Voided</option>
       </select>
     </Field>
   );
@@ -573,53 +617,57 @@ export function RecordEditor({
               <Field label="Category">
                 <select
                   name="category"
+                  aria-label="Category"
                   value={transaction.category}
-                  onChange={(event) =>
-                    updateTransaction("category", event.target.value)
-                  }
+                  onChange={(event) => changeCategory(event.target.value)}
                 >
+                  {!CATEGORIES.some(
+                    (category) => category === transaction.category,
+                  ) && <option>{transaction.category}</option>}
                   {CATEGORIES.map((k) => (
                     <option key={k}>{k}</option>
                   ))}
                 </select>
               </Field>
-              <div className="transaction-source full">
-                <span>Platform / Source</span>
-                <button
-                  type="button"
-                  className={
-                    transaction.merchant ? "source-chip" : "source-add"
-                  }
-                  aria-label={
-                    transaction.merchant
-                      ? "Edit platform or source"
-                      : "Add platform or source"
-                  }
-                  onClick={() => {
-                    if (!transactionDetails.current) return;
-                    transactionDetails.current.open = true;
-                    transactionDetails.current
-                      .querySelector<HTMLInputElement>('input[name="merchant"]')
-                      ?.focus();
-                  }}
+              <Field label="Platform / Source" className="full">
+                <select
+                  aria-label="Platform / Source"
+                  value={otherPlatform ? OTHER_PLATFORM : transaction.merchant}
+                  onChange={(event) => changePlatform(event.target.value)}
                 >
-                  <Plus size={17} aria-hidden="true" />
-                  {transaction.merchant && <span>{transaction.merchant}</span>}
-                </button>
-              </div>
+                  <option value="">Select platform / source</option>
+                  {getCategoryPlatformOptions(
+                    transaction.category,
+                    transaction.merchant,
+                  ).map((platform) => (
+                    <option key={platform} value={platform}>
+                      {platform}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {otherPlatform && (
+                <Field label="Other platform / source" className="full">
+                  {transactionInput("merchant")}
+                </Field>
+              )}
               {!incomingTransaction &&
                 transactionAccount(
                   "fromAccountId",
                   "From account",
-                  !twoAccountTransaction && !showTransactionStatus,
+                  !twoAccountTransaction,
                 )}
               {(incomingTransaction || twoAccountTransaction) &&
                 transactionAccount(
                   "toAccountId",
                   "To account",
-                  !twoAccountTransaction && !showTransactionStatus,
+                  !twoAccountTransaction,
                 )}
-              {showTransactionStatus && transactionStatus}
+              {transaction.kind === "expense" && !transaction.fromAccountId && (
+                <Field label="External payer" className="full">
+                  {transactionInput("externalPayer")}
+                </Field>
+              )}
               <Field label="Description" className="full">
                 <textarea
                   name="description"
@@ -636,40 +684,8 @@ export function RecordEditor({
               <Field label="Date" className="full">
                 {transactionInput("occurredOn", "date")}
               </Field>
-              <details
-                ref={transactionDetails}
-                className="transaction-details full"
-              >
-                <summary>
-                  <span>More details</span>
-                  <small>Optional</small>
-                  <ChevronDown size={15} aria-hidden="true" />
-                </summary>
-                <div className="form-grid">
-                  <Field label="Transaction type">
-                    <select
-                      name="kind"
-                      value={transaction.kind}
-                      onChange={(event) =>
-                        updateTransaction("kind", event.target.value)
-                      }
-                    >
-                      {TRANSACTION_KINDS.map((k) => (
-                        <option key={k} value={k}>
-                          {human(k)[0].toUpperCase() + human(k).slice(1)}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  {!twoAccountTransaction &&
-                    transactionAccount(
-                      incomingTransaction ? "fromAccountId" : "toAccountId",
-                      incomingTransaction ? "From account" : "To account",
-                    )}
-                  {!showTransactionStatus && transactionStatus}
-                  <Field label="Merchant (optional)">
-                    {transactionInput("merchant")}
-                  </Field>
+              {transaction.kind !== "expense" && (
+                <>
                   <Field label="Bank reference">
                     {transactionInput("externalReference")}
                   </Field>
@@ -742,8 +758,8 @@ export function RecordEditor({
                   <Field label="Notes" className="full">
                     {transactionInput("notes")}
                   </Field>
-                </div>
-              </details>
+                </>
+              )}
               {(!transaction.occurredOn ||
                 (["transfer", "bill_payment"].includes(transaction.kind) &&
                   (!transaction.fromAccountId ||
@@ -753,6 +769,19 @@ export function RecordEditor({
                   Missing dates or incomplete transfers stay in Needs review.
                 </p>
               )}
+              {editor.record?.status === "pending_review" &&
+                editor.record.sourceSystem !== "receipt_ai" && (
+                  <label className="check-row full">
+                    <input
+                      type="checkbox"
+                      checked={pendingConfirmed}
+                      onChange={(event) =>
+                        setPendingConfirmed(event.target.checked)
+                      }
+                    />
+                    I confirmed this payment and account
+                  </label>
+                )}
             </>
           )}
           {editor.type === "bill" && (
@@ -1078,9 +1107,16 @@ export function RecordEditor({
         {receipt && (
           <div className="receipt-save-review">
             <p>
-              Receipt details applied. Confirm the amount, date, transaction
-              type, and account below.
+              Receipt details applied. Check the amount, date, category,
+              platform and account before saving.
             </p>
+            {receipt.draft.kind && receipt.draft.kind !== transaction.kind && (
+              <p className="receipt-warning">
+                The receipt suggests {human(receipt.draft.kind)}. Your selected{" "}
+                {human(transaction.kind)} stays unchanged and will need review.
+                Choose another transaction type from Transactions if needed.
+              </p>
+            )}
             {receipt.requiresPendingReview && (
               <p className="receipt-warning">
                 The payment is unconfirmed or unclear. This transaction will

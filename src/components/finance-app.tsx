@@ -71,7 +71,13 @@ import {
 } from "@/lib/finance";
 import { exportTransactionsCsv } from "@/lib/imports";
 import { accountUsage, usageSummary } from "@/lib/usage";
-import type { Account, Bill, Transaction } from "@/lib/types";
+import {
+  TRANSACTION_KINDS,
+  type Account,
+  type Bill,
+  type Transaction,
+  type TransactionKind,
+} from "@/lib/types";
 const SpendingChart = dynamic(() => import("./charts"), {
   ssr: false,
   loading: () => <div className="spending-chart chart-placeholder" />,
@@ -1064,6 +1070,7 @@ function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
   const [account, setAccount] = useState("all");
   const [review, setReview] = useState(false);
   const [allMonths, setAllMonths] = useState(false);
+  const [newKind, setNewKind] = useState<TransactionKind>("expense");
   const txs = useMemo(
     () =>
       data.transactions
@@ -1108,6 +1115,28 @@ function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
         >
           <Download size={15} />
           Export CSV
+        </button>
+      </div>
+      <div className="transaction-create-row">
+        <select
+          aria-label="New transaction type"
+          value={newKind}
+          onChange={(event) =>
+            setNewKind(event.target.value as TransactionKind)
+          }
+        >
+          {TRANSACTION_KINDS.map((type) => (
+            <option key={type} value={type}>
+              {kindLabel(type)}
+            </option>
+          ))}
+        </select>
+        <button
+          className="button primary"
+          onClick={() => open({ type: "transaction", kind: newKind })}
+        >
+          <Plus size={15} />{" "}
+          {create ? "Create transaction" : `Add ${kindLabel(newKind)}`}
         </button>
       </div>
       <div className="filter-row">
@@ -1161,14 +1190,6 @@ function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
         </label>
         <span>{txs.length} transactions</span>
       </div>
-      {create && (
-        <button
-          className="button primary mb"
-          onClick={() => open({ type: "transaction" })}
-        >
-          Create transaction
-        </button>
-      )}
       <Section
         title={review ? "Needs review" : "Your ledger"}
         subtitle={`${monthLabel(month)} · Transfers and repayments are not purchase expenses.`}

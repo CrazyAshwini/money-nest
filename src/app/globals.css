@@ -2186,80 +2186,10 @@ td small {
   font-weight: 600;
   pointer-events: none;
 }
-.transaction-modal .transaction-amount input {
+.transaction-modal .field.transaction-amount input:not([type="checkbox"]) {
   padding-left: 36px;
   border-color: #abc8b7;
   box-shadow: 0 0 0 4px #dceae14d;
-}
-.transaction-source {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  color: #697269;
-  font-size: 12px;
-  font-weight: 600;
-}
-.source-add,
-.source-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 7px 11px;
-  color: #4d785d;
-  background: #fff;
-  border: 1px dashed #becdc0;
-  border-radius: 18px;
-  font-size: 12px;
-  max-width: 100%;
-}
-.source-add {
-  width: 34px;
-  padding: 7px;
-}
-.source-chip span {
-  overflow-wrap: anywhere;
-}
-.transaction-details {
-  min-width: 0;
-  border: 1px solid #dce3da;
-  border-radius: 13px;
-  background: #fff9;
-}
-.transaction-details > summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 10px 12px;
-  color: #4e6253;
-  cursor: pointer;
-  font-size: 12px;
-  list-style: none;
-}
-.transaction-details > summary::-webkit-details-marker {
-  display: none;
-}
-.transaction-details > summary small {
-  color: var(--muted);
-  font-size: 10px;
-}
-.transaction-details > summary svg {
-  margin-left: auto;
-}
-.transaction-details[open] > summary svg {
-  transform: rotate(180deg);
-}
-.transaction-details > summary:focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 2px;
-  border-radius: 13px;
-}
-.transaction-details > .form-grid {
-  border-top: 1px solid var(--border);
-  padding: 12px;
 }
 .transaction-modal .form-note {
   background: #eff4ed;
@@ -3712,4 +3642,19 @@ td small {
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
+}
+
+.transaction-create-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.transaction-create-row select {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 160px;
+}
+.transaction-create-row .button {
+  flex: 0 1 auto;
 }

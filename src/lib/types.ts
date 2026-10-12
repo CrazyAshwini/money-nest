@@ -8,6 +8,7 @@ export type Category =
   | "Food"
   | "Groceries"
   | "Shopping"
+  | "Stationery"
   | "Transport"
   | "Education"
   | "Housing"
@@ -191,6 +192,7 @@ export const CATEGORIES: Category[] = [
   "Food",
   "Groceries",
   "Shopping",
+  "Stationery",
   "Transport",
   "Education",
   "Housing",

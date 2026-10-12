@@ -24,7 +24,7 @@ const email = `synthetic.${randomBytes(5).toString("hex")}@example.test`;
 const password = randomBytes(8).toString("base64url").slice(0, 10);
 const editedName = `${profileName} updated`;
 const transactionName = "Synthetic private lunch";
-const transactionNote = "Synthetic optional note preserved while collapsed";
+const transactionNote = "Synthetic optional note preserved by expense edits";
 const transactionReference = "SYNTHETIC-COMPACT-REFERENCE";
 let setupToken = "";
 let testDirectory = "";
@@ -159,6 +159,9 @@ test("private profile setup, protected records, persistence, and demo isolation"
 
   await test.step("setup consumes a fragment token and creates an HttpOnly session", async () => {
     await page.goto("/profile/setup");
+    await expect(
+      page.getByRole("heading", { name: "Create your profile", exact: true }),
+    ).toBeVisible();
     // Set the token inside the browser, avoiding a token-bearing URL in call logs.
     await page.evaluate((token) => {
       history.replaceState(null, "", `/profile/setup#token=${token}`);
@@ -262,24 +265,25 @@ test("private profile setup, protected records, persistence, and demo isolation"
       .getByRole("button", { name: "Add transaction", exact: true })
       .click();
     let dialog = page.locator(".transaction-modal");
-    const moreDetails = dialog
-      .locator("details")
-      .filter({ hasText: "More details" });
-    await expect(moreDetails).not.toHaveAttribute("open");
+    await expect(
+      dialog.locator("summary", { hasText: "More details" }),
+    ).toHaveCount(0);
     await expect(
       dialog.getByRole("combobox", { name: "From account", exact: true }),
     ).toBeVisible();
-    await expect(dialog.locator('select[name="toAccountId"]')).toHaveCount(1);
-    await expect(dialog.locator('select[name="toAccountId"]')).toBeHidden();
-    await expect(dialog.getByLabel("Notes", { exact: true })).toBeHidden();
+    await expect(
+      dialog.getByRole("combobox", { name: "To account", exact: true }),
+    ).toHaveCount(0);
+    await expect(dialog.getByLabel("Notes", { exact: true })).toHaveCount(0);
     await expect(
       dialog.getByLabel("Bank reference", { exact: true }),
-    ).toBeHidden();
-    await expect(dialog.locator('select[name="status"]')).toHaveCount(1);
-    await expect(dialog.locator('select[name="status"]')).toBeHidden();
+    ).toHaveCount(0);
+    await expect(
+      dialog.getByRole("combobox", { name: "Status", exact: true }),
+    ).toHaveCount(0);
     await expect(
       dialog.getByLabel("Transaction type", { exact: true }),
-    ).toBeHidden();
+    ).toHaveCount(0);
     await expect(
       dialog.getByRole("textbox", { name: "Description", exact: true }),
     ).toHaveJSProperty("tagName", "TEXTAREA");
@@ -299,29 +303,6 @@ test("private profile setup, protected records, persistence, and demo isolation"
       path: path.resolve("artifacts/transaction-reference-mobile.png"),
     });
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await moreDetails.locator("summary").click();
-    const transactionType = dialog.getByRole("combobox", {
-      name: "Transaction type",
-      exact: true,
-    });
-    await transactionType.selectOption("income");
-    await moreDetails.locator("summary").click();
-    await expect(
-      dialog.getByRole("combobox", { name: "To account", exact: true }),
-    ).toBeVisible();
-    await expect(dialog.locator('select[name="fromAccountId"]')).toHaveCount(1);
-    await expect(dialog.locator('select[name="fromAccountId"]')).toBeHidden();
-    await moreDetails.locator("summary").click();
-    await transactionType.selectOption("transfer");
-    await moreDetails.locator("summary").click();
-    await expect(
-      dialog.getByRole("combobox", { name: "From account", exact: true }),
-    ).toBeVisible();
-    await expect(
-      dialog.getByRole("combobox", { name: "To account", exact: true }),
-    ).toBeVisible();
-    await moreDetails.locator("summary").click();
-    await transactionType.selectOption("expense");
     await dialog
       .getByRole("textbox", { name: "Description", exact: true })
       .fill(transactionName);
@@ -330,16 +311,31 @@ test("private profile setup, protected records, persistence, and demo isolation"
     await dialog
       .getByRole("combobox", { name: "From account", exact: true })
       .selectOption({ label: bankName });
-    await dialog.getByLabel("Notes", { exact: true }).fill(transactionNote);
-    await dialog
-      .getByLabel("Bank reference", { exact: true })
-      .fill(transactionReference);
-    await moreDetails.locator("summary").click();
-    await expect(moreDetails).not.toHaveAttribute("open");
     await dialog
       .getByRole("button", { name: "Save transaction", exact: true })
       .click();
     await expect(dialog).toHaveCount(0);
+    // Preserve metadata already held on existing records without exposing the
+    // removed optional fields in the simplified expense form.
+    const seeded = (await (await page.request.get("/api/workspace")).json())
+      .workspace as WorkspaceData;
+    const original = seeded.transactions.find(
+      (row) => row.description === transactionName,
+    );
+    expect(original).toBeDefined();
+    expect(
+      (
+        await post(page.request, "/api/workspace", {
+          collection: "transactions",
+          record: {
+            ...original,
+            notes: transactionNote,
+            externalReference: transactionReference,
+          },
+        })
+      ).status(),
+    ).toBe(200);
+    await page.reload();
     await page
       .getByRole("textbox", { name: "Search transactions", exact: true })
       .fill(transactionName);
@@ -347,15 +343,13 @@ test("private profile setup, protected records, persistence, and demo isolation"
       .getByRole("button", { name: `Edit ${transactionName}`, exact: true })
       .click();
     dialog = page.locator(".transaction-modal");
-    await expect(dialog.getByLabel("Notes", { exact: true })).toBeHidden();
-    await dialog.locator("summary", { hasText: "More details" }).click();
-    await expect(dialog.getByLabel("Notes", { exact: true })).toHaveValue(
-      transactionNote,
-    );
+    await expect(dialog.getByLabel("Notes", { exact: true })).toHaveCount(0);
     await expect(
       dialog.getByLabel("Bank reference", { exact: true }),
-    ).toHaveValue(transactionReference);
-    await dialog.locator("summary", { hasText: "More details" }).click();
+    ).toHaveCount(0);
+    await expect(
+      dialog.locator("summary", { hasText: "More details" }),
+    ).toHaveCount(0);
     await dialog.getByLabel("Amount · ₹", { exact: true }).fill("15.67");
     await dialog
       .getByRole("button", { name: "Save transaction", exact: true })
@@ -440,6 +434,87 @@ test("private profile setup, protected records, persistence, and demo isolation"
       ),
     ).toHaveLength(1);
     await page.unroute("**/api/workspace");
+  });
+
+  await test.step("income and transfer entries remain available outside the simplified expense form", async () => {
+    await page.goto("/transactions");
+    const before = (await (await page.request.get("/api/workspace")).json())
+      .workspace as WorkspaceData;
+    const bank = before.accounts.find((row) => row.name === bankName);
+    const destination = before.accounts.find(
+      (row) => row.active && row.id !== bank?.id,
+    );
+    expect(bank).toBeDefined();
+    expect(destination).toBeDefined();
+    const newKind = page.getByRole("combobox", {
+      name: "New transaction type",
+      exact: true,
+    });
+    await newKind.selectOption("income");
+    await page.getByRole("button", { name: "Add income", exact: true }).click();
+    let dialog = page.locator(".transaction-modal");
+    await expect(
+      dialog.getByRole("heading", { name: "Add New Income", exact: true }),
+    ).toBeVisible();
+    await dialog
+      .getByRole("textbox", { name: "Description", exact: true })
+      .fill("Synthetic separate income entry");
+    await dialog.getByLabel("Amount · ₹", { exact: true }).fill("7.89");
+    await dialog.getByLabel("Date", { exact: true }).fill("2026-10-09");
+    await dialog
+      .getByRole("combobox", { name: "To account", exact: true })
+      .selectOption(bank!.id);
+    await dialog
+      .getByRole("button", { name: "Save transaction", exact: true })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    await newKind.selectOption("transfer");
+    await page
+      .getByRole("button", { name: "Add transfer", exact: true })
+      .click();
+    dialog = page.locator(".transaction-modal");
+    await expect(
+      dialog.getByRole("heading", { name: "Add New Transfer", exact: true }),
+    ).toBeVisible();
+    await dialog
+      .getByRole("textbox", { name: "Description", exact: true })
+      .fill("Synthetic separate transfer entry");
+    await dialog.getByLabel("Amount · ₹", { exact: true }).fill("3.21");
+    await dialog.getByLabel("Date", { exact: true }).fill("2026-10-09");
+    await dialog
+      .getByRole("combobox", { name: "From account", exact: true })
+      .selectOption(bank!.id);
+    await dialog
+      .getByRole("combobox", { name: "To account", exact: true })
+      .selectOption(destination!.id);
+    await dialog
+      .getByRole("button", { name: "Save transaction", exact: true })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    const after = (await (await page.request.get("/api/workspace")).json())
+      .workspace as WorkspaceData;
+    expect(after.transactions).toHaveLength(before.transactions.length + 2);
+    expect(
+      after.transactions.find(
+        (row) => row.description === "Synthetic separate income entry",
+      ),
+    ).toMatchObject({
+      kind: "income",
+      amount: "7.89",
+      toAccountId: bank!.id,
+      status: "posted",
+    });
+    expect(
+      after.transactions.find(
+        (row) => row.description === "Synthetic separate transfer entry",
+      ),
+    ).toMatchObject({
+      kind: "transfer",
+      amount: "3.21",
+      fromAccountId: bank!.id,
+      toAccountId: destination!.id,
+      status: "posted",
+    });
   });
 
   await test.step("logout revokes access and the password unlocks only the private workspace", async () => {
