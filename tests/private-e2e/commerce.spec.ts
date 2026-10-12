@@ -914,6 +914,112 @@ test("order history scan reviews overlapping screenshots and retries a lost save
   });
 });
 
+test("mobile manual orders offer category-specific platforms and keep each draft independent without cash movement", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto("/orders");
+  const before = await state(page);
+  await page.getByRole("button", { name: "Add order", exact: true }).click();
+  const drafts = page.locator(".commerce-draft");
+  const stationery = drafts.nth(0);
+  const category = stationery.getByRole("combobox", {
+    name: "Category",
+    exact: true,
+  });
+  const platform = stationery.getByRole("combobox", {
+    name: "Platform / Source",
+    exact: true,
+  });
+  await expect(platform).toBeVisible();
+  await stationery
+    .getByLabel("Description", { exact: true })
+    .fill("Synthetic stationery history order");
+  await stationery.getByLabel("Amount · ₹", { exact: true }).fill("26.80");
+  await stationery
+    .getByLabel("Save as", { exact: true })
+    .selectOption("history");
+  await category.selectOption("Food");
+  for (const source of ["Swiggy", "Zomato", "Domino's", "Other"])
+    await expect(
+      platform.getByRole("option", { name: source, exact: true }),
+    ).toHaveCount(1);
+  await platform.selectOption("Swiggy");
+  await category.selectOption("Stationery");
+  await expect(platform).toHaveValue("");
+  await expect(
+    platform.getByRole("option", { name: "Swiggy", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    platform.getByRole("option", {
+      name: "Local stationery shop",
+      exact: true,
+    }),
+  ).toHaveCount(1);
+  await platform.selectOption("Other");
+  const customPlatform = "Synthetic Stationery Counter";
+  await stationery
+    .getByLabel("Other platform / source", { exact: true })
+    .fill(customPlatform);
+  await page.getByRole("button", { name: "Add order", exact: true }).click();
+  await expect(drafts).toHaveCount(2);
+  const food = drafts.nth(1);
+  await food
+    .getByLabel("Description", { exact: true })
+    .fill("Synthetic food history order");
+  await food.getByLabel("Amount · ₹", { exact: true }).fill("8.50");
+  await food.getByLabel("Save as", { exact: true }).selectOption("history");
+  await food
+    .getByRole("combobox", { name: "Category", exact: true })
+    .selectOption("Food");
+  await page.getByRole("checkbox", { name: reviewLabel, exact: true }).check();
+  await food
+    .getByRole("combobox", { name: "Platform / Source", exact: true })
+    .selectOption("Zomato");
+  await expect(
+    page.getByRole("checkbox", { name: reviewLabel, exact: true }),
+  ).not.toBeChecked();
+  await expect(category).toHaveValue("Stationery");
+  await expect(
+    stationery.getByLabel("Other platform / source", { exact: true }),
+  ).toHaveValue(customPlatform);
+  await noOverflow(page);
+  await mkdir(path.resolve("artifacts"), { recursive: true });
+  await stationery.scrollIntoViewIfNeeded();
+  await stationery.screenshot({
+    path: path.resolve("artifacts/orders-platform-mobile.png"),
+  });
+  await page.getByRole("checkbox", { name: reviewLabel, exact: true }).check();
+  await page
+    .getByRole("button", { name: "Save reviewed orders", exact: true })
+    .click();
+  await expect(drafts).toHaveCount(0);
+  const after = await state(page);
+  expect(after.workspace.transactions).toEqual(before.workspace.transactions);
+  expect(after.cash).toBe(before.cash);
+  expect(after.spending).toEqual(before.spending);
+  expect(
+    after.commerce.orders.find(
+      (row) => row.description === "Synthetic stationery history order",
+    ),
+  ).toMatchObject({
+    category: "Stationery",
+    platform: customPlatform,
+    reviewStatus: "history",
+    payments: [],
+  });
+  expect(
+    after.commerce.orders.find(
+      (row) => row.description === "Synthetic food history order",
+    ),
+  ).toMatchObject({
+    category: "Food",
+    platform: "Zomato",
+    reviewStatus: "history",
+    payments: [],
+  });
+});
+
 test("editing a manual pending order after a lost save response keeps one updated ledger draft", async ({
   page,
 }) => {
@@ -1063,6 +1169,54 @@ test("existing purchase links once and scanned statements and design references 
   );
 });
 
+test("removing or discarding a scanned order resets Other platform mode before rescanning", async ({
+  page,
+}) => {
+  await mockSettings(page);
+  await mockScan(
+    page,
+    scanResult("synthetic-platform-reset", [
+      scanned("platform-reset", { category: "Food", platform: "Swiggy" }),
+    ]),
+  );
+  const before = await state(page);
+  await page.goto("/orders");
+  await scanOrders(page);
+  const draft = page.locator(".commerce-draft");
+  const platform = draft.getByRole("combobox", {
+    name: "Platform / Source",
+    exact: true,
+  });
+  const customPlatform = draft.getByLabel("Other platform / source", {
+    exact: true,
+  });
+  await expect(platform).toHaveValue("Swiggy");
+  await platform.selectOption("Other");
+  await customPlatform.fill("Synthetic removed custom platform");
+  await draft
+    .getByRole("button", { name: "Remove draft", exact: true })
+    .click();
+  await expect(draft).toHaveCount(0);
+  await scanOrders(page);
+  await expect(draft).toHaveCount(1);
+  await expect(platform).toHaveValue("Swiggy");
+  await expect(customPlatform).toHaveCount(0);
+  await platform.selectOption("Other");
+  await customPlatform.fill("Synthetic discarded custom platform");
+  await page
+    .getByRole("button", { name: "Discard drafts", exact: true })
+    .click();
+  await expect(draft).toHaveCount(0);
+  await scanOrders(page);
+  await expect(draft).toHaveCount(1);
+  await expect(platform).toHaveValue("Swiggy");
+  await expect(customPlatform).toHaveCount(0);
+  const after = await state(page);
+  expect(after.commerce).toEqual(before.commerce);
+  expect(after.workspace.transactions).toEqual(before.workspace.transactions);
+  expect(after.cash).toBe(before.cash);
+});
+
 test("mobile order review preserves manual edits through a repeated scan and saves an undated pending draft", async ({
   page,
 }) => {
@@ -1084,6 +1238,12 @@ test("mobile order review preserves manual edits through a repeated scan and sav
   await page.goto("/orders");
   await scanOrders(page);
   const draft = page.locator(".commerce-draft");
+  const platform = draft.getByRole("combobox", {
+    name: "Platform / Source",
+    exact: true,
+  });
+  await expect(platform).toBeVisible();
+  await expect(platform).toHaveValue("Synthetic Shopping");
   await expect(draft.getByLabel("Amount · ₹", { exact: true })).toHaveValue("");
   await expect(draft.getByLabel("Purchase date", { exact: true })).toHaveValue(
     "",
@@ -1093,6 +1253,10 @@ test("mobile order review preserves manual edits through a repeated scan and sav
     .fill("Synthetic reviewed mobile order");
   await draft.getByLabel("Amount · ₹", { exact: true }).fill("39.99");
   await draft.getByLabel("Category", { exact: true }).selectOption("Groceries");
+  await expect(platform).toHaveValue("Synthetic Shopping");
+  await expect(
+    platform.getByRole("option", { name: "Synthetic Shopping", exact: true }),
+  ).toHaveCount(1);
   await scanOrders(page);
   await expect(draft).toHaveCount(1);
   await expect(draft.getByLabel("Description", { exact: true })).toHaveValue(
@@ -1104,6 +1268,7 @@ test("mobile order review preserves manual edits through a repeated scan and sav
   await expect(draft.getByLabel("Category", { exact: true })).toHaveValue(
     "Groceries",
   );
+  await expect(platform).toHaveValue("Synthetic Shopping");
   await expect(draft.getByLabel("Purchase date", { exact: true })).toHaveValue(
     "",
   );
@@ -1125,6 +1290,14 @@ test("mobile order review preserves manual edits through a repeated scan and sav
   const after = await state(page);
   expect(after.cash).toBe(before.cash);
   expect(after.spending).toEqual(before.spending);
+  expect(
+    after.commerce.orders.find(
+      (row) => row.description === "Synthetic reviewed mobile order",
+    ),
+  ).toMatchObject({
+    category: "Groceries",
+    platform: "Synthetic Shopping",
+  });
   expect(
     after.workspace.transactions.find(
       (row) => row.description === "Synthetic reviewed mobile order",

@@ -23,6 +23,10 @@ import {
 } from "@/lib/commerce";
 import type { OrderScanResult } from "@/lib/scan-orders";
 import { CATEGORIES } from "@/lib/types";
+import {
+  getCategoryPlatformOptions,
+  OTHER_PLATFORM,
+} from "@/lib/category-platforms";
 import { formatDate, formatMoney } from "@/lib/finance";
 import "./orders-page.css";
 
@@ -72,6 +76,7 @@ export function OrdersPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [drafts, setDrafts] = useState<ReviewedOrderDraft[]>([]);
+  const [otherPlatforms, setOtherPlatforms] = useState(() => new Set<string>());
   const [batchKey, setBatchKey] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [search, setSearch] = useState("");
@@ -246,6 +251,7 @@ export function OrdersPage() {
       })
     ) {
       setDrafts([]);
+      setOtherPlatforms(new Set());
       setConfirmed(false);
       setBatchKey("");
     }
@@ -323,6 +329,7 @@ export function OrdersPage() {
         >
           <div className="commerce-drafts">
             {drafts.map((draft, index) => {
+              const draftKey = `${draft.sourceFingerprint}:${draft.candidateId}`;
               const matches = findOrderMatches(
                 draft,
                 data.transactions,
@@ -336,7 +343,7 @@ export function OrdersPage() {
               return (
                 <article
                   className="commerce-draft"
-                  key={`${draft.sourceFingerprint}:${draft.candidateId}`}
+                  key={draftKey}
                   aria-label={`Order draft ${index + 1}`}
                 >
                   <div className="commerce-card-heading">
@@ -350,6 +357,11 @@ export function OrdersPage() {
                         setDrafts((current) =>
                           current.filter((_, position) => position !== index),
                         );
+                        setOtherPlatforms((current) => {
+                          const next = new Set(current);
+                          next.delete(draftKey);
+                          return next;
+                        });
                         setBatchKey(newKey());
                         setConfirmed(false);
                       }}
@@ -490,18 +502,92 @@ export function OrdersPage() {
                       <select
                         aria-label="Category"
                         value={draft.category ?? "Other"}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          const category = event.target
+                            .value as ReviewedOrderDraft["category"];
+                          const previousPresets = getCategoryPlatformOptions(
+                            draft.category,
+                          );
+                          const nextPresets =
+                            getCategoryPlatformOptions(category);
+                          const incompatiblePreset =
+                            draft.platform &&
+                            draft.platform !== OTHER_PLATFORM &&
+                            previousPresets.includes(draft.platform) &&
+                            !nextPresets.includes(draft.platform);
                           patch(index, {
-                            category: event.target
-                              .value as ReviewedOrderDraft["category"],
-                          })
-                        }
+                            category,
+                            platform: incompatiblePreset
+                              ? null
+                              : draft.platform,
+                          });
+                        }}
                       >
                         {CATEGORIES.map((category) => (
                           <option key={category}>{category}</option>
                         ))}
                       </select>
                     </Field>
+                    <Field label="Platform / Source">
+                      <select
+                        aria-label="Platform / Source"
+                        value={
+                          otherPlatforms.has(draftKey)
+                            ? OTHER_PLATFORM
+                            : (draft.platform ?? "")
+                        }
+                        onChange={(event) => {
+                          const platform = event.target.value;
+                          setOtherPlatforms((current) => {
+                            const next = new Set(current);
+                            if (platform === OTHER_PLATFORM) next.add(draftKey);
+                            else next.delete(draftKey);
+                            return next;
+                          });
+                          const isPreset =
+                            draft.platform &&
+                            draft.platform !== OTHER_PLATFORM &&
+                            getCategoryPlatformOptions(draft.category).includes(
+                              draft.platform,
+                            );
+                          patch(index, {
+                            platform:
+                              platform === OTHER_PLATFORM
+                                ? isPreset
+                                  ? null
+                                  : draft.platform
+                                : platform || null,
+                          });
+                        }}
+                      >
+                        <option value="">Select platform / source</option>
+                        {getCategoryPlatformOptions(
+                          draft.category,
+                          draft.platform,
+                        ).map((platform) => (
+                          <option key={platform} value={platform}>
+                            {platform}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    {(otherPlatforms.has(draftKey) ||
+                      draft.platform === OTHER_PLATFORM) && (
+                      <Field label="Other platform / source" className="full">
+                        <input
+                          value={draft.platform ?? ""}
+                          maxLength={100}
+                          onChange={(event) => {
+                            setOtherPlatforms((current) =>
+                              new Set(current).add(draftKey),
+                            );
+                            patch(index, {
+                              platform: event.target.value || null,
+                            });
+                          }}
+                        />
+                      </Field>
+                    )}
                     {draft.externalPayer != null && (
                       <Field label="External payer">
                         <input
@@ -552,17 +638,6 @@ export function OrdersPage() {
                   <details className="commerce-details">
                     <summary>Order details</summary>
                     <div className="form-grid">
-                      <Field label="Platform / source">
-                        <input
-                          value={draft.platform ?? ""}
-                          maxLength={100}
-                          onChange={(event) =>
-                            patch(index, {
-                              platform: event.target.value || null,
-                            })
-                          }
-                        />
-                      </Field>
                       <Field label="Merchant">
                         <input
                           value={draft.merchant ?? ""}
@@ -743,6 +818,7 @@ export function OrdersPage() {
               disabled={busy}
               onClick={() => {
                 setDrafts([]);
+                setOtherPlatforms(new Set());
                 setConfirmed(false);
               }}
             >
