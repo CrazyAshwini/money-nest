@@ -18,4 +18,6 @@ Configure a dedicated Supabase project, copy `.env.example` to `.env.local`, and
 
 The `api_*` views cast PostgreSQL numeric values to text **before JSON serialization** and run with `security_invoker=true`, preserving caller RLS. All API monetary values remain decimal strings. Authenticated users can read their audit history, while only a private, owner-checking trigger can append it; they cannot edit or delete it.
 
+The transaction-platform migration adds nullable `transactions.platform`, appends it to the decimal-safe API view and preserves it in reviewed CSV imports. Merchant remains the actual seller. Apply pending migrations to the dedicated cloud project before using the updated transaction form there. Old local profiles need no migration or automatic classification; the platform field is optional.
+
 External reminder delivery, statement OCR/PDF extraction, MFA, and bank/provider synchronization require additional services and are not represented as connected features. Manual reviewed CSV commits are atomic. Real Notion data is not bundled or imported.

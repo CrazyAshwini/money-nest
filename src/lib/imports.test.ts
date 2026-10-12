@@ -13,6 +13,15 @@ function existing(overrides: Partial<Transaction> = {}): Transaction {
 }
 
 describe("CSV review and import plans", () => {
+  it("keeps seller and platform separate through export and reviewed reimport", async () => {
+    const original = existing({ description: "Bikkgane Biryani lunch", platform: "Swiggy", merchant: "Bikkgane Biryani" });
+    const csv = exportTransactionsCsv([original], accounts);
+    const review = await parseStatementCsv(csv, accounts);
+    const plan = buildImportCommitPlan(review, [], { approved: true });
+    expect(plan.transactions[0]).toMatchObject({ description: "Bikkgane Biryani lunch", platform: "Swiggy", merchant: "Bikkgane Biryani", amount: "100.40" });
+    const legacy = await parseStatementCsv(statement, accounts);
+    expect(legacy.candidates[0].transaction).toMatchObject({ platform: null, merchant: null });
+  });
   it("preserves escaped quotes, embedded commas, newlines, BOM, CRLF, and exact cents", async () => {
     const review = await parseStatementCsv(`\uFEFF${header}\r\n2026-10-06,"Grocer, ""Market""\r\ncheckout",00100.4,expense,Demo Savings,REF-1,Groceries\r\n`, accounts);
     expect(review.errors).toEqual([]);

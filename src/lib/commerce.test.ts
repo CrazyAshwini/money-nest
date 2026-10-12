@@ -36,13 +36,18 @@ function incoming(amount = "30.00", overrides: Partial<Transaction> = {}): Trans
 }
 
 describe("reviewed private orders", () => {
+  it("keeps the ordering platform separate from the seller and includes the seller in descriptions", () => {
+    const first = commit(workspace(), emptyCommerce(), [draft({ platform: "Swiggy", merchant: "Bikkgane Biryani", description: "Lunch", category: "Food" })]);
+    expect(first.workspace.transactions[0]).toMatchObject({ platform: "Swiggy", merchant: "Bikkgane Biryani", description: "Lunch · Bikkgane Biryani", amount: "100.00" });
+    expect(first.commerce.orders[0]).toMatchObject({ platform: "Swiggy", merchant: "Bikkgane Biryani", description: "Lunch · Bikkgane Biryani" });
+  });
   it("updates the same manual pending draft after a lost response and changed operation key", () => {
     const pending = draft({ candidateId: crypto.randomUUID(), action: "pending", occurredOn: null, fromAccountId: null });
     const first = commit(workspace(), emptyCommerce(), [pending]);
     const revised = commit(first.workspace, first.commerce, [{ ...pending, description: "Synthetic corrected draft", amount: "43.21" }], "b".repeat(64));
     expect(revised.commerce.orders).toHaveLength(1);
     expect(revised.workspace.transactions).toHaveLength(1);
-    expect(revised.workspace.transactions[0]).toMatchObject({ id: first.workspace.transactions[0].id, amount: "43.21", description: "Synthetic corrected draft", status: "pending_review" });
+    expect(revised.workspace.transactions[0]).toMatchObject({ id: first.workspace.transactions[0].id, amount: "43.21", description: "Synthetic corrected draft · Test store", status: "pending_review" });
     expect(monthlySummary(revised.workspace, "2026-10").gross).toBe("0.00");
   });
   it("creates one reviewed purchase with exact money and idempotent replay", () => {
@@ -136,7 +141,7 @@ describe("reviewed private orders", () => {
   it("enriches a purchased multi-item order with cancellation evidence without erasing other items or claiming a credit", () => {
     const first = commit(workspace(), emptyCommerce(), [draft({ items: [{ title: "Test shirt", quantity: "1", amount: "30.00", status: "delivered" }, { title: "Test trousers", quantity: "1", amount: "70.00", status: "delivered" }] })]);
     const enriched = commit(first.workspace, first.commerce, [draft({ candidateId: "refund-card", existingOrderId: first.commerce.orders[0].id, action: "history", sourceType: "cancellation_refund", financialEvent: "refund", description: "Shirt cancellation", amount: "30.00", amountRole: "refund_expected", occurredOn: "2026-10-10", status: "refund_received", expectedRefundAmount: "30.00", expectedRefundBy: "2026-10-12", items: [{ title: "Test shirt", quantity: null, amount: null, status: "cancelled" }] })], "b".repeat(64));
-    expect(enriched.commerce.orders[0]).toMatchObject({ description: "Synthetic groceries", amount: "100.00", occurredOn: "2026-10-09" });
+    expect(enriched.commerce.orders[0]).toMatchObject({ description: "Synthetic groceries · Test store", amount: "100.00", occurredOn: "2026-10-09" });
     expect(enriched.commerce.orders[0].items).toHaveLength(2);
     expect(enriched.commerce.orders[0].items[0]).toMatchObject({ title: "Test shirt", amount: "30.00", quantity: "1", status: "cancelled" });
     expect(enriched.commerce.refunds[0]).toMatchObject({ itemTitle: "Test shirt", status: "expected", expectedAmount: "30.00", destinationAccountId: null, originalTransactionId: first.workspace.transactions[0].id });

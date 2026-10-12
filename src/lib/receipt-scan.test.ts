@@ -5,6 +5,7 @@ import {
   MAX_RECEIPT_BYTES,
   normalizeReceiptExtraction,
   receiptDraft,
+  receiptGenerationSchema,
   validateReceiptFile,
   type ReceiptExtraction,
 } from "./receipt-scan";
@@ -45,6 +46,64 @@ const transaction = (changes: Partial<Transaction> = {}): Transaction => ({
 });
 
 describe("receipt extraction boundaries", () => {
+  it("separates the visible ordering platform and includes the seller in the description", () => {
+    const result = normalizeReceiptExtraction(
+      extraction({
+        platform: " Swiggy ",
+        merchant: "Bikkgane Biryani",
+        description: "Chicken biryani",
+      }),
+    );
+    expect(receiptDraft(result)).toMatchObject({
+      platform: "Swiggy",
+      merchant: "Bikkgane Biryani",
+      description: "Chicken biryani · Bikkgane Biryani",
+      amount: "125.50",
+      status: "pending_review",
+    });
+    expect(
+      receiptDraft(
+        extraction({
+          merchant: "Bikkgane Biryani",
+          description: "Dinner at bikkgane biryani",
+        }),
+      ).description,
+    ).toBe("Dinner at bikkgane biryani");
+  });
+  it("accepts older scans but never infers a platform from a seller", () => {
+    const result = normalizeReceiptExtraction(
+      extraction({ merchant: "Bikkgane Biryani" }),
+    );
+    expect(result.platform).toBeNull();
+    expect(receiptDraft(result).platform).toBeNull();
+    expect(receiptGenerationSchema.safeParse(extraction()).success).toBe(false);
+    expect(
+      receiptGenerationSchema.safeParse(extraction({ platform: null })).success,
+    ).toBe(true);
+    expect(
+      receiptDraft(
+        extraction({ platform: null, merchant: null, description: "Lunch" }),
+      ),
+    ).toMatchObject({ platform: null, merchant: null, description: "Lunch" });
+  });
+  it("bounds seller descriptions without dropping the seller or changing financial facts", () => {
+    const draft = receiptDraft(
+      extraction({
+        description: "Chicken biryani and delivery details ".repeat(6),
+        merchant: "Bikkgane Biryani",
+        platform: "Swiggy",
+      }),
+    );
+    expect(draft.description?.length).toBeLessThanOrEqual(200);
+    expect(draft.description).toMatch(/· Bikkgane Biryani$/);
+    expect(draft).toMatchObject({
+      amount: "125.50",
+      occurredOn: "2026-10-09",
+      fromAccountId: null,
+      toAccountId: null,
+    });
+    expect(draft).not.toHaveProperty("currency");
+  });
   it("preserves exact cents and valid Indian/Western digit grouping", () => {
     expect(
       normalizeReceiptExtraction(extraction({ amount: "1,23,456.7" })).amount,

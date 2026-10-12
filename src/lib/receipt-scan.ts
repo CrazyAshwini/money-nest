@@ -2,6 +2,7 @@ import { z } from "zod";
 import Decimal from "decimal.js";
 import { CATEGORIES, TRANSACTION_KINDS, type Transaction } from "./types";
 import { isoDateSchema, positiveMoneySchema } from "./validation";
+import { withSellerDescription } from "./seller-description";
 
 export const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
 export const MAX_RECEIPT_IMAGES = 3;
@@ -14,13 +15,22 @@ export const RECEIPT_GEMINI_MODELS = [
   { id: "gemini-3.5-flash-lite", label: "Everyday receipts" },
 ] as const;
 export const RECEIPT_AI_MODELS = [
-  ...RECEIPT_GEMINI_MODELS.map((model) => ({ ...model, provider: "gemini" as const })),
-  ...RECEIPT_GATEWAY_MODELS.map((model) => ({ ...model, provider: "gateway" as const })),
+  ...RECEIPT_GEMINI_MODELS.map((model) => ({
+    ...model,
+    provider: "gemini" as const,
+  })),
+  ...RECEIPT_GATEWAY_MODELS.map((model) => ({
+    ...model,
+    provider: "gateway" as const,
+  })),
 ] as const;
 export type ReceiptAIProvider = "gemini" | "gateway";
 export const DEFAULT_RECEIPT_AI_MODEL = RECEIPT_GEMINI_MODELS[0].id;
 export const DEFAULT_RECEIPT_GATEWAY_MODEL = RECEIPT_GATEWAY_MODELS[0].id;
 const optionalText = (max: number) => z.string().max(max).nullable();
+const receiptPlatformSchema = optionalText(100).describe(
+  "Ordering app or marketplace visibly used, e.g. Swiggy; null if not shown. Never put a restaurant or seller here.",
+);
 /** All absent/uncertain fields must be null. No account IDs or ownership come from AI. */
 export const receiptExtractionSchema = z.object({
   documentType: z.enum(["payment", "receipt", "unknown"]),
@@ -33,7 +43,10 @@ export const receiptExtractionSchema = z.object({
   occurredOn: optionalText(20).describe(
     "YYYY-MM-DD, null if the date or year cannot be established.",
   ),
-  merchant: optionalText(120),
+  platform: receiptPlatformSchema.optional(),
+  merchant: optionalText(120).describe(
+    "Actual restaurant, store or seller, not the ordering app or marketplace.",
+  ),
   description: optionalText(250),
   kind: z.enum(TRANSACTION_KINDS).nullable(),
   category: z.enum(CATEGORIES).nullable(),
@@ -46,6 +59,10 @@ export const receiptExtractionSchema = z.object({
   paymentStatus: z.enum(["successful", "pending", "failed", "unknown"]),
   confidence: z.enum(["high", "medium", "low"]),
   warnings: z.array(z.string().max(250)).max(8),
+});
+/** New provider calls explicitly emit platform; older saved scan responses may omit it. */
+export const receiptGenerationSchema = receiptExtractionSchema.extend({
+  platform: receiptPlatformSchema,
 });
 export type ReceiptExtraction = z.infer<typeof receiptExtractionSchema>;
 export interface ReceiptScanResult {
@@ -124,6 +141,7 @@ export function normalizeReceiptExtraction(input: unknown): ReceiptExtraction {
     amount,
     occurredOn,
     currency,
+    platform: clean(parsed.platform ?? null),
     merchant: clean(parsed.merchant),
     description: clean(parsed.description),
     externalReference: clean(parsed.externalReference),
@@ -138,7 +156,11 @@ export function receiptDraft(
   return {
     amount: extraction.amount ?? "",
     occurredOn: extraction.occurredOn,
-    description: extraction.description ?? extraction.merchant ?? "",
+    description: withSellerDescription(
+      extraction.description,
+      extraction.merchant,
+    ),
+    platform: extraction.platform ?? null,
     merchant: extraction.merchant,
     kind: extraction.kind ?? "expense",
     category: extraction.category ?? "Other",

@@ -58,6 +58,9 @@ export interface Transaction extends OwnedRecord {
   toAccountId: string | null;
   category?: string | null;
   subcategory?: string | null;
+  /** App or service used to place the purchase, separate from its seller. */
+  platform?: string | null;
+  /** Seller or restaurant shown on the receipt. */
   merchant?: string | null;
   externalPayer?: string | null;
   externalReference?: string | null;

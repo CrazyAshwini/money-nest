@@ -4,7 +4,7 @@ This version supports UTF-8 CSV files up to 2 MB and 1,000 transaction rows per 
 
 Use [the synthetic sample](../public/sample-statement.csv) with demo accounts. For a private workspace, replace the account names with an existing account name or ID. The template is fictional and is never imported automatically.
 
-Required headers are `date,description,amount,type,account`. Optional headers are `reference,category,from_account,to_account,currency,status`. Header capitalization and spaces are normalized. Headers must be unique. Unknown extra columns are ignored. Values containing commas, double quotes, or line breaks must use standard CSV quoting; double an embedded double quote. UTF-8 BOM and CRLF files are accepted.
+Required headers are `date,description,amount,type,account`. Optional headers are `reference,category,from_account,to_account,currency,status,platform,merchant`. Platform is the ordering app (up to 100 characters); merchant is the actual seller (up to 120 characters). They are exported and imported separately; missing values stay unknown. Header capitalization and spaces are normalized. Headers must be unique. Unknown extra columns are ignored. Values containing commas, double quotes, or line breaks must use standard CSV quoting; double an embedded double quote. UTF-8 BOM and CRLF files are accepted.
 
 - `date` must be a real calendar date in `YYYY-MM-DD` format. Missing dates and ambiguous day/month formats remain in review; a date is never guessed.
 - `amount` must be positive, at most 12 integer digits and two decimal places. Use `1403.60`, without `₹`, grouping commas, a sign, or scientific notation. Parsing normalizes decimal strings without floating-point conversion or rounding.

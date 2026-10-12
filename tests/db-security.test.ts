@@ -11,6 +11,7 @@ const otherBank = "55555555-5555-4555-8555-555555555555";
 const bill = "66666666-6666-4666-8666-666666666666";
 const payment = "77777777-7777-4777-8777-777777777777";
 const alloc = "88888888-8888-4888-8888-888888888888";
+const legacyTransaction = "11111111-aaaa-4aaa-8aaa-111111111111";
 let db: PGlite;
 async function asUser(userId: string, sql: string) {
   await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub','${userId}',false);`);
@@ -33,14 +34,75 @@ beforeAll(async () => {
     create function storage.foldername(name text) returns text[] language sql immutable as $$ select string_to_array(name,'/') $$;
     insert into auth.users values('${owner}'),('${other}');
   `);
-  const migration = readdirSync(join(process.cwd(),"supabase/migrations")).find(n=>n.endsWith("_finance_core.sql"))!;
-  await db.exec(readFileSync(join(process.cwd(),"supabase/migrations",migration),"utf8"));
+  const migrationDirectory = join(process.cwd(), "supabase/migrations");
+  for (const migration of readdirSync(migrationDirectory).filter(name => name.endsWith(".sql")).sort()) {
+    await db.exec(readFileSync(join(migrationDirectory,migration),"utf8"));
+    if (migration.endsWith("_finance_core.sql")) {
+      await db.exec(`insert into public.transactions(id,user_id,amount,kind,description,merchant) values('${legacyTransaction}','${owner}',0.10,'expense','Synthetic legacy seller','Synthetic legacy seller');`);
+    }
+  }
   await asUser(owner,`insert into public.accounts(id,user_id,name,kind) values('${bank}','${owner}','Test bank','bank'),('${card}','${owner}','Test card','credit_card');`);
   await asUser(other,`insert into public.accounts(id,user_id,name,kind) values('${otherBank}','${other}','Other bank','bank');`);
 },60000);
 afterAll(async ()=>{ await db?.close(); });
 
 describe("executed PostgreSQL schema security and financial invariants",()=>{
+  it("leaves existing sellers untouched and keeps new platform values isolated through the decimal-safe API", async () => {
+    const legacy = await asUser(
+      owner,
+      `select amount,platform,merchant,description from api_transactions where id='${legacyTransaction}'`,
+    );
+    expect(legacy[0].rows[0]).toEqual({
+      amount: "0.10",
+      platform: null,
+      merchant: "Synthetic legacy seller",
+      description: "Synthetic legacy seller",
+    });
+    const purchase = "11111111-bbbb-4bbb-8bbb-111111111111";
+    await asUser(
+      owner,
+      `insert into public.transactions(id,user_id,amount,kind,status,occurred_on,description,merchant,platform,from_account_id) values('${purchase}','${owner}',28.00,'expense','posted','2026-10-12','Synthetic Biryani seller','Synthetic Biryani seller','Swiggy','${bank}');`,
+    );
+    const saved = await asUser(
+      owner,
+      `select amount,platform,merchant,description from api_transactions where id='${purchase}'`,
+    );
+    expect(saved[0].rows[0]).toEqual({
+      amount: "28.00",
+      platform: "Swiggy",
+      merchant: "Synthetic Biryani seller",
+      description: "Synthetic Biryani seller",
+    });
+    expect(
+      (
+        await asUser(
+          other,
+          `select * from api_transactions where id='${purchase}'`,
+        )
+      )[0].rows,
+    ).toHaveLength(0);
+    expect(
+      (
+        await asUser(
+          other,
+          `update transactions set platform='Zomato' where id='${purchase}' returning id`,
+        )
+      )[0].rows,
+    ).toHaveLength(0);
+    expect(
+      (
+        await asUser(
+          owner,
+          `select platform from api_transactions where id='${purchase}'`,
+        )
+      )[0].rows[0],
+    ).toEqual({ platform: "Swiggy" });
+    await db.exec("reset role");
+    const view = await db.query<{ reloptions: string[] }>(
+      "select reloptions from pg_class where oid='public.api_transactions'::regclass",
+    );
+    expect(view.rows[0].reloptions).toContain("security_invoker=true");
+  });
   it("enables RLS on every application table and exposes no anonymous grants",async()=>{
     await db.exec("reset role");
     const rls = await db.query<{count:number}>(`select count(*)::int as count from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and not c.relrowsecurity`);
@@ -124,10 +186,12 @@ describe("executed PostgreSQL schema security and financial invariants",()=>{
     await expect(asUser(owner,`update loans set repayment_account_id='${otherBank}' where id='${loan}'`)).rejects.toThrow();
   });
   it("commits imports atomically, retries by hash and rolls back bad rows",async()=>{
-    const txn = {id:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",amount:"0.10",currency:"INR",kind:"expense",status:"posted",occurredOn:"2026-10-09",description:"Synthetic CSV",fromAccountId:bank,toAccountId:null,sourceObjectId:"synthetic-file-row-1"};
+    const txn = {id:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",amount:"0.10",currency:"INR",kind:"expense",status:"posted",occurredOn:"2026-10-09",description:"Synthetic CSV",merchant:"Synthetic CSV seller",platform:"Swiggy",fromAccountId:bank,toAccountId:null,sourceObjectId:"synthetic-file-row-1"};
     const hash="a".repeat(64);
     const result=await asUser(owner,`select commit_reviewed_import('${hash}','synthetic.csv','${JSON.stringify([txn])}'::jsonb) as result`);
     expect(result[0].rows[0]).toMatchObject({result:{count:1,alreadyCommitted:false}});
+    const saved = await asUser(owner, `select amount,platform,merchant from api_transactions where id='${txn.id}'`);
+    expect(saved[0].rows[0]).toEqual({amount:"0.10",platform:"Swiggy",merchant:"Synthetic CSV seller"});
     const retry=await asUser(owner,`select commit_reviewed_import('${hash}','synthetic.csv','${JSON.stringify([txn])}'::jsonb) as result`);
     expect(retry[0].rows[0]).toMatchObject({result:{count:0,alreadyCommitted:true}});
     const nextRow={...txn,id:"12345678-1234-4234-8234-123456789018",sourceObjectId:"synthetic-file-row-2"};

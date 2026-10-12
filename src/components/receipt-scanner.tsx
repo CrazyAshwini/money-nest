@@ -650,8 +650,12 @@ export function ReceiptScanner({
                         <dd>{result.extraction.occurredOn || "Unconfirmed"}</dd>
                       </div>
                       <div>
-                        <dt>Merchant</dt>
+                        <dt>Seller</dt>
                         <dd>{result.extraction.merchant || "Unconfirmed"}</dd>
+                      </div>
+                      <div>
+                        <dt>Platform</dt>
+                        <dd>{result.extraction.platform || "Unconfirmed"}</dd>
                       </div>
                       <div>
                         <dt>Reference</dt>

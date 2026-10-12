@@ -103,6 +103,7 @@ export const transactionSchema = z
     toAccountId: uuid.nullable(),
     category: boundedText.nullish(),
     subcategory: boundedText.nullish(),
+    platform: z.string().trim().max(100).nullish(),
     merchant: boundedText.nullish(),
     externalPayer: boundedText.nullish(),
     externalReference: z.string().trim().max(100).nullish(),

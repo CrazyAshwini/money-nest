@@ -117,6 +117,7 @@ export const transactions = pgTable("transactions", {
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  platform: text("platform"),
 }, table => [
   unique().on(table.userId, table.id),
   foreignKey({ columns: [table.userId, table.fromAccountId], foreignColumns: [accounts.userId, accounts.id] }),

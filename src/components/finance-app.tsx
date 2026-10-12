@@ -1082,7 +1082,7 @@ function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
               t.fromAccountId === account ||
               t.toAccountId === account) &&
             (!review || t.status === "pending_review") &&
-            `${t.description} ${t.notes || ""} ${t.externalReference || ""} ${t.category || ""}`
+            `${t.description} ${t.merchant || ""} ${t.platform || ""} ${t.notes || ""} ${t.externalReference || ""} ${t.category || ""}`
               .toLowerCase()
               .includes(search.toLowerCase()),
         )

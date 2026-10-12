@@ -895,6 +895,22 @@ test("order history scan reviews overlapping screenshots and retries a lost save
       (row) => row.candidateId === "overlap-cancelled",
     ),
   ).toMatchObject({ payments: [], reviewStatus: "history" });
+  for (const candidateId of [
+    "overlap-completed-one",
+    "overlap-completed-two",
+  ]) {
+    const order = afterRetry.commerce.orders.find(
+      (row) => row.candidateId === candidateId,
+    );
+    const payment = afterRetry.workspace.transactions.find(
+      (row) => row.id === order?.payments[0]?.transactionId,
+    );
+    expect(payment).toMatchObject({
+      platform: "Synthetic Shopping",
+      merchant: `Synthetic ${candidateId}`,
+    });
+    expect(payment?.description).toContain(`Synthetic ${candidateId}`);
+  }
   const replay = await post(page.request, firstCommit!);
   expect(replay.status()).toBe(200);
   expect((await replay.json()).result.duplicate).toBe(true);
@@ -1169,6 +1185,70 @@ test("existing purchase links once and scanned statements and design references 
   );
 });
 
+test("correcting a scanned seller replaces its old name in Description while keeping Swiggy as the platform", async ({
+  page,
+}) => {
+  await mockSettings(page);
+  await mockScan(
+    page,
+    scanResult("synthetic-seller-correction", [
+      scanned("seller-correction", {
+        category: "Food",
+        platform: "Swiggy",
+        merchant: "Bikkgane Biryani",
+        description: "Bikkgane Biryani lunch",
+      }),
+    ]),
+  );
+  const before = await state(page);
+  await page.goto("/orders");
+  await scanOrders(page);
+  const draft = page.locator(".commerce-draft");
+  await draft.getByLabel("Save as", { exact: true }).selectOption("history");
+  const platform = draft.getByRole("combobox", {
+    name: "Platform / Source",
+    exact: true,
+  });
+  await expect(platform).toHaveValue("Swiggy");
+  const details = draft.locator(".commerce-details");
+  await details.locator("summary").click();
+  const seller = draft.getByLabel("Seller", { exact: true });
+  await expect(seller).toHaveValue("Bikkgane Biryani");
+  await seller.fill("Synthetic corrected kitchen");
+  await seller.press("Tab");
+  const description = draft.getByLabel("Description", { exact: true });
+  await expect(description).toHaveValue(/Synthetic corrected kitchen/);
+  await expect(description).toHaveValue(/lunch/i);
+  await expect(description).not.toHaveValue(/Bikkgane Biryani/);
+  await expect(platform).toHaveValue("Swiggy");
+  await expect(
+    platform.getByRole("option", {
+      name: "Synthetic corrected kitchen",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await details.locator("summary").click();
+  await page.getByRole("checkbox", { name: reviewLabel, exact: true }).check();
+  await page
+    .getByRole("button", { name: "Save reviewed orders", exact: true })
+    .click();
+  await expect(draft).toHaveCount(0);
+  const after = await state(page);
+  const saved = after.commerce.orders.find(
+    (row) => row.candidateId === "seller-correction",
+  );
+  expect(saved).toMatchObject({
+    merchant: "Synthetic corrected kitchen",
+    platform: "Swiggy",
+    reviewStatus: "history",
+    payments: [],
+  });
+  expect(saved?.description).toContain("Synthetic corrected kitchen");
+  expect(saved?.description).not.toContain("Bikkgane Biryani");
+  expect(after.workspace.transactions).toEqual(before.workspace.transactions);
+  expect(after.cash).toBe(before.cash);
+});
+
 test("removing or discarding a scanned order resets Other platform mode before rescanning", async ({
   page,
 }) => {
@@ -1220,6 +1300,8 @@ test("removing or discarding a scanned order resets Other platform mode before r
 test("mobile order review preserves manual edits through a repeated scan and saves an undated pending draft", async ({
   page,
 }) => {
+  const editedDescription =
+    "Synthetic reviewed mobile order from Synthetic mobile-undated";
   await page.setViewportSize({ width: 360, height: 800 });
   await mockSettings(page);
   const result = scanResult("synthetic-mobile-undated", [
@@ -1244,13 +1326,19 @@ test("mobile order review preserves manual edits through a repeated scan and sav
   });
   await expect(platform).toBeVisible();
   await expect(platform).toHaveValue("Synthetic Shopping");
+  await expect(
+    platform.getByRole("option", {
+      name: "Synthetic mobile-undated",
+      exact: true,
+    }),
+  ).toHaveCount(0);
   await expect(draft.getByLabel("Amount · ₹", { exact: true })).toHaveValue("");
   await expect(draft.getByLabel("Purchase date", { exact: true })).toHaveValue(
     "",
   );
   await draft
     .getByLabel("Description", { exact: true })
-    .fill("Synthetic reviewed mobile order");
+    .fill(editedDescription);
   await draft.getByLabel("Amount · ₹", { exact: true }).fill("39.99");
   await draft.getByLabel("Category", { exact: true }).selectOption("Groceries");
   await expect(platform).toHaveValue("Synthetic Shopping");
@@ -1260,7 +1348,7 @@ test("mobile order review preserves manual edits through a repeated scan and sav
   await scanOrders(page);
   await expect(draft).toHaveCount(1);
   await expect(draft.getByLabel("Description", { exact: true })).toHaveValue(
-    "Synthetic reviewed mobile order",
+    editedDescription,
   );
   await expect(draft.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
     "39.99",
@@ -1291,16 +1379,14 @@ test("mobile order review preserves manual edits through a repeated scan and sav
   expect(after.cash).toBe(before.cash);
   expect(after.spending).toEqual(before.spending);
   expect(
-    after.commerce.orders.find(
-      (row) => row.description === "Synthetic reviewed mobile order",
-    ),
+    after.commerce.orders.find((row) => row.description === editedDescription),
   ).toMatchObject({
     category: "Groceries",
     platform: "Synthetic Shopping",
   });
   expect(
     after.workspace.transactions.find(
-      (row) => row.description === "Synthetic reviewed mobile order",
+      (row) => row.description === editedDescription,
     ),
   ).toMatchObject({
     amount: "39.99",
@@ -1308,12 +1394,12 @@ test("mobile order review preserves manual edits through a repeated scan and sav
     fromAccountId: null,
     status: "pending_review",
     category: "Groceries",
+    platform: "Synthetic Shopping",
+    merchant: "Synthetic mobile-undated",
   });
   await page.reload();
   await expect(
-    page
-      .locator(".commerce-order")
-      .filter({ hasText: "Synthetic reviewed mobile order" }),
+    page.locator(".commerce-order").filter({ hasText: editedDescription }),
   ).toContainText("Date unknown");
   await noOverflow(page);
 });

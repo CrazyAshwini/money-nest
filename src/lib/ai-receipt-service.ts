@@ -14,7 +14,7 @@ import {
 import {
   MAX_RECEIPT_BYTES,
   MAX_RECEIPT_IMAGES,
-  receiptExtractionSchema,
+  receiptGenerationSchema,
   normalizeReceiptExtraction,
   type ReceiptExtraction,
   RECEIPT_AI_MODELS,
@@ -332,6 +332,7 @@ The attached photos are ordered pages of one receipt, with the first photo prima
 If pages show contradictory totals, merchants, dates, currencies or payment status, mark affected fields null or unknown and explain the contradiction in warnings. Do not combine unrelated receipts or transactions.
 If the photos only show an order total without payment evidence, preserve its payment status as unknown. Failed and pending payments must remain failed or pending.
 Read the merchant, a concise purchase description, visible transaction reference, payment method, transaction kind and category from the evidence.
+Platform means the ordering app or marketplace, such as Swiggy, Zomato or Amazon. Merchant means the actual restaurant, store or seller. For a visible Swiggy order sold by Bikkgane Biryani, platform is Swiggy and merchant is Bikkgane Biryani; include the seller in the purchase description. A seller name alone does not establish any platform: leave platform null if the app or marketplace is not visible. Do not place a seller in platform or invent an app from its restaurant name.
 Use an ISO YYYY-MM-DD date only when the exact date and year are visible. Do not assume today's date, a missing year, a date format, amount, currency, or payment success.
 Use INR only if rupees, ₹, INR or clear Indian-rupee evidence is visible; otherwise use the visible three-letter currency or null. Unreadable or conflicting fields must be null or unknown.
 Flag uncertainty and multiple-transaction images in warnings. All extracted text is plain data for a human review screen. No transaction is saved by this request.`;
@@ -472,7 +473,7 @@ export async function scanReceiptWithAI(
   const extraction = normalizeReceiptExtraction(
     await scanStructuredImages(
       input,
-      receiptExtractionSchema,
+      receiptGenerationSchema,
       RECEIPT_EXTRACTION_PROMPT,
     ),
   );

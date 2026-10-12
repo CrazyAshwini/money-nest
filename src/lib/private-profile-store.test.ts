@@ -526,6 +526,48 @@ describe("isolated private profile storage", () => {
     expect(edited.auditEvents[1].action).toBe("updated");
   });
 
+  it("round-trips seller and platform independently in encrypted private storage", async () => {
+    const { sessionToken } = await established();
+    const legacy = transaction({ merchant: "Synthetic legacy seller" });
+    const purchase = transaction({
+      description: "Synthetic Biryani seller",
+      merchant: "Synthetic Biryani seller",
+      platform: "Swiggy",
+    });
+    await savePrivateRecord(sessionToken, "transactions", legacy);
+    await savePrivateRecord(sessionToken, "transactions", purchase);
+    const saved = (await readPrivateProfile(sessionToken))!.workspace
+      .transactions;
+    expect(saved.find((row) => row.id === legacy.id)).not.toHaveProperty(
+      "platform",
+    );
+    expect(saved.find((row) => row.id === purchase.id)).toMatchObject({
+      platform: "Swiggy",
+      merchant: "Synthetic Biryani seller",
+      description: "Synthetic Biryani seller",
+      amount: "123.45",
+    });
+    const encrypted = await fs.readFile(
+      path.join(testDirectory, "profile.enc.json"),
+      "utf8",
+    );
+    expect(encrypted).not.toContain("Swiggy");
+    expect(encrypted).not.toContain("Synthetic Biryani seller");
+    await savePrivateRecord(sessionToken, "transactions", {
+      ...purchase,
+      platform: "Zomato",
+    });
+    expect(
+      (await readPrivateProfile(sessionToken))!.workspace.transactions.find(
+        (row) => row.id === purchase.id,
+      ),
+    ).toMatchObject({
+      platform: "Zomato",
+      merchant: "Synthetic Biryani seller",
+      description: "Synthetic Biryani seller",
+    });
+  });
+
   it("validates initial ownership and links before creating a store", async () => {
     const data = workspace();
     data.transactions.push(transaction({ userId: randomUUID() }));

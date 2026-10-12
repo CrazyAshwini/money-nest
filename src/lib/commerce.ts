@@ -3,6 +3,7 @@ import { z } from "zod";
 import Decimal from "decimal.js";
 import { CATEGORIES, type Transaction, type WorkspaceData } from "./types";
 import { isoDateSchema, moneySchema, positiveMoneySchema, validateWorkspaceRecord } from "./validation";
+import { withSellerDescription } from "./seller-description";
 
 export const ORDER_SOURCE_TYPES = ["manual", "order_history_list", "order_history_multipage", "order_detail", "paid_invoice", "delivery_receipt", "cancellation_refund", "ride_history", "subscription_charge", "mobile_recharge", "bank_statement", "credit_card_statement", "paylater_snapshot", "credit_card_snapshot", "fd_certificate", "loan_schedule", "design_reference_only", "unknown"] as const;
 export const ORDER_STATUSES = ["unknown", "placed", "confirmed", "shipped", "delivered", "completed", "cancelled", "return_requested", "returned", "partial_cancelled", "refund_initiated", "refund_pending", "refund_received"] as const;
@@ -240,8 +241,8 @@ export function applyCommerceCommand(workspaceInput: WorkspaceData, commerceInpu
           const transaction: Transaction = {
             id: pendingExisting?.id ?? newId(), userId, amount: new Decimal(draft.amount).toFixed(2), currency: "INR", kind: "expense",
             status: draft.action === "create" ? "posted" : "pending_review", occurredOn: draft.occurredOn,
-            description: draft.description || draft.merchant || draft.platform || "Reviewed order",
-            fromAccountId: account?.id ?? null, toAccountId: null, category: draft.category || "Other", merchant: draft.merchant,
+            description: withSellerDescription(draft.description, draft.merchant) || draft.platform || "Reviewed order",
+            fromAccountId: account?.id ?? null, toAccountId: null, category: draft.category || "Other", merchant: draft.merchant, platform: draft.platform,
             externalPayer: draft.externalPayer, sourceSystem: "order_scan", sourceObjectId: orderId,
             createdAt: pendingExisting?.createdAt ?? now, updatedAt: now,
           };
@@ -253,6 +254,7 @@ export function applyCommerceCommand(workspaceInput: WorkspaceData, commerceInpu
         }
       } else if (draft.action === "create") fail("Confirm a positive paid amount before posting.");
       const fields = scannedOrderDraftSchema.parse(draft);
+      fields.description = withSellerDescription(fields.description, fields.merchant) || null;
       if (exact) {
         const mergedItems = structuredClone(exact.items);
         for (const item of draft.items) {
@@ -325,7 +327,7 @@ export function applyCommerceCommand(workspaceInput: WorkspaceData, commerceInpu
       const candidate = workspace.transactions.find(row => row.userId === userId && row.status === "posted" && row.occurredOn === command.receivedOn && row.toAccountId === command.destinationAccountId && !row.fromAccountId && ["refund", "income", "adjustment"].includes(row.kind) && new Decimal(row.amount).eq(command.amount));
       if (candidate && refund.creditMatches.some(match => match.transactionId === candidate.id && match.verification === "manual_confirmation" && new Decimal(match.amount).eq(command.amount))) return { workspace, commerce, result: { ...result, duplicate: true } };
       if (candidate) fail("An incoming credit already exists on this date and account. Match that credit instead.");
-      credit = { id: newId(), userId, amount: new Decimal(command.amount).toFixed(2), currency: "INR", kind: "refund", status: "posted", occurredOn: command.receivedOn, description: refund.description, fromAccountId: null, toAccountId: command.destinationAccountId, merchant: original.merchant, category: original.category, sourceSystem: "refund_manual_confirmation", sourceObjectId: `${refund.id}:${command.receivedOn}:${new Decimal(command.amount).toFixed(2)}`, createdAt: now, updatedAt: now };
+      credit = { id: newId(), userId, amount: new Decimal(command.amount).toFixed(2), currency: "INR", kind: "refund", status: "posted", occurredOn: command.receivedOn, description: refund.description, fromAccountId: null, toAccountId: command.destinationAccountId, merchant: original.merchant, platform: original.platform, category: original.category, sourceSystem: "refund_manual_confirmation", sourceObjectId: `${refund.id}:${command.receivedOn}:${new Decimal(command.amount).toFixed(2)}`, createdAt: now, updatedAt: now };
     }
     const account = requireAccount(workspace, credit.toAccountId, userId, manual);
     if (refund.destinationAccountId && refund.destinationAccountId !== account?.id) fail("This credit reached a different account from the refund destination.");

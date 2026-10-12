@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Plus, ReceiptText, RotateCcw } from "lucide-react";
 import { useFinance } from "./finance-provider";
@@ -28,6 +28,10 @@ import {
   OTHER_PLATFORM,
 } from "@/lib/category-platforms";
 import { formatDate, formatMoney } from "@/lib/finance";
+import {
+  replaceSellerDescription,
+  withSellerDescription,
+} from "@/lib/seller-description";
 import "./orders-page.css";
 
 const newKey = () =>
@@ -77,6 +81,7 @@ export function OrdersPage() {
   const [busy, setBusy] = useState(false);
   const [drafts, setDrafts] = useState<ReviewedOrderDraft[]>([]);
   const [otherPlatforms, setOtherPlatforms] = useState(() => new Set<string>());
+  const sellerBeforeEdit = useRef(new Map<string, string | null>());
   const [batchKey, setBatchKey] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [search, setSearch] = useState("");
@@ -204,6 +209,10 @@ export function OrdersPage() {
             ...current,
             {
               ...order,
+              description: withSellerDescription(
+                order.description,
+                order.merchant,
+              ),
               existingOrderId: order.id,
               action:
                 order.reviewStatus === "pending"
@@ -638,10 +647,28 @@ export function OrdersPage() {
                   <details className="commerce-details">
                     <summary>Order details</summary>
                     <div className="form-grid">
-                      <Field label="Merchant">
+                      <Field label="Seller">
                         <input
                           value={draft.merchant ?? ""}
                           maxLength={120}
+                          onFocus={() =>
+                            sellerBeforeEdit.current.set(
+                              draftKey,
+                              draft.merchant,
+                            )
+                          }
+                          onBlur={() => {
+                            const previousSeller =
+                              sellerBeforeEdit.current.get(draftKey);
+                            sellerBeforeEdit.current.delete(draftKey);
+                            patch(index, {
+                              description: replaceSellerDescription(
+                                draft.description,
+                                previousSeller,
+                                draft.merchant,
+                              ),
+                            });
+                          }}
                           onChange={(event) =>
                             patch(index, {
                               merchant: event.target.value || null,

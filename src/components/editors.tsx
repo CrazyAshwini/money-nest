@@ -21,6 +21,7 @@ import {
   getCategoryPlatformOptions,
   OTHER_PLATFORM,
 } from "@/lib/category-platforms";
+import { withSellerDescription } from "@/lib/seller-description";
 
 type TransactionValues = {
   description: string;
@@ -28,6 +29,7 @@ type TransactionValues = {
   occurredOn: string;
   kind: string;
   category: string;
+  platform: string;
   merchant: string;
   fromAccountId: string;
   toAccountId: string;
@@ -46,12 +48,27 @@ function transactionValues(
   externalLender: string,
   kind: TransactionKind = "expense",
 ): TransactionValues {
+  const legacyPlatform =
+    record?.platform === undefined &&
+    record?.merchant &&
+    CATEGORIES.some((category) =>
+      getCategoryPlatformOptions(category).some(
+        (platform) =>
+          platform !== OTHER_PLATFORM && platform === record.merchant,
+      ),
+    )
+      ? record.merchant
+      : "";
   return {
-    description: record?.description || "",
+    description:
+      record?.sourceSystem === "receipt_ai" && !legacyPlatform
+        ? withSellerDescription(record.description, record.merchant)
+        : record?.description || "",
     amount: record?.amount || "",
     occurredOn: record ? record.occurredOn || "" : today,
     kind: record?.kind || kind,
     category: record?.category || "Other",
+    platform: record?.platform ?? legacyPlatform,
     merchant: record?.merchant || "",
     fromAccountId: record?.fromAccountId || "",
     toAccountId: record?.toAccountId || "",
@@ -143,7 +160,7 @@ export function RecordEditor({
   );
   const [receipt, setReceipt] = useState<AppliedReceipt | null>(null);
   const [otherPlatform, setOtherPlatform] = useState(
-    editor.type === "transaction" && editor.record?.merchant === OTHER_PLATFORM,
+    editor.type === "transaction" && editor.record?.platform === OTHER_PLATFORM,
   );
   const [receiptReviewed, setReceiptReviewed] = useState(false);
   const [pendingConfirmed, setPendingConfirmed] = useState(false);
@@ -163,6 +180,7 @@ export function RecordEditor({
       amount: draft.amount || "",
       occurredOn: draft.occurredOn || "",
       merchant: draft.merchant || "",
+      platform: draft.platform || "",
       externalReference: draft.externalReference || "",
       kind: transaction.kind,
       category: draft.category || "Other",
@@ -184,13 +202,14 @@ export function RecordEditor({
       const previousPresets = getCategoryPlatformOptions(current.category);
       const nextPresets = getCategoryPlatformOptions(category);
       const incompatiblePreset =
-        current.merchant !== OTHER_PLATFORM &&
-        previousPresets.includes(current.merchant) &&
-        !nextPresets.includes(current.merchant);
+        !otherPlatform &&
+        current.platform !== OTHER_PLATFORM &&
+        previousPresets.includes(current.platform) &&
+        !nextPresets.includes(current.platform);
       return {
         ...current,
         category,
-        merchant: incompatiblePreset ? "" : current.merchant,
+        platform: incompatiblePreset ? "" : current.platform,
       };
     });
     setReceiptReviewed(false);
@@ -200,13 +219,15 @@ export function RecordEditor({
     setOtherPlatform(platform === OTHER_PLATFORM);
     setTransaction((current) => ({
       ...current,
-      merchant:
+      platform:
         platform === OTHER_PLATFORM
           ? getCategoryPlatformOptions(current.category).includes(
-              current.merchant,
-            ) && current.merchant !== OTHER_PLATFORM
+              current.platform,
+            ) &&
+            current.platform !== OTHER_PLATFORM &&
+            !otherPlatform
             ? ""
-            : current.merchant
+            : current.platform
           : platform,
     }));
     setReceiptReviewed(false);
@@ -310,6 +331,7 @@ export function RecordEditor({
           occurredOn: date,
           description: transaction.description.trim(),
           merchant: transaction.merchant.trim() || null,
+          platform: transaction.platform.trim() || null,
           fromAccountId: from,
           toAccountId: to,
           category: transaction.category || "Other",
@@ -632,13 +654,13 @@ export function RecordEditor({
               <Field label="Platform / Source" className="full">
                 <select
                   aria-label="Platform / Source"
-                  value={otherPlatform ? OTHER_PLATFORM : transaction.merchant}
+                  value={otherPlatform ? OTHER_PLATFORM : transaction.platform}
                   onChange={(event) => changePlatform(event.target.value)}
                 >
                   <option value="">Select platform / source</option>
                   {getCategoryPlatformOptions(
                     transaction.category,
-                    transaction.merchant,
+                    transaction.platform,
                   ).map((platform) => (
                     <option key={platform} value={platform}>
                       {platform}
@@ -648,7 +670,7 @@ export function RecordEditor({
               </Field>
               {otherPlatform && (
                 <Field label="Other platform / source" className="full">
-                  {transactionInput("merchant")}
+                  {transactionInput("platform")}
                 </Field>
               )}
               {!incomingTransaction &&
@@ -675,7 +697,11 @@ export function RecordEditor({
                   onChange={(event) =>
                     updateTransaction("description", event.target.value)
                   }
-                  placeholder={`What was this ${human(transaction.kind)} for?`}
+                  placeholder={
+                    transaction.kind === "expense"
+                      ? "Seller name and what you bought"
+                      : `What was this ${human(transaction.kind)} for?`
+                  }
                   rows={2}
                   maxLength={200}
                   required

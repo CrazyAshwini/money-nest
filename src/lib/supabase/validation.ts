@@ -16,7 +16,7 @@ export const transactionSchema = z.object({
   ...owned, amount: positive, currency: z.string().regex(/^[A-Z]{3}$/), kind: z.enum(["expense","income","transfer","bill_payment","refund","adjustment"]),
   status: z.enum(["posted","pending_review","voided"]), occurredOn: nullableDate, description: z.string().trim().min(1).max(500),
   fromAccountId: id.nullable(), toAccountId: id.nullable(), category: optionalText, subcategory: optionalText,
-  merchant: optionalText, externalPayer: optionalText, externalReference: optionalText, sourceSystem: optionalText,
+  platform: z.string().trim().max(100).nullish(), merchant: optionalText, externalPayer: optionalText, externalReference: optionalText, sourceSystem: optionalText,
   sourceObjectId: short.nullable().optional(), receiptDocumentId: id.nullable().optional(), refundOfTransactionId: id.nullable().optional(), notes: optionalText,
 }).superRefine((v,context) => {
   if (v.fromAccountId && v.fromAccountId===v.toAccountId) context.addIssue({code:"custom",message:"Source and destination must differ."});

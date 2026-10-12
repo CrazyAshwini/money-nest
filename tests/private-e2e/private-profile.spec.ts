@@ -15,7 +15,8 @@ import {
 } from "../../src/lib/private-profile-store";
 import type { WorkspaceData } from "../../src/lib/types";
 
-const baseURL = "http://127.0.0.1:3001";
+const baseURL =
+  process.env.FINANCE_PRIVATE_E2E_BASE_URL || "http://127.0.0.1:3001";
 const cookieName = "finance-os-private-session";
 const owner = randomUUID();
 const profileName = `Synthetic tester ${randomBytes(5).toString("hex")}`;

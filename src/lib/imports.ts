@@ -202,6 +202,8 @@ export async function parseStatementCsv(
     if (!amount) errors.push("Amount must be positive, with at most 12 integer digits and two decimal places; omit currency symbols and commas.");
     if (!validIsoDate(raw.date)) errors.push("Date must be a real calendar date in YYYY-MM-DD format. Missing or ambiguous dates stay in review.");
     if (!raw.description) errors.push("Description is required.");
+    if ((raw.platform || "").length > 100) errors.push("Platform must be at most 100 characters.");
+    if ((raw.merchant || "").length > 120) errors.push("Seller must be at most 120 characters.");
     const kind = raw.type.toLowerCase() as TransactionKind;
     if (!TRANSACTION_KINDS.includes(kind)) errors.push("Type must be expense, income, refund, transfer, bill_payment, or adjustment.");
     if (raw.currency && raw.currency.toUpperCase() !== "INR") errors.push("Only INR is supported; currency conversion is not inferred.");
@@ -228,6 +230,7 @@ export async function parseStatementCsv(
       amount, currency: "INR", kind, status: "posted", occurredOn: validIsoDate(raw.date) ? raw.date : null,
       description: raw.description, fromAccountId: fromAccount?.id ?? null, toAccountId: toAccount?.id ?? null,
       category: raw.category || null, externalReference: raw.reference || null,
+      platform: raw.platform || null, merchant: raw.merchant || null,
       sourceSystem: "csv", sourceObjectId,
     } : null;
     const match = errors.length || !transaction ? { status: "needs_review" as const, matchedTransactionIds: [], warnings: [], errors: [] } : classify(transaction, [...currentTransactions, ...earlier]);
@@ -304,12 +307,13 @@ function csvCell(value: string | null | undefined): string {
 
 export function exportTransactionsCsv(transactions: Transaction[], accounts: Account[]): string {
   const names = new Map(accounts.map((account) => [account.id, account.name]));
-  const columns = ["date", "description", "amount", "type", "account", "reference", "category", "from_account", "to_account", "currency", "status"];
+  const columns = ["date", "description", "amount", "type", "account", "reference", "category", "from_account", "to_account", "currency", "status", "platform", "merchant"];
   const rows = transactions.map((transaction) => [
     transaction.occurredOn, transaction.description, transaction.amount, transaction.kind,
     names.get(primaryAccount(transaction) ?? "") ?? primaryAccount(transaction), transaction.externalReference,
     transaction.category, names.get(transaction.fromAccountId ?? "") ?? transaction.fromAccountId,
     names.get(transaction.toAccountId ?? "") ?? transaction.toAccountId, transaction.currency, transaction.status,
+    transaction.platform, transaction.merchant,
   ]);
   return "\uFEFF" + [columns, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
