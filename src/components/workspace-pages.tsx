@@ -42,7 +42,7 @@ export function ImportsPage() {
   const [result, setResult] = useState<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
   async function read(file?: File) {
-    if (!file) return;
+    if (!file || busy) return;
     setError("");
     setReview(null);
     setResult(null);
@@ -68,7 +68,7 @@ export function ImportsPage() {
     }
   }
   async function commit() {
-    if (!review || !approved) return;
+    if (!review || !approved || busy) return;
     setBusy(true);
     setError("");
     try {
@@ -143,6 +143,7 @@ export function ImportsPage() {
             type="file"
             accept=".csv,text/csv"
             aria-label="Upload statement CSV"
+            disabled={busy}
             onChange={(e) => void read(e.target.files?.[0])}
           />
           <button
@@ -162,8 +163,8 @@ export function ImportsPage() {
           <ShieldCheck size={17} />
           <p>
             Headers: date, description, amount, type, account, reference,
-            category. Transfers need a to_account. PDFs and image extraction are
-            not available in this version.
+            category. Transfers need a to_account. PDF statements are not
+            supported. Scan payment screenshots and receipts in Add transaction.
           </p>
         </div>
       </Section>
@@ -204,7 +205,7 @@ export function ImportsPage() {
                         aria-label={`Select import row ${c.rowNumber}`}
                         type="checkbox"
                         checked={c.selected}
-                        disabled={c.status !== "new"}
+                        disabled={busy || c.status !== "new"}
                         onChange={(e) =>
                           setReview({
                             ...review,
@@ -260,6 +261,8 @@ export function ImportsPage() {
                       {c.status === "possible_duplicate" && (
                         <button
                           className="text-link"
+                          type="button"
+                          disabled={busy}
                           onClick={() =>
                             setReview({
                               ...review,
@@ -286,13 +289,16 @@ export function ImportsPage() {
             </table>
           </div>
           {review.errors.length > 0 && (
-            <p className="error">{review.errors.join(" ")}</p>
+            <p className="error" role="alert">
+              {review.errors.join(" ")}
+            </p>
           )}
           <div className="import-approval">
             <label className="check-row">
               <input
                 type="checkbox"
                 checked={approved}
+                disabled={busy}
                 onChange={(e) => setApproved(e.target.checked)}
               />
               I have reviewed the selected rows and approve these ledger
@@ -357,7 +363,7 @@ export function GroupsPage({
   const group = data.groups.find((g) => g.id === id);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!group) return;
+    if (!group || busy) return;
     setBusy(true);
     setError("");
     const f = new FormData(event.currentTarget);
@@ -427,10 +433,15 @@ export function GroupsPage({
   }
   if (id && !group)
     return (
-      <Empty
-        title="Group not found"
-        description="Return to the shared expense list."
-      />
+      <>
+        <Link href="/split-bills" className="text-link">
+          ← All shared expenses
+        </Link>
+        <Empty
+          title="Group not found"
+          description="This shared expense is no longer available."
+        />
+      </>
     );
   if (group) {
     const s = groupSummary(data, group.id);
@@ -568,6 +579,7 @@ export function GroupsPage({
                 : "Match a real contribution"
             }
             onClose={() => setDialog(null)}
+            busy={busy}
           >
             <form className="editor-form" onSubmit={submit}>
               <div className="form-grid">
@@ -628,11 +640,16 @@ export function GroupsPage({
                   type="button"
                   className="button"
                   onClick={() => setDialog(null)}
+                  disabled={busy}
                 >
                   Cancel
                 </button>
                 <button className="button primary" disabled={busy}>
-                  {busy ? "Saving…" : "Save match"}
+                  {busy
+                    ? "Saving…"
+                    : dialog === "share"
+                      ? "Save share"
+                      : "Save match"}
                 </button>
               </div>
             </form>
@@ -710,119 +727,153 @@ export function SettingsPage() {
   const { data, mode, toast, resetDemo, refresh } = useFinance();
   const router = useRouter();
   const [reset, setReset] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [error, setError] = useState("");
+
+  async function signOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "logout" }),
+      });
+      if (!response.ok) throw new Error("Sign out failed. Please retry.");
+      await refresh();
+      toast("Signed out.");
+      router.replace("/login");
+    } catch (issue) {
+      setError(
+        issue instanceof Error
+          ? issue.message
+          : "Sign out failed. Please retry.",
+      );
+    } finally {
+      setSigningOut(false);
+    }
+  }
+
+  function exportLedger() {
+    setError("");
+    try {
+      downloadFile(
+        exportTransactionsCsv(data.transactions, data.accounts),
+        "finance-os-transactions.csv",
+      );
+      toast("Ledger exported.");
+    } catch {
+      setError("The ledger download could not start. Please try again.");
+    }
+  }
+
   return (
     <>
-      <Section
-        title="Workspace"
-        subtitle="A private place for your financial records."
-      >
-        <div className="settings-row">
-          <div>
-            <strong>Currency & timezone</strong>
-            <p>Indian rupee (INR) · Asia/Kolkata</p>
-          </div>
-          <Badge>Default</Badge>
-        </div>
-        <div className="settings-row">
-          <div>
-            <strong>Data connection</strong>
-            <p>
-              {mode === "demo"
-                ? "Fictional browser-local demo. Cloud sync requires your own Supabase project."
-                : mode === "private"
-                  ? "Private profile saved on this computer. Sign-in protects access to your records."
-                  : "Signed-in Supabase workspace. Records are protected by owner policies."}
-            </p>
-          </div>
-          <Badge tone={mode === "demo" ? "amber" : "green"}>
-            {mode === "demo" ? "Demo" : "Connected"}
-          </Badge>
-        </div>
-        <div className="settings-row">
-          <div>
-            <strong>Export your ledger</strong>
-            <p>Download a formula-safe CSV with masked account labels.</p>
-          </div>
-          <button
-            className="button"
-            onClick={() => {
-              downloadFile(
-                exportTransactionsCsv(data.transactions, data.accounts),
-                "finance-os-transactions.csv",
-              );
-              toast("Ledger exported.");
-            }}
-          >
-            <Download size={15} />
-            Export CSV
-          </button>
-        </div>
-        {mode === "private" && (
+      <div id="data">
+        <Section
+          title="Workspace"
+          subtitle="A private place for your financial records."
+        >
           <div className="settings-row">
             <div>
-              <strong>Your profile</strong>
-              <p>Manage your name and sign-in session.</p>
+              <strong>Currency & timezone</strong>
+              <p>Indian rupee (INR) · Asia/Kolkata</p>
             </div>
-            <Link href="/profile" className="text-link">
-              Manage profile <ArrowUpRight size={15} />
-            </Link>
+            <Badge>Default</Badge>
           </div>
-        )}
-        <div className="settings-row">
-          <div>
-            <strong>Reminders</strong>
-            <p>
-              In-app preferences are available. Email and push delivery are not
-              configured.
-            </p>
-          </div>
-          <Link className="text-link" href="/notifications">
-            Manage reminders <ArrowUpRight size={15} />
-          </Link>
-        </div>
-        {mode === "demo" ? (
           <div className="settings-row">
             <div>
-              <strong>Restore fictional demo</strong>
+              <strong>Data connection</strong>
               <p>
-                Replaces changes made in this browser with the original sample
-                data.
+                {mode === "demo"
+                  ? "Fictional browser-local demo. Cloud sync requires your own Supabase project."
+                  : mode === "private"
+                    ? "Private profile saved on this computer. Sign-in protects access to your records."
+                    : "Signed-in Supabase workspace. Records are protected by owner policies."}
               </p>
             </div>
-            <button className="button" onClick={() => setReset(true)}>
-              <RefreshCw size={15} />
-              Reset demo
-            </button>
+            <Badge tone={mode === "demo" ? "amber" : "green"}>
+              {mode === "demo" ? "Demo" : "Connected"}
+            </Badge>
           </div>
-        ) : (
           <div className="settings-row">
-            <strong>End this session</strong>
-            <button
-              className="button"
-              onClick={async () => {
-                const res = await fetch("/api/auth", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: "logout" }),
-                });
-                if (res.ok) {
-                  await refresh();
-                  router.push("/login");
-                } else toast("Sign out failed. Please retry.");
-              }}
-            >
-              <LogOut size={15} />
-              Sign out
+            <div>
+              <strong>Export your ledger</strong>
+              <p>Download a formula-safe CSV with masked account labels.</p>
+            </div>
+            <button className="button" type="button" onClick={exportLedger}>
+              <Download size={15} />
+              Export CSV
             </button>
           </div>
-        )}
-      </Section>
+          {mode === "private" && (
+            <div className="settings-row">
+              <div>
+                <strong>Your profile</strong>
+                <p>Manage your name and sign-in session.</p>
+              </div>
+              <Link href="/profile" className="text-link">
+                Manage profile <ArrowUpRight size={15} />
+              </Link>
+            </div>
+          )}
+          <div className="settings-row">
+            <div>
+              <strong>Reminders</strong>
+              <p>
+                In-app preferences are available. Email and push delivery are
+                not configured.
+              </p>
+            </div>
+            <Link className="text-link" href="/notifications">
+              Manage reminders <ArrowUpRight size={15} />
+            </Link>
+          </div>
+          {mode === "demo" ? (
+            <div className="settings-row">
+              <div>
+                <strong>Restore fictional demo</strong>
+                <p>
+                  Replaces changes made in this browser with the original sample
+                  data.
+                </p>
+              </div>
+              <button className="button" onClick={() => setReset(true)}>
+                <RefreshCw size={15} />
+                Reset demo
+              </button>
+            </div>
+          ) : (
+            <div className="settings-row">
+              <strong>End this session</strong>
+              <button
+                className="button"
+                type="button"
+                disabled={signingOut}
+                onClick={() => void signOut()}
+              >
+                <LogOut size={15} />
+                {signingOut ? "Signing out…" : "Sign out"}
+              </button>
+            </div>
+          )}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+        </Section>
+      </div>
       <ReceiptAISettingsPanel />
       <Section
         title="Audit history"
         subtitle="Changes are kept as dated records."
       >
         <div className="record-list">
+          {!data.auditEvents.length && (
+            <p className="inline-empty">Your saved changes will appear here.</p>
+          )}
           {data.auditEvents
             .slice()
             .reverse()
@@ -870,6 +921,8 @@ export function SettingsPage() {
 }
 export function NotificationsPage() {
   const { data, save, toast, today } = useFinance();
+  const [savingReminderIds, setSavingReminderIds] = useState<string[]>([]);
+  const [error, setError] = useState("");
   return (
     <>
       <div className="info-banner">
@@ -877,6 +930,11 @@ export function NotificationsPage() {
         These are in-app reminders. Email and push delivery require a provider
         and explicit opt-in.
       </div>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
       <Section
         title="Reminder preferences"
         subtitle={`Asia/Kolkata · ${formatDate(today)}`}
@@ -901,9 +959,15 @@ export function NotificationsPage() {
                 aria-label={`Toggle ${r.title}`}
                 role="switch"
                 aria-checked={r.enabled}
+                aria-busy={savingReminderIds.includes(r.id)}
                 className={`toggle ${r.enabled ? "on" : ""}`}
-                disabled={r.channel !== "in_app"}
+                disabled={
+                  r.channel !== "in_app" || savingReminderIds.includes(r.id)
+                }
                 onClick={async () => {
+                  if (savingReminderIds.includes(r.id)) return;
+                  setSavingReminderIds((current) => [...current, r.id]);
+                  setError("");
                   try {
                     await save("reminders", { ...r, enabled: !r.enabled });
                     toast(
@@ -912,7 +976,15 @@ export function NotificationsPage() {
                         : "In-app reminder enabled.",
                     );
                   } catch (e) {
-                    toast(e instanceof Error ? e.message : "Unable to save.");
+                    setError(
+                      e instanceof Error
+                        ? e.message
+                        : "The reminder could not be saved. Please try again.",
+                    );
+                  } finally {
+                    setSavingReminderIds((current) =>
+                      current.filter((id) => id !== r.id),
+                    );
                   }
                 }}
               >
@@ -958,10 +1030,13 @@ export function LoginPage() {
   const router = useRouter();
   const [signup, setSignup] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy) return;
     setError("");
+    setSuccess("");
     setBusy(true);
     const f = new FormData(e.currentTarget);
     try {
@@ -978,10 +1053,13 @@ export function LoginPage() {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "Unable to sign in.");
       if (result.needsEmailConfirmation) {
-        setError("Check your email to confirm your account, then sign in.");
+        setSuccess(
+          "Account created. Check your email to confirm your account, then sign in.",
+        );
         return;
       }
       await refresh();
+      toast(signup ? "Account created. You are signed in." : "Signed in.");
       router.push("/dashboard");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Connection failed.");
@@ -992,17 +1070,19 @@ export function LoginPage() {
   return (
     <main className="login">
       <div className="login-story">
-        <Link className="brand" href="/dashboard">
-          <span className="brand-icon">F</span>finance
-          <span className="brand-os">OS</span>
+        <Link className="brand" href="/dashboard" aria-label="Money Nest home">
+          <span className="brand-icon" aria-hidden="true">
+            M
+          </span>
+          Money Nest
         </Link>
         <div>
           <span className="eyebrow">MAKE ROOM FOR CLARITY</span>
-          <h1>
+          <h2>
             Know your money.
             <br />
             <span>Own your next move.</span>
-          </h1>
+          </h2>
           <p>
             Your accounts, spending, bills, and plans.
             <br />
@@ -1023,9 +1103,9 @@ export function LoginPage() {
         <span className="login-icon">
           <LockKeyhole size={24} />
         </span>
-        <h2>
+        <h1>
           {signup ? "Make yourself at home" : "Welcome to your workspace"}
-        </h2>
+        </h1>
         <p>
           {signup
             ? "Create your private finance account."
@@ -1056,6 +1136,11 @@ export function LoginPage() {
               {error}
             </p>
           )}
+          {success && (
+            <p className="form-note" role="status">
+              {success}
+            </p>
+          )}
           <button className="button primary" disabled={busy}>
             {busy ? "Connecting…" : signup ? "Create account" : "Sign in"}
             <ArrowRight size={16} />
@@ -1063,9 +1148,12 @@ export function LoginPage() {
         </form>
         <button
           className="text-link"
+          type="button"
+          disabled={busy}
           onClick={() => {
             setSignup(!signup);
             setError("");
+            setSuccess("");
           }}
         >
           {signup
@@ -1077,6 +1165,8 @@ export function LoginPage() {
         </div>
         <button
           className="button"
+          type="button"
+          disabled={busy}
           onClick={() => {
             sessionStorage.setItem("finance-os:mode", "demo");
             enterDemo();

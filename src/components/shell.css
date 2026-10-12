@@ -1,0 +1,145 @@
+.skip-link {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 160;
+  padding: 12px 18px;
+  border-radius: 10px;
+  color: #213b28;
+  background: var(--lime);
+  transform: translateY(-200%);
+}
+.skip-link:focus {
+  transform: translateY(0);
+}
+.desktop-sidebar {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.workspace-switch > span:nth-child(2),
+.user-card > span:nth-child(2) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+a[href^="mailto:"] {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.desktop-sidebar .brand {
+  font-size: 20px;
+  letter-spacing: -0.6px;
+  padding: 0;
+}
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.footer-links a {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+}
+.footer-links a:hover {
+  color: var(--lime);
+}
+.toast {
+  max-width: calc(100vw - 24px);
+}
+.toast.visible {
+  pointer-events: auto;
+}
+.toast > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.toast.error {
+  border-color: var(--red);
+  color: #f2c6c3;
+  background: #3a2424;
+}
+.toast .icon-button {
+  flex-shrink: 0;
+  min-height: 36px;
+  min-width: 36px;
+}
+.navigation-overlay {
+  position: fixed;
+  inset: 0;
+  background: #0009;
+  z-index: 110;
+  backdrop-filter: blur(3px);
+}
+.navigation-drawer {
+  position: fixed;
+  z-index: 111;
+  inset: 0 auto 0 0;
+  width: min(310px, calc(100vw - 24px));
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  padding: max(20px, env(safe-area-inset-top)) 18px
+    max(16px, env(safe-area-inset-bottom));
+  box-shadow: 12px 0 60px #0006;
+}
+.navigation-drawer .brand {
+  font-size: 21px;
+  padding: 0;
+  padding-right: 30px;
+}
+.navigation-close {
+  position: absolute;
+  right: 12px;
+  top: 14px;
+  min-width: 44px;
+  min-height: 44px;
+}
+.navigation-drawer .workspace-switch {
+  margin-top: 24px;
+}
+.navigation-drawer .nav-item {
+  min-height: 44px;
+}
+.navigation-drawer .sidebar-bottom {
+  margin-top: 18px;
+}
+.navigation-drawer .user-card {
+  margin-top: 18px;
+}
+.navigation-drawer .privacy-card {
+  margin-top: 10px;
+}
+@media (min-width: 761px) {
+  .navigation-overlay,
+  .navigation-drawer {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .sidebar.desktop-sidebar {
+    display: none;
+  }
+  .app-main {
+    width: 100%;
+    min-width: 0;
+  }
+  .page-footer {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .footer-links {
+    width: 100%;
+  }
+  .mobile-menu {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .topbar {
+    padding-top: env(safe-area-inset-top);
+  }
+}

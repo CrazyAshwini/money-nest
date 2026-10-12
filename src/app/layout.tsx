@@ -2,11 +2,22 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { FinanceProvider } from "@/components/finance-provider";
 export const metadata: Metadata = {
-  title: "Personal Finance OS",
+  applicationName: "Money Nest",
+  title: { default: "Money Nest", template: "%s | Money Nest" },
   description:
-    "A clearer picture of your money. Private accounts, spending, bills and goals.",
+    "Manage your accounts, spending, bills, orders and refunds together in your Money Nest finance workspace.",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/icon.svg" },
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml", sizes: "any" },
+      { url: "/favicon.ico", type: "image/x-icon", sizes: "32x32" },
+    ],
+    apple: {
+      url: "/apple-touch-icon.png",
+      sizes: "180x180",
+      type: "image/png",
+    },
+  },
 };
 export const viewport: Viewport = {
   themeColor: "#111113",

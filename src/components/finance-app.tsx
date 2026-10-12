@@ -1,21 +1,20 @@
 "use client";
-import { useState, useMemo, type ReactNode } from "react";
+import { useState, useMemo, useEffect, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
+import * as Dialog from "@radix-ui/react-dialog";
+import { NAV_ITEMS, WorkspaceNavigation } from "./workspace-navigation";
+import { resolveAppPage } from "@/lib/page-metadata";
+import "./shell.css";
 import Decimal from "decimal.js";
 import {
-  LayoutDashboard,
   Landmark,
   ArrowLeftRight,
   CreditCard,
   CalendarDays,
-  Sprout,
-  HandCoins,
-  Users,
   Upload,
   ChartNoAxesCombined,
-  Settings,
   Bell,
   Search,
   Plus,
@@ -30,9 +29,11 @@ import {
   Download,
   SlidersHorizontal,
   Check,
-  CircleHelp,
   LoaderCircle,
   Clock,
+  X,
+  Info,
+  CircleAlert,
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { PrivateProfilePage } from "./private-profile";
@@ -75,19 +76,7 @@ const SpendingChart = dynamic(() => import("./charts"), {
   ssr: false,
   loading: () => <div className="spending-chart chart-placeholder" />,
 });
-const nav = [
-  { href: "/dashboard", title: "Overview", icon: LayoutDashboard },
-  { href: "/accounts", title: "Accounts", icon: Landmark },
-  { href: "/transactions", title: "Transactions", icon: ArrowLeftRight },
-  { href: "/bills", title: "Bills & payments", icon: CreditCard },
-  { href: "/pay-later", title: "Pay Later", icon: Wallet },
-  { href: "/fixed-deposits", title: "Fixed deposits", icon: Sprout },
-  { href: "/loans", title: "Loans & EMIs", icon: HandCoins },
-  { href: "/split-bills", title: "Split bills", icon: Users },
-  { href: "/imports", title: "Imports", icon: Upload },
-  { href: "/orders", title: "Orders & refunds", icon: ArrowLeftRight },
-  { href: "/analytics", title: "Analytics", icon: ChartNoAxesCombined },
-];
+
 const kindLabel = (s: string) => s.replaceAll("_", " ");
 const tones = [
   "#a7b7ee",
@@ -98,19 +87,37 @@ const tones = [
   "#cfb58a",
 ];
 export function FinanceApp() {
-  const { mode, backend, profile, data, month, setMonth, message, refresh } =
-    useFinance();
+  const {
+    mode,
+    backend,
+    profile,
+    data,
+    month,
+    setMonth,
+    message,
+    messageKind,
+    dismissMessage,
+    refresh,
+  } = useFinance();
   const pathname = usePathname();
-  const router = useRouter();
   const [mobile, setMobile] = useState(false);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const part = pathname.split("/").filter(Boolean);
-  const page = part[0] || "dashboard";
+  const pageInfo = resolveAppPage(part);
+  const page = pageInfo?.page || "dashboard";
   const id = part[1];
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 761px)");
+    const closeOnDesktop = () => {
+      if (desktop.matches) setMobile(false);
+    };
+    desktop.addEventListener("change", closeOnDesktop);
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, []);
   if (mode === "loading")
     return (
       <main className="loading">
-        <div className="brand-icon">F</div>
+        <div className="brand-icon">M</div>
         <LoaderCircle className="spin" />
         <p>Opening your finance workspace…</p>
       </main>
@@ -122,291 +129,239 @@ export function FinanceApp() {
     return (
       <main className="loading">
         <h1>Unable to load your workspace</h1>
-        <p>{message}</p>
+        <p role="alert">{message}</p>
         <button className="button primary" onClick={() => void refresh()}>
           Try again
         </button>
         <Link href="/login">Return to sign in</Link>
       </main>
     );
-  const title =
-    page === "dashboard"
-      ? "My Finance Dashboard"
-      : page === "accounts"
-        ? "Accounts"
-        : page === "transactions"
-          ? "Transactions"
-          : page === "bills"
-            ? "Bills & payments"
-            : page === "pay-later"
-              ? "Pay Later"
-              : page === "fixed-deposits"
-                ? "Fixed deposits"
-                : page === "loans"
-                  ? "Loans & EMIs"
-                  : page === "emi-calendar"
-                    ? "EMI calendar"
-                    : page === "split-bills"
-                      ? "Split bills"
-                      : page === "imports"
-                        ? "Statement imports"
-                        : page === "orders"
-                          ? "Orders & refunds"
-                        : page === "analytics"
-                          ? "Spending analytics"
-                          : page === "notifications"
-                            ? "Notifications"
-                            : page === "profile"
-                              ? "Your profile"
-                              : "Settings";
+  const title = pageInfo?.title || "Money Nest";
   const metrics = dashboardMetrics(data, month);
   const open = (e: EditorState) => setEditor(e);
-  const active = nav.find((n) => n.href === `/${page}`)?.title || title;
+  const active = NAV_ITEMS.find((n) => n.href === `/${page}`)?.title || title;
   return (
-    <div className="app-shell">
-      <aside className={`sidebar ${mobile ? "is-open" : ""}`}>
-        <Link
-          href="/dashboard"
-          className="brand"
-          onClick={() => setMobile(false)}
-        >
-          <span className="brand-icon">
-            F<span />
-          </span>
-          <span>
-            finance<span className="brand-os">OS</span>
-          </span>
-        </Link>
-        <Link
-          href={mode === "private" ? "/profile" : "/settings"}
-          className="workspace-switch"
-        >
-          <span className="avatar">
-            {profile?.displayName.slice(0, 1).toUpperCase() || "P"}
-          </span>
-          <span>
-            {profile?.displayName || "Personal workspace"}
-            <small>
-              {mode === "demo" ? "Fictional demo" : "Private workspace"}
-            </small>
-          </span>
-          <Settings size={15} />
-        </Link>
-        <div className="nav-caption">WORKSPACE</div>
-        <nav aria-label="Main navigation">
-          {nav.map((item, i) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`nav-item ${page === item.href.slice(1) ? "active" : ""} ${i === 5 ? "nav-separated" : ""}`}
-              onClick={() => setMobile(false)}
+    <Dialog.Root open={mobile} onOpenChange={setMobile}>
+      <div className="app-shell">
+        <a href="#workspace-content" className="skip-link">
+          Skip to content
+        </a>
+        <aside className="sidebar desktop-sidebar">
+          <WorkspaceNavigation
+            page={page}
+            mode={mode}
+            profile={profile}
+            reviewCount={metrics.reviewCount}
+            onNavigate={() => setMobile(false)}
+          />
+        </aside>
+        <Dialog.Portal>
+          <Dialog.Overlay className="navigation-overlay" />
+          <Dialog.Content className="navigation-drawer">
+            <Dialog.Title className="sr-only">Workspace menu</Dialog.Title>
+            <Dialog.Description className="sr-only">
+              Choose a page in Money Nest.
+            </Dialog.Description>
+            <Dialog.Close
+              className="icon-button navigation-close"
+              aria-label="Close navigation"
             >
-              <item.icon size={18} />
-              <span>{item.title}</span>
-              {item.title === "Imports" && metrics.reviewCount > 0 && (
-                <span className="nav-count">{metrics.reviewCount}</span>
-              )}
-            </Link>
-          ))}
-        </nav>
-        <div className="sidebar-bottom">
-          <div className="privacy-card">
-            <ShieldCheck size={19} />
-            <strong>Your space. Your finances.</strong>
-            <p>
-              {mode === "demo"
-                ? "Sample changes stay in this browser. Try things out at your own pace."
-                : "Your records are scoped to your signed-in account."}
-            </p>
-            <Link href="/settings">
-              Workspace settings <ArrowUpRight size={13} />
-            </Link>
-          </div>
-          <Link
-            className={`nav-item ${page === "settings" ? "active" : ""}`}
-            href="/settings"
-          >
-            <Settings size={18} />
-            Settings
-          </Link>
-          <Link
-            className="user-card"
-            href={mode === "private" ? "/profile" : "/settings"}
-          >
-            <span className="avatar owner">
-              {profile?.displayName.slice(0, 1).toUpperCase() || "P"}
-            </span>
-            <span>
-              {profile?.displayName || "Personal account"}
-              <small>
-                {mode === "demo" ? "Demo mode" : "Signed in securely"}
-              </small>
-            </span>
-            <MoreHorizontal size={18} />
-          </Link>
-        </div>
-      </aside>
-      {mobile && (
-        <button
-          aria-label="Close navigation"
-          className="sidebar-backdrop"
-          onClick={() => setMobile(false)}
-        />
-      )}
-      <div className="app-main">
-        <header className="topbar">
-          <div className="breadcrumb">
-            <button
-              className="icon-button mobile-menu"
-              aria-label="Open navigation"
-              onClick={() => setMobile(!mobile)}
-            >
-              <Menu size={20} />
-            </button>
-            <span>Workspace</span>
-            <ChevronRight size={14} />
-            <strong>{active}</strong>
-          </div>
-          <div className="topbar-right">
-            <Link href="/transactions" className="search-shortcut">
-              <Search size={16} />
-              <span>Search transactions</span>
-            </Link>
-            <span className="topbar-divider" />
-            <Link
-              href="/notifications"
-              aria-label="Notifications"
-              className="notification-button"
-            >
-              <Bell size={19} />
-              {metrics.reviewCount > 0 && <i />}
-            </Link>
-            <Link
-              href={mode === "private" ? "/profile" : "/settings"}
-              className="avatar mini"
-              aria-label="Your profile"
-            >
-              {profile?.displayName.slice(0, 1).toUpperCase() || "P"}
-            </Link>
-          </div>
-        </header>
-        {mode === "demo" && (
-          <div className="demo-strip">
-            <span className="demo-dot" />
-            <span>
-              <strong>Demo workspace</strong> · Fictional data, as of 9 Oct
-              2026. Saved only in this browser.
-            </span>
-            <Link href="/login">
-              Connect your workspace <ArrowUpRight size={12} />
-            </Link>
-          </div>
-        )}
-        <main
-          className={`main-content ${page === "dashboard" ? "home-content" : ""}`}
-        >
-          <div className="page-heading">
-            <div>
-              {page !== "dashboard" && (
-                <div className="eyebrow">YOUR MONEY, IN PERSPECTIVE</div>
-              )}
-              <h1>{title}</h1>
-              {page !== "dashboard" && (
-                <p>
-                  {page === "imports"
-                    ? "Review every row. Keep your ledger clean."
-                    : page === "transactions"
-                      ? "Every movement, with the full story."
-                      : "The details that keep your finances in balance."}
-                </p>
-              )}
-            </div>
-            <div className="page-actions">
-              <label className="month-picker">
-                <CalendarDays size={16} />
-                <input
-                  aria-label="Selected month"
-                  type="month"
-                  value={month}
-                  onChange={(e) => setMonth(e.target.value || "2026-10")}
-                />
-              </label>
-              {page !== "dashboard" && (
-                <Link href="/imports" className="button import-button">
-                  <Upload size={15} />
-                  Import
-                </Link>
-              )}
-              <button
-                className="button primary"
-                onClick={() => open({ type: "transaction" })}
-              >
-                <Plus size={16} />
-                <span>Add transaction</span>
-              </button>
-            </div>
-          </div>
-          {page === "dashboard" ? (
-            <Dashboard open={open} />
-          ) : page === "accounts" ? (
-            <AccountsPage id={id} open={open} />
-          ) : page === "transactions" ? (
-            <TransactionsPage open={open} create={id === "new"} />
-          ) : page === "bills" ? (
-            <BillsPage id={id} open={open} />
-          ) : page === "pay-later" ? (
-            <AccountsPage onlyPayLater open={open} />
-          ) : page === "fixed-deposits" ? (
-            <DepositsPage id={id} open={open} />
-          ) : page === "loans" || page === "emi-calendar" ? (
-            <LoansPage id={id} calendar={page === "emi-calendar"} open={open} />
-          ) : page === "split-bills" ? (
-            <GroupsPage id={id} open={open} />
-          ) : page === "imports" ? (
-            <ImportsPage />
-          ) : page === "orders" ? (
-            <OrdersPage />
-          ) : page === "analytics" ? (
-            <AnalyticsPage />
-          ) : page === "notifications" ? (
-            <NotificationsPage />
-          ) : page === "settings" ? (
-            <SettingsPage />
-          ) : page === "profile" ? (
-            <PrivateProfilePage />
-          ) : (
-            <Empty
-              title="Page not found"
-              description="Use the sidebar to return to your workspace."
+              <X size={20} />
+            </Dialog.Close>
+            <WorkspaceNavigation
+              page={page}
+              mode={mode}
+              profile={profile}
+              reviewCount={metrics.reviewCount}
+              onNavigate={() => setMobile(false)}
             />
+          </Dialog.Content>
+        </Dialog.Portal>
+        <div className="app-main">
+          <header className="topbar">
+            <div className="breadcrumb">
+              <Dialog.Trigger asChild>
+                <button
+                  className="icon-button mobile-menu"
+                  aria-label="Open navigation"
+                >
+                  <Menu size={20} />
+                </button>
+              </Dialog.Trigger>
+              <span>Workspace</span>
+              <ChevronRight size={14} />
+              <strong>{active}</strong>
+            </div>
+            <div className="topbar-right">
+              <Link href="/transactions" className="search-shortcut">
+                <Search size={16} />
+                <span>Search transactions</span>
+              </Link>
+              <span className="topbar-divider" />
+              <Link
+                href="/notifications"
+                aria-label="Notifications"
+                className="notification-button"
+              >
+                <Bell size={19} />
+                {metrics.reviewCount > 0 && <i />}
+              </Link>
+              <Link
+                href={mode === "private" ? "/profile" : "/settings"}
+                className="avatar mini"
+                aria-label="Your profile"
+              >
+                {profile?.displayName.slice(0, 1).toUpperCase() || "P"}
+              </Link>
+            </div>
+          </header>
+          {mode === "demo" && (
+            <div className="demo-strip">
+              <span className="demo-dot" />
+              <span>
+                <strong>Demo workspace</strong> · Fictional data, as of 9 Oct
+                2026. Saved only in this browser.
+              </span>
+              <Link href="/login">
+                Connect your workspace <ArrowUpRight size={12} />
+              </Link>
+            </div>
           )}
-          <footer className="page-footer">
-            <span>
-              <span className="status-dot" />{" "}
-              {mode === "demo"
-                ? "Demo workspace · device-local"
-                : mode === "private"
-                  ? "Private profile · this computer"
-                  : "Secure workspace · Supabase"}
-            </span>
-            <span>Made for a more intentional relationship with money.</span>
+          <main
+            id="workspace-content"
+            tabIndex={-1}
+            className={`main-content ${page === "dashboard" ? "home-content" : ""}`}
+          >
+            <div className="page-heading">
+              <div>
+                {page !== "dashboard" && (
+                  <div className="eyebrow">YOUR MONEY, IN PERSPECTIVE</div>
+                )}
+                <h1>{title}</h1>
+                {page !== "dashboard" && (
+                  <p>
+                    {page === "imports"
+                      ? "Review every row. Keep your ledger clean."
+                      : page === "transactions"
+                        ? "Every movement, with the full story."
+                        : "The details that keep your finances in balance."}
+                  </p>
+                )}
+              </div>
+              <div className="page-actions">
+                <label className="month-picker">
+                  <CalendarDays size={16} />
+                  <input
+                    aria-label="Selected month"
+                    type="month"
+                    value={month}
+                    onChange={(e) => setMonth(e.target.value || "2026-10")}
+                  />
+                </label>
+                {page !== "dashboard" && (
+                  <Link href="/imports" className="button import-button">
+                    <Upload size={15} />
+                    Import
+                  </Link>
+                )}
+                <button
+                  className="button primary"
+                  onClick={() => open({ type: "transaction" })}
+                >
+                  <Plus size={16} />
+                  <span>Add transaction</span>
+                </button>
+              </div>
+            </div>
+            {page === "dashboard" ? (
+              <Dashboard open={open} />
+            ) : page === "accounts" ? (
+              <AccountsPage id={id} open={open} />
+            ) : page === "transactions" ? (
+              <TransactionsPage open={open} create={id === "new"} />
+            ) : page === "bills" ? (
+              <BillsPage id={id} open={open} />
+            ) : page === "pay-later" ? (
+              <AccountsPage onlyPayLater open={open} />
+            ) : page === "fixed-deposits" ? (
+              <DepositsPage id={id} open={open} />
+            ) : page === "loans" || page === "emi-calendar" ? (
+              <LoansPage
+                id={id}
+                calendar={page === "emi-calendar"}
+                open={open}
+              />
+            ) : page === "split-bills" ? (
+              <GroupsPage id={id} open={open} />
+            ) : page === "imports" ? (
+              <ImportsPage />
+            ) : page === "orders" ? (
+              <OrdersPage />
+            ) : page === "analytics" ? (
+              <AnalyticsPage />
+            ) : page === "notifications" ? (
+              <NotificationsPage />
+            ) : page === "settings" ? (
+              <SettingsPage />
+            ) : page === "profile" ? (
+              <PrivateProfilePage />
+            ) : (
+              <Empty
+                title="Page not found"
+                description="Use the sidebar to return to your workspace."
+              />
+            )}
+            <footer className="page-footer">
+              <span>
+                <span className="status-dot" />{" "}
+                {mode === "demo"
+                  ? "Demo workspace · device-local"
+                  : mode === "private"
+                    ? "Private profile · this computer"
+                    : "Secure workspace · Supabase"}
+              </span>
+              <span>
+                ©{" "}
+                {new Intl.DateTimeFormat("en", {
+                  year: "numeric",
+                  timeZone: "Asia/Kolkata",
+                }).format(new Date())}{" "}
+                Money Nest
+              </span>
+              <nav className="footer-links" aria-label="Footer navigation">
+                <Link href="/settings">Settings</Link>
+                <Link href="/settings#data">Data & privacy</Link>
+              </nav>
+            </footer>
+          </main>
+        </div>
+        {editor && (
+          <RecordEditor editor={editor} onClose={() => setEditor(null)} />
+        )}
+        <div
+          className={`toast ${messageKind} ${message ? "visible" : ""}`}
+          role={messageKind === "error" ? "alert" : "status"}
+        >
+          {messageKind === "error" ? (
+            <CircleAlert size={16} />
+          ) : messageKind === "info" ? (
+            <Info size={16} />
+          ) : (
+            <Check size={16} />
+          )}
+          <span>{message}</span>
+          {message && (
             <button
-              className="text-link"
-              onClick={() => router.push("/settings")}
+              className="icon-button"
+              aria-label="Dismiss message"
+              onClick={dismissMessage}
             >
-              INR · Asia/Kolkata <CircleHelp size={13} />
+              <X size={16} />
             </button>
-          </footer>
-        </main>
+          )}
+        </div>
       </div>
-      {editor && (
-        <RecordEditor editor={editor} onClose={() => setEditor(null)} />
-      )}
-      <div className={`toast ${message ? "visible" : ""}`} role="status">
-        <Check size={16} />
-        {message}
-      </div>
-    </div>
+    </Dialog.Root>
   );
 }
 type Open = (editor: EditorState) => void;
@@ -938,10 +893,15 @@ function AccountsPage({
   const a = data.accounts.find((a) => a.id === id);
   if (id && !a)
     return (
-      <Empty
-        title="Account not found"
-        description="It may have been archived or belongs to another workspace."
-      />
+      <>
+        <Empty
+          title="Account not found"
+          description="It may have been archived or belongs to another workspace."
+        />
+        <Link href="/accounts" className="button">
+          Return to accounts
+        </Link>
+      </>
     );
   if (a) {
     const balance = accountBalance(data, a.id, today);
@@ -1227,10 +1187,15 @@ function BillsPage({ id, open }: { id?: string; open: Open }) {
   const bill = data.bills.find((b) => b.id === id);
   if (id && !bill)
     return (
-      <Empty
-        title="Statement not found"
-        description="Return to Bills & payments to see your statements."
-      />
+      <>
+        <Empty
+          title="Statement not found"
+          description="Return to Bills & payments to see your statements."
+        />
+        <Link href="/bills" className="button">
+          Return to bills & payments
+        </Link>
+      </>
     );
   if (bill) {
     const a = data.accounts.find((a) => a.id === bill.accountId);
@@ -1427,6 +1392,18 @@ function BillsPage({ id, open }: { id?: string; open: Open }) {
 function DepositsPage({ id, open }: { id?: string; open: Open }) {
   const { data } = useFinance();
   const fd = data.fixedDeposits.find((f) => f.id === id);
+  if (id && !fd)
+    return (
+      <>
+        <Empty
+          title="Deposit not found"
+          description="This deposit is not available in your workspace."
+        />
+        <Link href="/fixed-deposits" className="button">
+          Return to fixed deposits
+        </Link>
+      </>
+    );
   const rows = id
     ? data.fixedDeposits.filter((f) => f.id === id)
     : data.fixedDeposits;
@@ -1538,6 +1515,18 @@ function LoansPage({
 }) {
   const { data, today } = useFinance();
   const loan = data.loans.find((l) => l.id === id);
+  if (id && !loan)
+    return (
+      <>
+        <Empty
+          title="Loan not found"
+          description="This loan is not available in your workspace."
+        />
+        <Link href="/loans" className="button">
+          Return to loans
+        </Link>
+      </>
+    );
   const loans = id ? data.loans.filter((l) => l.id === id) : data.loans;
   return (
     <>

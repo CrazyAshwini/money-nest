@@ -10,6 +10,7 @@ export function Modal({
   onClose,
   className = "",
   overlayClassName = "",
+  busy = false,
 }: {
   title: string;
   description?: string;
@@ -17,17 +18,26 @@ export function Modal({
   onClose: () => void;
   className?: string;
   overlayClassName?: string;
+  busy?: boolean;
 }) {
   return (
     <Dialog.Root
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !busy) onClose();
       }}
     >
       <Dialog.Portal>
         <Dialog.Overlay className={`modal-overlay ${overlayClassName}`} />
-        <Dialog.Content className={`modal ${className}`}>
+        <Dialog.Content
+          className={`modal ${className}`}
+          onEscapeKeyDown={(event) => {
+            if (busy) event.preventDefault();
+          }}
+          onPointerDownOutside={(event) => {
+            if (busy) event.preventDefault();
+          }}
+        >
           <div className="modal-heading">
             <div>
               <Dialog.Title>{title}</Dialog.Title>
@@ -35,7 +45,12 @@ export function Modal({
                 {description || "Review the details below before saving."}
               </Dialog.Description>
             </div>
-            <Dialog.Close className="icon-button" aria-label="Close dialog">
+            <Dialog.Close
+              type="button"
+              className="icon-button"
+              aria-label="Close dialog"
+              disabled={busy}
+            >
               <X size={20} />
             </Dialog.Close>
           </div>
@@ -102,7 +117,7 @@ export function Empty({
       <h3>{title}</h3>
       <p>{description}</p>
       {onAdd && (
-        <button className="button primary" onClick={onAdd}>
+        <button type="button" className="button primary" onClick={onAdd}>
           <Plus size={16} /> Add your first record
         </button>
       )}
@@ -162,6 +177,11 @@ export function downloadFile(content: string, name: string, type = "text/csv") {
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  document.body.appendChild(a);
+  try {
+    a.click();
+  } finally {
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }

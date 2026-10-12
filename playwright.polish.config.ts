@@ -1,0 +1,39 @@
+import { defineConfig } from "@playwright/test";
+
+export default defineConfig({
+  testDir: "./tests/polish-e2e",
+  fullyParallel: false,
+  workers: 1,
+  timeout: 90_000,
+  expect: { timeout: 10_000 },
+  reporter: [["list"]],
+  outputDir: "test-results/polish",
+  use: {
+    baseURL: "http://127.0.0.1:3005",
+    viewport: { width: 1440, height: 1000 },
+    locale: "en-IN",
+    timezoneId: "Asia/Kolkata",
+    trace: "off",
+    screenshot: "off",
+    video: "off",
+  },
+  webServer: {
+    command:
+      "node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3005",
+    url: "http://127.0.0.1:3005/dashboard",
+    reuseExistingServer: false,
+    timeout: 60_000,
+    env: {
+      NODE_ENV: "production",
+      NEXT_TELEMETRY_DISABLED: "1",
+      FINANCE_PRIVATE_ENABLED: "false",
+      AI_GATEWAY_API_KEY: "",
+      GOOGLE_GENERATIVE_AI_API_KEY: "",
+      GEMINI_API_KEY: "",
+      GOOGLE_API_KEY: "",
+      NEXT_PUBLIC_SUPABASE_URL: "",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "",
+    },
+  },
+});

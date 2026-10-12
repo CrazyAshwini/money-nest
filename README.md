@@ -36,6 +36,7 @@ Imports retain missing dates, unknown limits, and provisional matches. Known unp
 - In-app reminder preferences and audit history.
 - Supabase cookie authentication and protected APIs, 22 normalized owner-scoped tables, RLS, composite ownership foreign keys, private document upload/signing API, decimal-safe views, and guarded atomic allocation/import functions.
 - Installable PWA manifest, keyboard-accessible dialogs, labels, and reduced-motion styling. Offline financial-data caching is intentionally not implemented.
+- Responsive pages, a keyboard-accessible mobile drawer, branded 404, page titles/descriptions, favicon/install icons and working footer/profile links. See the [usability audit](docs/usability-audit.md).
 
 All money arithmetic uses decimal strings and `decimal.js`; chart positions alone use numeric display values. Reported balances, calculated balances and missing values remain distinct. Unknown due dates stay unknown, incomplete entries stay in review, and excess reimbursements are retained rather than silently rounded away.
 
@@ -81,6 +82,7 @@ npm run build
 npx playwright test --config playwright.private.config.ts
 npx playwright test --config playwright.receipt.config.ts
 npx playwright test --config playwright.commerce.config.ts
+npx playwright test --config playwright.polish.config.ts
 ```
 
 Finance and import tests exercise exact cents, repayment exclusion, refund caps, missing dates, and idempotency. Database tests execute the migration in embedded PostgreSQL with two owners and mocked Supabase Auth/Storage schemas; this tests actual RLS and SQL constraints, but does not substitute for live Supabase verification. Browser tests cover desktop and mobile workflows and persistence. Private-profile tests use synthetic data in an isolated temporary folder and verify setup, authentication, ownership, origin checks, persistence, encryption, and demo separation; build the production app first.

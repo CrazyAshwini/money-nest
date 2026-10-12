@@ -242,11 +242,9 @@ test("private profile setup, protected records, persistence, and demo isolation"
 
   await test.step("profile and transaction edits persist across reloads", async () => {
     await page.goto("/profile");
-    await expect(page.getByLabel("Email", { exact: true })).toHaveValue(email);
-    await expect(page.getByLabel("Email", { exact: true })).toHaveAttribute(
-      "readonly",
-      "",
-    );
+    await expect(
+      page.getByRole("link", { name: email, exact: true }),
+    ).toHaveAttribute("href", `mailto:${email}`);
     await page.getByLabel("Profile name", { exact: true }).fill(editedName);
     await page
       .getByRole("button", { name: "Save profile", exact: true })
@@ -256,7 +254,9 @@ test("private profile setup, protected records, persistence, and demo isolation"
     await expect(page.getByLabel("Profile name", { exact: true })).toHaveValue(
       editedName,
     );
-    await expect(page.getByLabel("Email", { exact: true })).toHaveValue(email);
+    await expect(
+      page.getByRole("link", { name: email, exact: true }),
+    ).toHaveAttribute("href", `mailto:${email}`);
     await page.goto("/transactions");
     await page
       .getByRole("button", { name: "Add transaction", exact: true })
@@ -392,8 +392,78 @@ test("private profile setup, protected records, persistence, and demo isolation"
     await page.setViewportSize({ width: 1440, height: 1000 });
   });
 
+  await test.step("a lost transaction response shows an error and retry preserves one expense", async () => {
+    await page.goto("/transactions");
+    const before = (await (await page.request.get("/api/workspace")).json())
+      .workspace as WorkspaceData;
+    await page
+      .getByRole("button", { name: "Add transaction", exact: true })
+      .click();
+    const dialog = page.locator(".transaction-modal");
+    await dialog
+      .getByRole("textbox", { name: "Description", exact: true })
+      .fill("Synthetic retry-safe expense");
+    await dialog.getByLabel("Amount · ₹", { exact: true }).fill("12.34");
+    await dialog.getByLabel("Date", { exact: true }).fill("2026-10-09");
+    await dialog
+      .getByRole("combobox", { name: "From account", exact: true })
+      .selectOption({ label: bankName });
+    const ids: string[] = [];
+    await page.route("**/api/workspace", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      const body = route.request().postDataJSON();
+      ids.push(body.record.id);
+      if (ids.length === 1) {
+        expect((await route.fetch()).status()).toBe(200);
+        await route.abort("failed");
+      } else await route.continue();
+    });
+    await dialog
+      .getByRole("button", { name: "Save transaction", exact: true })
+      .click();
+    await expect(dialog.getByRole("alert")).toBeVisible();
+    await expect(
+      dialog.getByRole("textbox", { name: "Description", exact: true }),
+    ).toHaveValue("Synthetic retry-safe expense");
+    await dialog
+      .getByRole("button", { name: "Save transaction", exact: true })
+      .click();
+    await expect(dialog).toHaveCount(0);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(ids[1]);
+    const after = (await (await page.request.get("/api/workspace")).json())
+      .workspace as WorkspaceData;
+    expect(after.transactions).toHaveLength(before.transactions.length + 1);
+    expect(
+      after.transactions.filter(
+        (row) => row.description === "Synthetic retry-safe expense",
+      ),
+    ).toHaveLength(1);
+    await page.unroute("**/api/workspace");
+  });
+
   await test.step("logout revokes access and the password unlocks only the private workspace", async () => {
     await page.goto("/settings");
+    await page.route("**/api/auth", (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({
+              error: "Synthetic connection error. Please retry.",
+            }),
+          })
+        : route.continue(),
+    );
+    await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    await expect(page.locator('.error[role="alert"]')).toContainText(
+      "Sign out failed. Please retry.",
+    );
+    await expect(page).toHaveURL(`${baseURL}/settings`);
+    await expect(
+      page.getByRole("button", { name: "Sign out", exact: true }),
+    ).toBeEnabled();
+    await page.unroute("**/api/auth");
     await page.getByRole("button", { name: "Sign out", exact: true }).click();
     await expect(page).toHaveURL(`${baseURL}/login`);
     const lockedWorkspace = await page.request.get("/api/workspace");

@@ -90,6 +90,7 @@ export function RecordEditor({
   const { data, userId, today, save, toast } = useFinance();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [newRecordId] = useState(() => crypto.randomUUID());
   const record = "record" in editor ? editor.record : undefined;
   const names = {
     account: "account",
@@ -102,7 +103,10 @@ export function RecordEditor({
     snapshot: "reported snapshot",
     emi: "installment",
   };
-  const base = { id: record?.id || crypto.randomUUID(), userId };
+  const base = {
+    id: editor.type === "snapshot" ? newRecordId : record?.id || newRecordId,
+    userId,
+  };
   const allocatedLoan =
     editor.type === "transaction"
       ? data.loans.find((loan) =>
@@ -169,6 +173,7 @@ export function RecordEditor({
     ));
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     setError("");
     setBusy(true);
     const f = new FormData(event.currentTarget);
@@ -342,7 +347,6 @@ export function RecordEditor({
         const asOf = new Date(`${text(f, "asOf")}:00+05:30`).toISOString();
         await save("snapshots", {
           ...base,
-          id: crypto.randomUUID(),
           accountId: editor.record.id,
           asOf,
           reportedBalance: amount(f.get("reportedBalance"), true),
@@ -481,6 +485,7 @@ export function RecordEditor({
           : `${record && editor.type !== "snapshot" ? "Edit" : "Add"} ${names[editor.type]}`
       }
       onClose={onClose}
+      busy={busy}
       className={
         editor.type === "transaction" ? "transaction-modal" : undefined
       }
@@ -1101,7 +1106,12 @@ export function RecordEditor({
           </p>
         )}
         <div className="form-actions">
-          <button type="button" className="button" onClick={onClose}>
+          <button
+            type="button"
+            className="button"
+            onClick={onClose}
+            disabled={busy}
+          >
             Cancel
           </button>
           <button

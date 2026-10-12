@@ -44,6 +44,7 @@
   font-size: 12px;
   line-height: 1.5;
   margin-top: 3px;
+  overflow-wrap: anywhere;
 }
 .uploaded-image-modal .modal-heading .icon-button {
   border: 1px solid #52606a;

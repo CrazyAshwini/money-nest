@@ -22,6 +22,7 @@ export function PrivateProfilePage() {
   const router = useRouter();
   const [setupToken, setSetupToken] = useState("");
   const [busy, setBusy] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -43,6 +44,7 @@ export function PrivateProfilePage() {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
     const form = new FormData(event.currentTarget);
     setBusy(true);
     setError("");
@@ -78,7 +80,12 @@ export function PrivateProfilePage() {
       sessionStorage.removeItem("finance-os:mode");
       await refresh();
       if (updating) toast("Profile saved.");
-      else router.replace("/dashboard");
+      else {
+        toast(
+          needsSetup ? "Profile created. You are signed in." : "Signed in.",
+        );
+        router.replace("/dashboard");
+      }
     } catch (issue) {
       setError(issue instanceof Error ? issue.message : "Please try again.");
     } finally {
@@ -87,7 +94,10 @@ export function PrivateProfilePage() {
   }
 
   async function logout() {
+    if (busy) return;
     setBusy(true);
+    setSigningOut(true);
+    setError("");
     try {
       const response = await fetch("/api/profile", {
         method: "POST",
@@ -96,11 +106,13 @@ export function PrivateProfilePage() {
       });
       if (!response.ok) throw new Error("Please try signing out again.");
       await refresh();
+      toast("Signed out.");
       router.replace("/login");
     } catch (issue) {
       setError(issue instanceof Error ? issue.message : "Please try again.");
     } finally {
       setBusy(false);
+      setSigningOut(false);
     }
   }
 
@@ -128,14 +140,12 @@ export function PrivateProfilePage() {
             />
           </Field>
           {profile.email && (
-            <Field label="Email">
-              <input
-                type="email"
-                value={profile.email}
-                readOnly
-                autoComplete="username"
-              />
-            </Field>
+            <div className="field">
+              <span>Email</span>
+              <a className="text-link" href={`mailto:${profile.email}`}>
+                {profile.email}
+              </a>
+            </div>
           )}
           <p className="profile-details">
             INR · Asia/Kolkata · {data.accounts.filter((a) => a.active).length}{" "}
@@ -148,7 +158,7 @@ export function PrivateProfilePage() {
           )}
           <div className="profile-actions">
             <button className="button primary" type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Save profile"}
+              {busy && !signingOut ? "Saving…" : "Save profile"}
             </button>
             <button
               className="button"
@@ -156,7 +166,7 @@ export function PrivateProfilePage() {
               onClick={logout}
               disabled={busy}
             >
-              <LogOut size={15} /> Sign out
+              <LogOut size={15} /> {signingOut ? "Signing out…" : "Sign out"}
             </button>
           </div>
         </form>
@@ -166,9 +176,11 @@ export function PrivateProfilePage() {
 
   return (
     <main className="private-access">
-      <Link href="/dashboard" className="brand">
-        <span className="brand-icon">F</span>finance
-        <span className="brand-os">OS</span>
+      <Link href="/dashboard" className="brand" aria-label="Money Nest home">
+        <span className="brand-icon" aria-hidden="true">
+          M
+        </span>
+        Money Nest
       </Link>
       <div className="private-access-card">
         <span className="login-icon">
@@ -177,7 +189,7 @@ export function PrivateProfilePage() {
         <h1>{needsSetup ? "Create your profile" : "Welcome back"}</h1>
         <p>Your financial records stay private on this computer.</p>
         {backend !== "local" && (
-          <p className="error">
+          <p className="error" role="alert">
             A private local profile is not configured yet.
           </p>
         )}
@@ -250,6 +262,8 @@ export function PrivateProfilePage() {
         </form>
         <button
           className="text-link"
+          type="button"
+          disabled={busy}
           onClick={() => {
             sessionStorage.setItem("finance-os:mode", "demo");
             enterDemo();

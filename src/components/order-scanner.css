@@ -6,12 +6,14 @@
   font-size: 12px;
   line-height: 1.6;
   margin: 0 0 16px;
+  overflow-wrap: anywhere;
 }
 .order-scan-summary > p {
   color: #687661;
   font-size: 12px;
   line-height: 1.6;
   margin: 0 0 12px;
+  overflow-wrap: anywhere;
 }
 .order-scan-summary a {
   color: #326a4b;

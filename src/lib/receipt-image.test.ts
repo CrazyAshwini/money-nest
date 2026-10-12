@@ -37,6 +37,26 @@ async function metadataFixture(mediaType: GeminiReceiptMediaType) {
 }
 
 describe("Gemini receipt image metadata stripping", () => {
+  it("compresses a synthetic uncompressed screenshot without changing text pixels or dimensions", async () => {
+    const input = await sharp(
+      Buffer.from(
+        '<svg width="640" height="480" xmlns="http://www.w3.org/2000/svg"><rect width="640" height="480" fill="white"/><text x="20" y="80" font-size="26">SYNTHETIC RECEIPT: INR 123.45</text></svg>',
+      ),
+    )
+      .png({ compressionLevel: 0 })
+      .toBuffer();
+    const prepared = await prepareGeminiReceiptImage(input, "image/png");
+    expect(prepared.bytes.length).toBeLessThan(input.length / 4);
+    expect(await sharp(prepared.bytes).metadata()).toMatchObject({
+      width: 640,
+      height: 480,
+    });
+    expect(
+      (await sharp(prepared.bytes).raw().toBuffer()).equals(
+        await sharp(input).raw().toBuffer(),
+      ),
+    ).toBe(true);
+  });
   it.each<GeminiReceiptMediaType>(["image/png", "image/jpeg", "image/webp"])(
     "removes real EXIF/GPS and XMP from synthetic %s while preserving its image",
     async (mediaType) => {

@@ -43,10 +43,10 @@ export async function prepareGeminiReceiptImage(
 
     const output = await (
       mediaType === "image/png"
-        ? image.png()
+        ? image.png({ compressionLevel: 9 })
         : mediaType === "image/jpeg"
           ? image.jpeg({ quality: 95 })
-          : image.webp({ lossless: true })
+          : image.webp({ lossless: true, effort: 6 })
     ).toBuffer();
     if (output.byteLength > MAX_RECEIPT_BYTES) {
       output.fill(0);

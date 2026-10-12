@@ -12,6 +12,10 @@
   gap: 12px;
   margin-bottom: 15px;
 }
+.receipt-card-heading > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .receipt-camera-icon {
   align-items: center;
   background: #e2ece5;
@@ -56,6 +60,7 @@
   justify-content: center;
   min-height: 45px;
   min-width: 0;
+  overflow-wrap: anywhere;
   padding: 10px 16px;
   transition:
     background 150ms,
@@ -206,6 +211,7 @@
   font-size: 11px;
   line-height: 1.6;
   margin: 10px 0;
+  overflow-wrap: anywhere;
 }
 .receipt-note a {
   color: #3b7c58;
@@ -382,6 +388,7 @@
   justify-content: flex-end;
   margin-top: 17px;
   padding-top: 17px;
+  flex-wrap: wrap;
 }
 .receipt-footer .receipt-pill {
   color: #2e3a2d;
@@ -441,5 +448,25 @@
   .receipt-pill {
     font-size: 12px;
     padding: 10px 12px;
+  }
+  .receipt-modal .modal-heading .icon-button {
+    height: 44px;
+    min-height: 44px;
+    min-width: 44px;
+    width: 44px;
+  }
+  .receipt-preview-text,
+  .receipt-remove,
+  .receipt-text-button,
+  .receipt-long-bill,
+  .receipt-review-check {
+    min-height: 44px;
+  }
+  .receipt-preview-text {
+    display: inline-flex;
+    align-items: center;
+  }
+  .receipt-footer .receipt-pill {
+    flex: 1 1 105px;
   }
 }

@@ -78,6 +78,7 @@
 .commerce-order-values span {
   color: var(--muted);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 .commerce-details {
   border-top: 1px solid var(--border);
@@ -89,17 +90,21 @@
   cursor: pointer;
   font-size: 12px;
   margin-bottom: 12px;
+  overflow-wrap: anywhere;
 }
 .commerce-item {
   align-items: center;
   display: flex;
   gap: 10px;
   margin: 10px 0;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 .commerce-item span {
   flex: 1;
   font-size: 13px;
   overflow-wrap: anywhere;
+  min-width: 0;
 }
 .commerce-item select {
   max-width: 160px;
@@ -113,6 +118,7 @@
   line-height: 1.6;
   margin: 14px 0;
   padding: 12px;
+  overflow-wrap: anywhere;
 }
 .commerce-search {
   max-width: 200px;
@@ -157,5 +163,19 @@
   .commerce-order,
   .commerce-refund {
     padding: 12px;
+  }
+  .commerce-details summary,
+  .commerce-page .checkbox-field,
+  .commerce-modal .checkbox-field {
+    min-height: 44px;
+  }
+  .commerce-item span {
+    flex-basis: 100%;
+  }
+  .commerce-item select {
+    font-size: 16px;
+    min-height: 44px;
+    max-width: 100%;
+    width: 100%;
   }
 }

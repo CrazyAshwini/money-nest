@@ -10,6 +10,7 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { cloneDemoData, DEMO_USER_ID } from "@/lib/seed";
 import { validateWorkspaceRecord } from "@/lib/validation";
+import { resolveAppPage } from "@/lib/page-metadata";
 import type { WorkspaceData, OwnedRecord } from "@/lib/types";
 import type { UserProfile } from "@/lib/profile-types";
 
@@ -26,8 +27,10 @@ type ContextValue = {
   month: string;
   setMonth: (month: string) => void;
   today: string;
-  toast: (message: string) => void;
+  toast: (message: string, kind?: "success" | "error" | "info") => void;
   message: string;
+  messageKind: "success" | "error" | "info";
+  dismissMessage: () => void;
   save: <K extends keyof WorkspaceData>(
     collection: K,
     record: WorkspaceData[K][number],
@@ -55,6 +58,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<Mode>("loading");
   const [month, setMonth] = useState("2026-10");
   const [message, setMessage] = useState("");
+  const [messageKind, setMessageKind] = useState<"success" | "error" | "info">(
+    "success",
+  );
   const [authUserId, setAuthUserId] = useState("");
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [backend, setBackend] = useState<"local" | "supabase" | null>(null);
@@ -67,10 +73,21 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     currentData.current = next;
     setData(next);
   }, []);
-  const toast = useCallback((text: string) => {
-    setMessage(text);
+  const toast = useCallback(
+    (text: string, kind: "success" | "error" | "info" = "success") => {
+      setMessage(text);
+      setMessageKind(kind);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(
+        () => setMessage(""),
+        kind === "error" ? 10_000 : 5000,
+      );
+    },
+    [],
+  );
+  const dismissMessage = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setMessage(""), 5000);
+    setMessage("");
   }, []);
   const enterDemo = useCallback(() => {
     try {
@@ -142,6 +159,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         error instanceof Error
           ? error.message
           : "Unable to connect. Please retry.",
+        "error",
       );
     }
   }, [enterDemo, toast, replaceData]);
@@ -162,12 +180,19 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         toast(
           "Browser storage is full. Export your demo changes before closing.",
+          "error",
         );
       }
     }
   }, [data, mode, toast]);
   useEffect(() => {
-    if (mode === "login" && path !== "/login" && !path.startsWith("/profile"))
+    const resolved = resolveAppPage(path.split("/").filter(Boolean));
+    if (
+      mode === "login" &&
+      resolved &&
+      resolved.page !== "login" &&
+      resolved.page !== "profile"
+    )
       router.replace("/login");
   }, [mode, path, router]);
   async function save<K extends keyof WorkspaceData>(
@@ -295,6 +320,8 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         today: mode === "demo" ? "2026-10-09" : localDate(),
         toast,
         message,
+        messageKind,
+        dismissMessage,
         save,
         refresh,
         resetDemo,
