@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
 import * as Dialog from "@radix-ui/react-dialog";
-import { NAV_ITEMS, WorkspaceNavigation } from "./workspace-navigation";
+import { NAV_ITEMS, WorkspaceNavigation, MobileBottomBar } from "./workspace-navigation";
 import { resolveAppPage } from "@/lib/page-metadata";
 import { LoadingSkeleton } from "./loading-skeleton";
 import "./shell.css";
@@ -296,15 +296,15 @@ export function FinanceApp() {
                 )}
               </div>
               <div className="page-actions">
-                <label className="month-picker">
-                  <CalendarDays size={16} />
+                <div className="month-picker">
+                  <CalendarDays size={16} aria-hidden="true" />
                   <input
                     aria-label="Selected month"
                     type="month"
                     value={month}
                     onChange={(e) => setMonth(e.target.value || "2026-10")}
                   />
-                </label>
+                </div>
                 {page !== "dashboard" && (
                   <Link href="/imports" className="button import-button">
                     <Upload size={15} />
@@ -382,6 +382,11 @@ export function FinanceApp() {
             </footer>
           </main>
         </div>
+        <MobileBottomBar
+          page={page}
+          reviewCount={metrics.reviewCount}
+          onOpenMore={() => setMobile(true)}
+        />
         {editor && (
           <RecordEditor editor={editor} onClose={() => setEditor(null)} />
         )}
@@ -481,6 +486,40 @@ function Dashboard({ open }: { open: Open }) {
   return (
     <>
       <Kpis />
+      <div className="quick-actions-bar" aria-label="Quick actions">
+        <button
+          type="button"
+          className="quick-action-btn"
+          onClick={() => open({ type: "transaction", kind: "expense" })}
+        >
+          <span className="quick-action-icon">
+            <Plus size={18} aria-hidden="true" />
+          </span>
+          <span>Add</span>
+        </button>
+        <Link href="/imports" className="quick-action-btn">
+          <span className="quick-action-icon">
+            <Upload size={18} aria-hidden="true" />
+          </span>
+          <span>Import</span>
+        </Link>
+        <Link href="/bills" className="quick-action-btn">
+          <span className="quick-action-icon">
+            <CreditCard size={18} aria-hidden="true" />
+          </span>
+          <span>Bills</span>
+        </Link>
+        <button
+          type="button"
+          className="quick-action-btn"
+          onClick={() => open({ type: "transaction", kind: "transfer" })}
+        >
+          <span className="quick-action-icon">
+            <ArrowLeftRight size={18} aria-hidden="true" />
+          </span>
+          <span>Transfer</span>
+        </button>
+      </div>
       <div className="dashboard-essential-grid">
         <Section title="Bills to pay" href="/bills" className="dashboard-bills">
           <div className="upcoming-list">
@@ -1282,6 +1321,23 @@ function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
           <Plus size={15} />{" "}
           {create ? "Create transaction" : `Add ${kindLabel(newKind)}`}
         </button>
+      </div>
+      <div className="filter-chips-row" role="group" aria-label="Quick filters">
+        {[
+          { id: "all", label: "All" },
+          { id: "expense", label: "Expenses" },
+          { id: "income", label: "Income" },
+          { id: "transfer", label: "Transfers" },
+        ].map((chip) => (
+          <button
+            key={chip.id}
+            type="button"
+            className={`filter-chip ${kind === chip.id ? "active" : ""}`}
+            onClick={() => setKind(chip.id)}
+          >
+            {chip.label}
+          </button>
+        ))}
       </div>
       <div className="filter-row">
         <SlidersHorizontal size={16} />

@@ -12,7 +12,6 @@ import {
   ArrowUpRight,
   CalendarDays,
   LogOut,
-  RefreshCw,
   LockKeyhole,
   ArrowRight,
   AlertCircle,
@@ -407,9 +406,8 @@ export function GroupsPage({
   );
 }
 export function SettingsPage() {
-  const { data, mode, toast, resetDemo, refresh } = useFinance();
+  const { data, mode, toast, refresh } = useFinance();
   const router = useRouter();
-  const [reset, setReset] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState("");
 
@@ -513,34 +511,18 @@ export function SettingsPage() {
               Manage reminders <ArrowUpRight size={15} />
             </Link>
           </div>
-          {mode === "demo" ? (
-            <div className="settings-row">
-              <div>
-                <strong>Restore fictional demo</strong>
-                <p>
-                  Replaces changes made in this browser with the original sample
-                  data.
-                </p>
-              </div>
-              <button className="button" onClick={() => setReset(true)}>
-                <RefreshCw size={15} />
-                Reset demo
-              </button>
-            </div>
-          ) : (
-            <div className="settings-row">
-              <strong>End this session</strong>
-              <button
-                className="button"
-                type="button"
-                disabled={signingOut}
-                onClick={() => void signOut()}
-              >
-                <LogOut size={15} />
-                {signingOut ? "Signing out…" : "Sign out"}
-              </button>
-            </div>
-          )}
+          <div className="settings-row">
+            <strong>End this session</strong>
+            <button
+              className="button"
+              type="button"
+              disabled={signingOut}
+              onClick={() => void signOut()}
+            >
+              <LogOut size={15} />
+              {signingOut ? "Signing out…" : "Sign out"}
+            </button>
+          </div>
           {error && (
             <p className="error" role="alert">
               {error}
@@ -577,28 +559,6 @@ export function SettingsPage() {
             ))}
         </div>
       </Section>
-      {reset && (
-        <Modal
-          title="Restore the demo?"
-          description="This replaces fictional changes in this browser. Export first if you want to keep them."
-          onClose={() => setReset(false)}
-        >
-          <div className="form-actions">
-            <button className="button" onClick={() => setReset(false)}>
-              Cancel
-            </button>
-            <button
-              className="button primary"
-              onClick={() => {
-                resetDemo();
-                setReset(false);
-              }}
-            >
-              Restore demo
-            </button>
-          </div>
-        </Modal>
-      )}
     </>
   );
 }
@@ -744,7 +704,7 @@ function LoginStory() {
 }
 
 export function LoginPage() {
-  const { refresh, enterDemo, toast, signupEnabled } = useFinance();
+  const { refresh, toast, signupEnabled } = useFinance();
   const router = useRouter();
   const [signup, setSignup] = useState(false);
   const [recovering, setRecovering] = useState(false);
@@ -917,29 +877,11 @@ export function LoginPage() {
           </button>
         )}
         {!recovering && (
-          <>
-            <div className="login-divider">
-              <span>or take a look around</span>
-            </div>
-            <button
-              className="button"
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                sessionStorage.setItem("finance-os:mode", "demo");
-                enterDemo();
-                router.push("/dashboard");
-                toast("Exploring the fictional demo workspace.");
-              }}
-            >
-              Explore fictional demo <ArrowUpRight size={16} />
-            </button>
-            <p className="login-note">
-              <ShieldCheck size={13} />
-              Sign-in is limited to the Money Nest owner account. Your workspace
-              syncs across your devices.
-            </p>
-          </>
+          <p className="login-note">
+            <ShieldCheck size={13} />
+            Sign-in is limited to your Money Nest account. Your workspace
+            syncs securely across your devices.
+          </p>
         )}
         {!recovering && !creating && (
           <p className="login-help">

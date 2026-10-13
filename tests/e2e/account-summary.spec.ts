@@ -209,7 +209,7 @@ test.beforeEach(async ({ page }) => {
   );
   await page.goto("/dashboard");
   await expect(
-    page.getByRole("heading", { name: "My Finance Dashboard", exact: true }),
+    page.getByRole("heading", { name: "Overview", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".demo-strip")).toContainText("Fictional data");
 });

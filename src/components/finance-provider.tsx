@@ -147,7 +147,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         result.emailRequired === true || Boolean(result.profile?.email),
       );
       if (result.configured === false) {
-        enterDemo();
+        setProfile(null);
+        setAuthUserId("");
+        setMode("login");
         return;
       }
       if (!res.ok && res.status !== 401)

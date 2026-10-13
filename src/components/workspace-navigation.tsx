@@ -137,3 +137,59 @@ export function WorkspaceNavigation({
     </>
   );
 }
+
+export function MobileBottomBar({
+  page,
+  reviewCount,
+  onOpenMore,
+}: {
+  page: string;
+  reviewCount: number;
+  onOpenMore: () => void;
+}) {
+  const items = [
+    { href: "/dashboard", id: "dashboard", title: "Home", icon: LayoutDashboard },
+    { href: "/accounts", id: "accounts", title: "Accounts", icon: Landmark },
+    { href: "/transactions", id: "transactions", title: "Transactions", icon: ArrowLeftRight },
+    { href: "/analytics", id: "analytics", title: "Analytics", icon: ChartNoAxesCombined },
+  ];
+  const isMoreActive = ![
+    "dashboard",
+    "accounts",
+    "transactions",
+    "analytics",
+  ].includes(page);
+
+  return (
+    <nav className="mobile-bottom-bar" aria-label="Mobile navigation">
+      {items.map((item) => {
+        const active = page === item.id;
+        const Icon = item.icon;
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`bottom-bar-item ${active ? "active" : ""}`}
+            aria-current={active ? "page" : undefined}
+          >
+            <Icon size={20} aria-hidden="true" />
+            <span>{item.title}</span>
+          </Link>
+        );
+      })}
+      <button
+        type="button"
+        className={`bottom-bar-item ${isMoreActive ? "active" : ""}`}
+        aria-label="More navigation options"
+        onClick={onOpenMore}
+      >
+        <span className="bottom-bar-icon-wrap">
+          <MoreHorizontal size={20} aria-hidden="true" />
+          {reviewCount > 0 && <span className="bottom-bar-badge" aria-label={`${reviewCount} pending items`} />}
+        </span>
+        <span>More</span>
+      </button>
+    </nav>
+  );
+}
+
