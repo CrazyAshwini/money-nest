@@ -95,13 +95,13 @@ export interface FixedDeposit extends OwnedRecord {
   institution: string;
   maskedSuffix: string;
   principal: Money;
-  openingDate: string;
-  maturityDate: string;
+  openingDate: string | null;
+  maturityDate: string | null;
   maturityAmount?: Money | null;
   annualRate?: string | null;
   payoutMethod: string;
   maturityInstruction: "reinvest" | "withdraw" | "unconfirmed";
-  pledged: boolean;
+  pledged: boolean | null;
   backingAccountId: string | null;
   payoutAccountId: string | null;
   reportedEncashmentValue?: Money | null;

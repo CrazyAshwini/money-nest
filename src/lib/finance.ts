@@ -87,6 +87,28 @@ export function formatDate(
     timeZone: "Asia/Kolkata",
   }).format(date);
 }
+/** Direction follows recorded account links, regardless of transaction classification. */
+export function transactionDirection(
+  transaction: Pick<Transaction, "fromAccountId" | "toAccountId">,
+): "incoming" | "outgoing" | "between_accounts" | "unknown" {
+  if (transaction.fromAccountId && transaction.toAccountId)
+    return "between_accounts";
+  if (transaction.toAccountId) return "incoming";
+  if (transaction.fromAccountId) return "outgoing";
+  return "unknown";
+}
+
+/** Only stable Notion page identities can produce a clickable source link. */
+export function transactionNotionUrl(
+  transaction: Pick<Transaction, "sourceSystem" | "sourceObjectId">,
+): string | null {
+  if (transaction.sourceSystem !== "notion" || !transaction.sourceObjectId)
+    return null;
+  const pageId = transaction.sourceObjectId.replaceAll("-", "");
+  return /^[a-f0-9]{32}$/i.test(pageId)
+    ? `https://www.notion.so/${pageId}`
+    : null;
+}
 export function monthLabel(month: string): string {
   return new Intl.DateTimeFormat("en-IN", {
     month: "long",
@@ -823,16 +845,16 @@ export function groupSummary(data: WorkspaceData, groupId: string) {
 export function estimatedFdValue(
   principal: Money,
   annualRate: string | null | undefined,
-  openingDate: string,
-  maturityDate: string,
+  openingDate: string | null,
+  maturityDate: string | null,
   asOf = todayISO(),
 ): Money | null {
-  if (!annualRate) return null;
+  if (!annualRate || !openingDate || !maturityDate) return null;
   const start = Date.parse(`${openingDate}T00:00:00Z`);
-  const end = Math.min(
-    Date.parse(`${asOf.slice(0, 10)}T00:00:00Z`),
-    Date.parse(`${maturityDate}T00:00:00Z`),
-  );
+  const maturity = Date.parse(`${maturityDate}T00:00:00Z`);
+  const end = Math.min(Date.parse(`${asOf.slice(0, 10)}T00:00:00Z`), maturity);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || maturity < start)
+    return null;
   const days = Math.max(0, Math.floor((end - start) / 86400000));
   // Explicit simple-interest estimate only; contractual compounding is never invented.
   return dec(principal)

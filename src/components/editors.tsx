@@ -390,17 +390,23 @@ export function RecordEditor({
           institution: text(f, "institution"),
           maskedSuffix: text(f, "maskedSuffix"),
           principal: amount(f.get("principal"))!,
-          openingDate: text(f, "openingDate"),
-          maturityDate: text(f, "maturityDate"),
+          openingDate: text(f, "openingDate") || null,
+          maturityDate: text(f, "maturityDate") || null,
           maturityAmount: amount(f.get("maturityAmount"), true),
           annualRate: text(f, "annualRate") || null,
-          payoutMethod: "At maturity",
+          payoutMethod: editor.record?.payoutMethod || "Unconfirmed",
           maturityInstruction: text(
             f,
             "maturityInstruction",
           ) as FixedDeposit["maturityInstruction"],
-          pledged: !!text(f, "backingAccountId"),
-          backingAccountId: text(f, "backingAccountId") || null,
+          pledged:
+            text(f, "backingAccountId") === "__unknown__"
+              ? null
+              : !!text(f, "backingAccountId"),
+          backingAccountId:
+            text(f, "backingAccountId") === "__unknown__"
+              ? null
+              : text(f, "backingAccountId") || null,
           payoutAccountId: text(f, "payoutAccountId") || null,
         });
       } else if (editor.type === "loan") {
@@ -955,21 +961,15 @@ export function RecordEditor({
                 )}
               </Field>
               <Field label="Opening date">
-                {input(
-                  "openingDate",
-                  editor.record?.openingDate || today,
-                  "date",
-                  true,
-                )}
+                {input("openingDate", editor.record?.openingDate, "date")}
               </Field>
               <Field label="Maturity date">
-                {input(
-                  "maturityDate",
-                  editor.record?.maturityDate,
-                  "date",
-                  true,
-                )}
+                {input("maturityDate", editor.record?.maturityDate, "date")}
               </Field>
+              <p className="form-note full">
+                Leave contract dates blank until confirmed by the deposit
+                advice. A funding payment does not confirm the opening date.
+              </p>
               <Field label="Annual rate · %">
                 {input("annualRate", editor.record?.annualRate, "number")}
               </Field>
@@ -979,8 +979,13 @@ export function RecordEditor({
               <Field label="Pledged credit card">
                 <select
                   name="backingAccountId"
-                  defaultValue={editor.record?.backingAccountId || ""}
+                  defaultValue={
+                    editor.record?.pledged == null
+                      ? "__unknown__"
+                      : editor.record?.backingAccountId || ""
+                  }
                 >
+                  <option value="__unknown__">Pledge unconfirmed</option>
                   <option value="">Not pledged</option>
                   {data.accounts
                     .filter((a) => a.kind === "credit_card")

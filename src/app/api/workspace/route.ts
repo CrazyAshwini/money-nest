@@ -75,6 +75,12 @@ export async function GET(request: NextRequest) {
   const loaded = await Promise.all([
     readCloudFinanceState(supabase, user.id),
     readCloudProfile(supabase, user),
+    supabase
+      .from("finance_source_observations")
+      .select("record_id,source_object_id")
+      .eq("user_id", user.id)
+      .eq("collection", "transactions")
+      .eq("source_system", "notion"),
   ]).catch(() => null);
   if (!loaded)
     return response(
@@ -94,6 +100,14 @@ export async function GET(request: NextRequest) {
     userId: user.id,
     workspace: loaded[0].workspace,
     profile: loaded[1],
+    transactionSourceIds: Object.fromEntries(
+      loaded[0].workspace.transactions.map((row) => [
+        row.id,
+        (loaded[2].data ?? [])
+          .filter((source) => source.record_id === row.id)
+          .map((source) => source.source_object_id),
+      ]),
+    ),
   });
 }
 

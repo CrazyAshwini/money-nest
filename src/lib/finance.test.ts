@@ -6,11 +6,14 @@ import {
   dailySpending,
   dashboardMetrics,
   emiSummary,
+  estimatedFdValue,
   formatMoney,
   groupSummary,
   ledgerBalance,
   monthlySummary,
   sumMoney,
+  transactionDirection,
+  transactionNotionUrl,
   validateBillAllocation,
   validateEmiAllocation,
 } from "./finance";
@@ -87,6 +90,65 @@ function addBill(
   data.bills.push(bill);
   return bill;
 }
+describe("uncertain deposit values and transaction provenance", () => {
+  it("does not calculate a deposit value until both contract dates and rate are confirmed", () => {
+    expect(estimatedFdValue("100.00", "5", null, "2027-01-01")).toBeNull();
+    expect(estimatedFdValue("100.00", "5", "2026-01-01", null)).toBeNull();
+    expect(
+      estimatedFdValue("100.00", null, "2026-01-01", "2027-01-01"),
+    ).toBeNull();
+    expect(estimatedFdValue("100.00", "5", "invalid", "2027-01-01")).toBeNull();
+    expect(
+      estimatedFdValue("100.00", "5", "2027-01-01", "2026-01-01"),
+    ).toBeNull();
+    expect(
+      estimatedFdValue("100.00", "5", "2026-01-01", "2027-01-01", "2027-01-01"),
+    ).toBe("105.00");
+  });
+  it("uses account direction for transfers and adjustments as well as purchases", () => {
+    expect(
+      transactionDirection({ fromAccountId: null, toAccountId: "wallet" }),
+    ).toBe("incoming");
+    expect(
+      transactionDirection({ fromAccountId: "bank", toAccountId: null }),
+    ).toBe("outgoing");
+    expect(
+      transactionDirection({ fromAccountId: "bank", toAccountId: "card" }),
+    ).toBe("between_accounts");
+    expect(
+      transactionDirection({ fromAccountId: null, toAccountId: null }),
+    ).toBe("unknown");
+  });
+  it("links only valid Notion page identities", () => {
+    expect(
+      transactionNotionUrl({
+        sourceSystem: "notion",
+        sourceObjectId: "11111111-2222-4333-8444-555555555555",
+      }),
+    ).toBe("https://www.notion.so/11111111222243338444555555555555");
+    expect(
+      transactionNotionUrl({
+        sourceSystem: "notion",
+        sourceObjectId: "11111111222243338444555555555555",
+      }),
+    ).toBe("https://www.notion.so/11111111222243338444555555555555");
+    expect(
+      transactionNotionUrl({
+        sourceSystem: "manual",
+        sourceObjectId: "11111111222243338444555555555555",
+      }),
+    ).toBeNull();
+    expect(
+      transactionNotionUrl({
+        sourceSystem: "notion",
+        sourceObjectId: "https://untrusted.invalid/",
+      }),
+    ).toBeNull();
+    expect(
+      transactionNotionUrl({ sourceSystem: "notion", sourceObjectId: null }),
+    ).toBeNull();
+  });
+});
 describe("exact ledger arithmetic", () => {
   it("sums decimal cents exactly and formats Indian currency", () => {
     expect(sumMoney(["0.10", "0.20"])).toBe("0.30");

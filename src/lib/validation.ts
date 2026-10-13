@@ -305,8 +305,8 @@ export const fixedDepositSchema = z
     institution: z.string().trim().min(1).max(100),
     maskedSuffix: z.string().regex(/^(?:\d{1,4})?$/),
     principal: positiveMoneySchema,
-    openingDate: isoDateSchema,
-    maturityDate: isoDateSchema,
+    openingDate: isoDateSchema.nullable(),
+    maturityDate: isoDateSchema.nullable(),
     maturityAmount: optionalMoney,
     annualRate: z
       .string()
@@ -314,7 +314,7 @@ export const fixedDepositSchema = z
       .nullish(),
     payoutMethod: z.string().max(100),
     maturityInstruction: z.enum(["reinvest", "withdraw", "unconfirmed"]),
-    pledged: z.boolean(),
+    pledged: z.boolean().nullable(),
     backingAccountId: uuid.nullable(),
     payoutAccountId: uuid.nullable(),
     reportedEncashmentValue: optionalMoney,
@@ -322,7 +322,7 @@ export const fixedDepositSchema = z
     notes: boundedText.optional(),
   })
   .superRefine((fd, context) => {
-    if (fd.maturityDate < fd.openingDate)
+    if (fd.openingDate && fd.maturityDate && fd.maturityDate < fd.openingDate)
       context.addIssue({
         code: "custom",
         path: ["maturityDate"],
@@ -542,7 +542,9 @@ export function validateWorkspaceRecord<K extends keyof WorkspaceData>(
     const backing = account(next.backingAccountId);
     const payout = account(next.payoutAccountId);
     if (
-      next.pledged !== Boolean(backing) ||
+      (next.pledged == null
+        ? Boolean(backing)
+        : next.pledged !== Boolean(backing)) ||
       (backing && backing.kind !== "credit_card")
     )
       throw new Error(
@@ -605,14 +607,13 @@ export function validateWorkspaceRecord<K extends keyof WorkspaceData>(
   } else if (collection === "groups") {
     const next = record as ExpenseGroup;
     const previous = existing as ExpenseGroup | undefined;
-    if (
-      previous &&
-      (previous.kind ?? "expense") !== (next.kind ?? "expense")
-    )
+    if (previous && (previous.kind ?? "expense") !== (next.kind ?? "expense"))
       throw new Error("An existing shared record cannot change its type.");
     if (next.kind === "contribution_pool") {
       if (next.transactionId !== null)
-        throw new Error("A contribution pool must keep its separate ledger payments.");
+        throw new Error(
+          "A contribution pool must keep its separate ledger payments.",
+        );
     } else {
       const purchase = data.transactions.find(
         (t) =>
@@ -631,7 +632,8 @@ export function validateWorkspaceRecord<K extends keyof WorkspaceData>(
           "A shared expense must match an existing dated posted purchase.",
         );
       if (
-        next.paidBy !== (purchase.fromAccountId ? "You" : purchase.externalPayer)
+        next.paidBy !==
+        (purchase.fromAccountId ? "You" : purchase.externalPayer)
       )
         throw new Error("The group's payer must match the linked purchase.");
       if (

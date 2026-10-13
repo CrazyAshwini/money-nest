@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, LockKeyhole, LogOut, UserRound } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { Badge, Field, PasswordField, Section } from "./ui";
+import { HandoffImportPanel } from "./handoff-import-panel";
 
 export function PrivateProfilePage() {
   const {
@@ -128,7 +129,9 @@ export function PrivateProfilePage() {
     setTransferBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/profile/export", { cache: "no-store" });
+      const response = await fetch("/api/profile/export", {
+        cache: "no-store",
+      });
       if (!response.ok) {
         const result = await response.json().catch(() => ({}));
         throw new Error(result.error || "Your profile could not be exported.");
@@ -140,7 +143,9 @@ export function PrivateProfilePage() {
       anchor.download = "money-nest-transfer.json";
       anchor.click();
       URL.revokeObjectURL(url);
-      toast("Transfer file downloaded. Keep it private and upload it to your cloud profile.");
+      toast(
+        "Transfer file downloaded. Keep it private and upload it to your cloud profile.",
+      );
     } catch (issue) {
       setError(issue instanceof Error ? issue.message : "Please try again.");
     } finally {
@@ -159,7 +164,8 @@ export function PrivateProfilePage() {
         body: await transferFile.text(),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Your transfer could not be imported.");
+      if (!response.ok)
+        throw new Error(result.error || "Your transfer could not be imported.");
       setTransferFile(null);
       setTransferInfo("");
       await refresh();
@@ -240,32 +246,59 @@ export function PrivateProfilePage() {
             <div className="info-banner profile-transfer">
               <div>
                 <strong>Use this profile on your phone</strong>
-                <p>Download a private copy of your records, then sign in to the cloud profile and import it.</p>
+                <p>
+                  Download a private copy of your records, then sign in to the
+                  cloud profile and import it.
+                </p>
               </div>
-              <button className="button" type="button" onClick={exportForCloud} disabled={transferBusy}>
+              <button
+                className="button"
+                type="button"
+                onClick={exportForCloud}
+                disabled={transferBusy}
+              >
                 {transferBusy ? "Preparing…" : "Download transfer file"}
               </button>
             </div>
           )}
-          {mode === "cloud" && Object.values(data).every((rows) => rows.length === 0) && (
-            <div className="info-banner profile-transfer">
-              <div>
-                <strong>Bring your existing records to the cloud</strong>
-                <p>Choose the transfer file from your computer. It must use the same email as this account; your local copy stays on that computer.</p>
+          {mode === "cloud" &&
+            Object.values(data).every((rows) => rows.length === 0) && (
+              <div className="info-banner profile-transfer">
+                <div>
+                  <strong>Bring your existing records to the cloud</strong>
+                  <p>
+                    Choose the transfer file from your computer. It must use the
+                    same email as this account; your local copy stays on that
+                    computer.
+                  </p>
+                </div>
+                <Field label="Money Nest transfer file">
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    onChange={(event) =>
+                      selectTransferFile(event.currentTarget.files?.[0])
+                    }
+                  />
+                </Field>
+                {transferInfo && (
+                  <>
+                    <p>
+                      Ready to import the local profile for{" "}
+                      <strong>{transferInfo}</strong>.
+                    </p>
+                    <button
+                      className="button primary"
+                      type="button"
+                      onClick={importToCloud}
+                      disabled={transferBusy}
+                    >
+                      {transferBusy ? "Importing…" : "Import records to cloud"}
+                    </button>
+                  </>
+                )}
               </div>
-              <Field label="Money Nest transfer file">
-                <input type="file" accept="application/json,.json" onChange={(event) => selectTransferFile(event.currentTarget.files?.[0])} />
-              </Field>
-              {transferInfo && (
-                <>
-                  <p>Ready to import the local profile for <strong>{transferInfo}</strong>.</p>
-                  <button className="button primary" type="button" onClick={importToCloud} disabled={transferBusy}>
-                    {transferBusy ? "Importing…" : "Import records to cloud"}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
+            )}
           {error && (
             <p className="error" role="alert">
               {error}
@@ -285,6 +318,7 @@ export function PrivateProfilePage() {
             </button>
           </div>
         </form>
+        {mode === "cloud" && <HandoffImportPanel />}
       </Section>
     );
   }

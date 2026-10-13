@@ -24,6 +24,7 @@ type ContextValue = {
   needsSetup: boolean;
   emailRequired: boolean;
   signupEnabled: boolean;
+  transactionSourceIds: Record<string, string[]>;
   userId: string;
   month: string;
   setMonth: (month: string) => void;
@@ -68,6 +69,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [needsSetup, setNeedsSetup] = useState(false);
   const [emailRequired, setEmailRequired] = useState(false);
   const [signupEnabled, setSignupEnabled] = useState(false);
+  const [transactionSourceIds, setTransactionSourceIds] = useState<
+    Record<string, string[]>
+  >({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const path = usePathname();
   const router = useRouter();
@@ -134,6 +138,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       );
       setNeedsSetup(result.needsSetup === true);
       setSignupEnabled(result.signupEnabled === true);
+      setTransactionSourceIds(
+        result.backend === "supabase"
+          ? (result.transactionSourceIds ?? {})
+          : {},
+      );
       setEmailRequired(
         result.emailRequired === true || Boolean(result.profile?.email),
       );
@@ -330,6 +339,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         needsSetup,
         emailRequired,
         signupEnabled,
+        transactionSourceIds: mode === "cloud" ? transactionSourceIds : {},
         userId: mode === "demo" ? DEMO_USER_ID : authUserId,
         month,
         setMonth,

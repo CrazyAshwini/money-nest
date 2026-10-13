@@ -70,6 +70,8 @@ import {
   spendingByCategory,
   dailySpending,
   sumMoney,
+  transactionDirection,
+  transactionNotionUrl,
 } from "@/lib/finance";
 import { exportTransactionsCsv } from "@/lib/imports";
 import { accountUsage, usageSummary } from "@/lib/usage";
@@ -530,15 +532,16 @@ function RecentActivity({
   transaction: Transaction;
   open: Open;
 }) {
-  const incoming =
-    transaction.kind === "income" || transaction.kind === "refund";
-  const outgoing =
-    transaction.kind === "expense" || transaction.kind === "bill_payment";
+  const direction = transactionDirection(transaction);
+  const incoming = direction === "incoming";
+  const outgoing = direction === "outgoing";
   const Icon = incoming
     ? ArrowDownLeft
     : outgoing
       ? ArrowUpRight
-      : ArrowLeftRight;
+      : direction === "between_accounts"
+        ? ArrowLeftRight
+        : Info;
   return (
     <button
       className="recent-activity-row"
@@ -561,7 +564,13 @@ function RecentActivity({
         )}
       </span>
       <span className={`activity-amount ${incoming ? "green-text" : ""}`}>
-        {incoming ? "+" : outgoing ? "−" : ""}
+        {incoming
+          ? "+"
+          : outgoing
+            ? "−"
+            : direction === "between_accounts"
+              ? "↔ "
+              : ""}
         {formatMoney(transaction.amount)}
       </span>
     </button>
@@ -843,7 +852,10 @@ export function TransactionTable({
   transactions: Transaction[];
   onEdit?: (t: Transaction) => void;
 }) {
-  const { data } = useFinance();
+  const { data, mode, transactionSourceIds = {} } = useFinance();
+  const accountsById = new Map(
+    data.accounts.map((account) => [account.id, account]),
+  );
   return transactions.length ? (
     <div className="table-wrap">
       <table className="transaction-table">
@@ -861,10 +873,37 @@ export function TransactionTable({
         </thead>
         <tbody>
           {transactions.map((t) => {
-            const a = data.accounts.find(
-              (a) => a.id === (t.fromAccountId || t.toAccountId),
-            );
-            const incoming = t.kind === "income" || t.kind === "refund";
+            const from = t.fromAccountId
+              ? accountsById.get(t.fromAccountId)
+              : undefined;
+            const to = t.toAccountId
+              ? accountsById.get(t.toAccountId)
+              : undefined;
+            const direction = transactionDirection(t);
+            const incoming = direction === "incoming";
+            const paired = direction === "between_accounts";
+            const sourceIds = transactionSourceIds[t.id] ?? [];
+            const notionUrls =
+              mode === "demo"
+                ? []
+                : [
+                    ...new Set(
+                      [
+                        transactionNotionUrl(t),
+                        ...sourceIds.map((sourceObjectId) =>
+                          transactionNotionUrl({
+                            ...t,
+                            sourceSystem: "notion",
+                            sourceObjectId,
+                          }),
+                        ),
+                      ].filter((url): url is string => Boolean(url)),
+                    ),
+                  ];
+            const externalPayer =
+              t.externalPayer && !/unconfirmed|unknown/i.test(t.externalPayer)
+                ? t.externalPayer
+                : null;
             return (
               <tr key={t.id}>
                 <td>
@@ -872,8 +911,12 @@ export function TransactionTable({
                     <span className={`txn-icon ${incoming ? "green" : ""}`}>
                       {incoming ? (
                         <ArrowDownLeft size={17} />
-                      ) : t.kind === "transfer" || t.kind === "bill_payment" ? (
+                      ) : paired ||
+                        t.kind === "transfer" ||
+                        t.kind === "bill_payment" ? (
                         <ArrowLeftRight size={17} />
+                      ) : direction === "unknown" ? (
+                        <Info size={17} />
                       ) : (
                         <ArrowUpRight size={17} />
                       )}
@@ -883,11 +926,35 @@ export function TransactionTable({
                         {t.description}
                       </button>
                       <small>
-                        {t.externalPayer
-                          ? `Paid by ${t.externalPayer}`
+                        {externalPayer
+                          ? `Paid by ${externalPayer}`
                           : kindLabel(t.kind)}
                         {t.status === "pending_review" ? " · Needs review" : ""}
                       </small>
+                      {notionUrls.length > 0 && (
+                        <details>
+                          <summary className="text-link">
+                            Source details
+                          </summary>
+                          <small>
+                            {notionUrls.map((notionUrl, index) => (
+                              <a
+                                key={notionUrl}
+                                href={notionUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {index > 0 ? " · " : ""}View original Notion
+                                record{" "}
+                                <ArrowUpRight size={12} aria-hidden="true" />
+                              </a>
+                            ))}
+                            {t.externalReference && (
+                              <> · Reference: {t.externalReference}</>
+                            )}
+                          </small>
+                        </details>
+                      )}
                     </span>
                   </div>
                 </td>
@@ -896,7 +963,15 @@ export function TransactionTable({
                     {t.category || "Uncategorized"}
                   </span>
                 </td>
-                <td>{a?.name || "External payer"}</td>
+                <td>
+                  {paired
+                    ? `${from?.name || "Unknown account"} → ${to?.name || "Unknown account"}`
+                    : from?.name ||
+                      to?.name ||
+                      (externalPayer
+                        ? `Paid by ${externalPayer}`
+                        : "Payment account unknown")}
+                </td>
                 <td>
                   {t.occurredOn ? (
                     formatDate(t.occurredOn)
@@ -907,7 +982,13 @@ export function TransactionTable({
                 <td
                   className={`amount align-right ${incoming ? "green-text" : ""}`}
                 >
-                  {incoming ? "+" : "−"}
+                  {incoming
+                    ? "+"
+                    : direction === "outgoing"
+                      ? "−"
+                      : paired
+                        ? "↔ "
+                        : ""}
                   {formatMoney(t.amount)}
                 </td>
                 <td>
@@ -1524,14 +1605,28 @@ function DepositsPage({ id, open }: { id?: string; open: Open }) {
             key={f.id}
             title={f.name}
             action={
-              <Badge tone={f.pledged ? "blue" : "green"}>
-                {f.pledged ? "Pledged" : "Standalone"}
+              <Badge
+                tone={
+                  f.pledged == null ? "neutral" : f.pledged ? "blue" : "green"
+                }
+              >
+                {f.pledged == null
+                  ? "Pledge unconfirmed"
+                  : f.pledged
+                    ? "Pledged"
+                    : "Standalone"}
               </Badge>
             }
           >
             <p className="muted">
               {f.institution} · ••{f.maskedSuffix}
             </p>
+            {(!f.openingDate || !f.maturityDate) && (
+              <p className="muted">
+                Contract dates remain unconfirmed until the deposit advice is
+                available.
+              </p>
+            )}
             <div className="bill-values">
               <div>
                 <small>Principal</small>
@@ -1546,6 +1641,10 @@ function DepositsPage({ id, open }: { id?: string; open: Open }) {
                 <strong>
                   {f.annualRate ? `${f.annualRate}%` : "Unconfirmed"}
                 </strong>
+              </div>
+              <div>
+                <small>Opened on</small>
+                <strong>{formatDate(f.openingDate)}</strong>
               </div>
               <div>
                 <small>Matures on</small>

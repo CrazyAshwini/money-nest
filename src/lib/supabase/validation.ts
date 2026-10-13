@@ -185,13 +185,13 @@ export const recordSchemas = {
       institution: short,
       maskedSuffix: z.string().regex(/^\d{0,4}$/),
       principal: positive,
-      openingDate: date,
-      maturityDate: date,
+      openingDate: nullableDate,
+      maturityDate: nullableDate,
       maturityAmount: nonnegative.nullable().optional(),
       annualRate: rate,
       payoutMethod: short,
       maturityInstruction: z.enum(["reinvest", "withdraw", "unconfirmed"]),
-      pledged: z.boolean(),
+      pledged: z.boolean().nullable(),
       backingAccountId: id.nullable(),
       payoutAccountId: id.nullable(),
       reportedEncashmentValue: nonnegative.nullable().optional(),
@@ -199,7 +199,8 @@ export const recordSchemas = {
       notes: text.optional(),
     })
     .refine(
-      (v) => v.maturityDate >= v.openingDate,
+      (v) =>
+        !v.openingDate || !v.maturityDate || v.maturityDate >= v.openingDate,
       "Maturity must follow opening.",
     ),
   loans: z.object({
