@@ -76,6 +76,18 @@ function transaction(overrides: Partial<Transaction> = {}): Transaction {
     ...overrides,
   };
 }
+function reviewedImport(
+  inputHash: string,
+  rowNumber: number,
+  overrides: Partial<Transaction> = {},
+): Transaction {
+  return transaction({
+    sourceSystem: "csv",
+    sourceObjectId: `${inputHash}:${rowNumber}`,
+    ...overrides,
+  });
+}
+
 async function provision() {
   return provisionPrivateProfile(workspace(), "Synthetic profile owner");
 }
@@ -110,58 +122,176 @@ afterEach(async () => {
 });
 
 describe("isolated private profile storage", () => {
-  function orderDraft(overrides: Partial<ReviewedOrderDraft> = {}): ReviewedOrderDraft {
-    return { candidateId: "synthetic-order", sourceType: "manual", platform: "Imaginary shop", merchant: "Imaginary shop", description: "Synthetic order for isolated storage", orderReferenceHash: null, orderReferenceMasked: null, occurredOn: "2026-10-09", status: "completed", amount: "100.00", amountRole: "amount_paid", currency: "INR", paymentStatus: "successful", financialEvent: "purchase", category: "Shopping", items: [], sourceImageIndices: [], confidence: "high", warnings: [], expectedRefundAmount: null, expectedRefundBy: null, action: "create", confirmed: true, fromAccountId: ACCOUNT, externalPayer: null, matchedTransactionId: null, confirmedDistinct: false, sourceFingerprint: null, ...overrides };
+  function orderDraft(
+    overrides: Partial<ReviewedOrderDraft> = {},
+  ): ReviewedOrderDraft {
+    return {
+      candidateId: "synthetic-order",
+      sourceType: "manual",
+      platform: "Imaginary shop",
+      merchant: "Imaginary shop",
+      description: "Synthetic order for isolated storage",
+      orderReferenceHash: null,
+      orderReferenceMasked: null,
+      occurredOn: "2026-10-09",
+      status: "completed",
+      amount: "100.00",
+      amountRole: "amount_paid",
+      currency: "INR",
+      paymentStatus: "successful",
+      financialEvent: "purchase",
+      category: "Shopping",
+      items: [],
+      sourceImageIndices: [],
+      confidence: "high",
+      warnings: [],
+      expectedRefundAmount: null,
+      expectedRefundBy: null,
+      action: "create",
+      confirmed: true,
+      fromAccountId: ACCOUNT,
+      externalPayer: null,
+      matchedTransactionId: null,
+      confirmedDistinct: false,
+      sourceFingerprint: null,
+      ...overrides,
+    };
   }
-  const orderCommand = (orders = [orderDraft()]) => ({ action: "commit_orders", idempotencyKey: "a".repeat(64), orders });
-  function orderRequest(sessionToken: string, value?: unknown, headers: Record<string, string> = {}) {
-    return new NextRequest("http://127.0.0.1:3000/api/orders", { method: value === undefined ? "GET" : "POST", headers: { host: "127.0.0.1:3000", origin: "http://127.0.0.1:3000", cookie: `finance-os-private-session=${sessionToken}`, "content-type": "application/json", ...headers }, ...(value === undefined ? {} : { body: JSON.stringify(value) }) });
+  const orderCommand = (orders = [orderDraft()]) => ({
+    action: "commit_orders",
+    idempotencyKey: "a".repeat(64),
+    orders,
+  });
+  function orderRequest(
+    sessionToken: string,
+    value?: unknown,
+    headers: Record<string, string> = {},
+  ) {
+    return new NextRequest("http://127.0.0.1:3000/api/orders", {
+      method: value === undefined ? "GET" : "POST",
+      headers: {
+        host: "127.0.0.1:3000",
+        origin: "http://127.0.0.1:3000",
+        cookie: `finance-os-private-session=${sessionToken}`,
+        "content-type": "application/json",
+        ...headers,
+      },
+      ...(value === undefined ? {} : { body: JSON.stringify(value) }),
+    });
   }
   it("loads an older encrypted profile with empty commerce without rewriting it", async () => {
     const { sessionToken } = await established();
-    const file = path.join(testDirectory, "profile.enc.json"); const before = await fs.readFile(file, "utf8");
-    expect((await readPrivateCommerce(sessionToken)).commerce).toEqual(emptyCommerce());
+    const file = path.join(testDirectory, "profile.enc.json");
+    const before = await fs.readFile(file, "utf8");
+    expect((await readPrivateCommerce(sessionToken)).commerce).toEqual(
+      emptyCommerce(),
+    );
     expect(await fs.readFile(file, "utf8")).toBe(before);
   });
   it("atomically saves encrypted orders and ledger entries and replays without another write", async () => {
     const { sessionToken } = await established();
     const first = await commitPrivateCommerce(sessionToken, orderCommand());
     expect(first.commerce.orders).toHaveLength(1);
-    expect((await readPrivateProfile(sessionToken))?.workspace.transactions).toHaveLength(1);
-    const file = path.join(testDirectory, "profile.enc.json"); const encrypted = await fs.readFile(file, "utf8");
+    expect(
+      (await readPrivateProfile(sessionToken))?.workspace.transactions,
+    ).toHaveLength(1);
+    const file = path.join(testDirectory, "profile.enc.json");
+    const encrypted = await fs.readFile(file, "utf8");
     expect(encrypted).not.toContain("Synthetic order for isolated storage");
     const replay = await commitPrivateCommerce(sessionToken, orderCommand());
-    expect(replay.result.duplicate).toBe(true); expect(await fs.readFile(file, "utf8")).toBe(encrypted);
+    expect(replay.result.duplicate).toBe(true);
+    expect(await fs.readFile(file, "utf8")).toBe(encrypted);
   });
   it("rejects a failing later order without changing encrypted ledger or commerce", async () => {
     const { sessionToken } = await established();
-    const file = path.join(testDirectory, "profile.enc.json"); const before = await fs.readFile(file, "utf8");
-    await expect(commitPrivateCommerce(sessionToken, orderCommand([orderDraft(), orderDraft({ candidateId: "forged-second", fromAccountId: randomUUID() })]))).rejects.toMatchObject({ code: "invalid" });
+    const file = path.join(testDirectory, "profile.enc.json");
+    const before = await fs.readFile(file, "utf8");
+    await expect(
+      commitPrivateCommerce(
+        sessionToken,
+        orderCommand([
+          orderDraft(),
+          orderDraft({
+            candidateId: "forged-second",
+            fromAccountId: randomUUID(),
+          }),
+        ]),
+      ),
+    ).rejects.toMatchObject({ code: "invalid" });
     expect(await fs.readFile(file, "utf8")).toBe(before);
-    expect((await readPrivateCommerce(sessionToken)).commerce.orders).toHaveLength(0);
-    expect((await readPrivateProfile(sessionToken))?.workspace.transactions).toHaveLength(0);
+    expect(
+      (await readPrivateCommerce(sessionToken)).commerce.orders,
+    ).toHaveLength(0);
+    expect(
+      (await readPrivateProfile(sessionToken))?.workspace.transactions,
+    ).toHaveLength(0);
   });
   it("protects linked transaction money while allowing a merchant-description correction", async () => {
-    const { sessionToken } = await established(); await commitPrivateCommerce(sessionToken, orderCommand());
-    const purchase = (await readPrivateProfile(sessionToken))!.workspace.transactions[0];
-    await expect(savePrivateRecord(sessionToken, "transactions", { ...purchase, amount: "110.00" })).rejects.toMatchObject({ code: "invalid" });
-    await savePrivateRecord(sessionToken, "transactions", { ...purchase, description: "Corrected synthetic description" });
-    expect((await readPrivateProfile(sessionToken))?.workspace.transactions[0].description).toBe("Corrected synthetic description");
+    const { sessionToken } = await established();
+    await commitPrivateCommerce(sessionToken, orderCommand());
+    const purchase = (await readPrivateProfile(sessionToken))!.workspace
+      .transactions[0];
+    await expect(
+      savePrivateRecord(sessionToken, "transactions", {
+        ...purchase,
+        amount: "110.00",
+      }),
+    ).rejects.toMatchObject({ code: "invalid" });
+    await savePrivateRecord(sessionToken, "transactions", {
+      ...purchase,
+      description: "Corrected synthetic description",
+    });
+    expect(
+      (await readPrivateProfile(sessionToken))?.workspace.transactions[0]
+        .description,
+    ).toBe("Corrected synthetic description");
   });
   it("rejects unauthorized order read/write and foreign origins before parsing request content", async () => {
     const { sessionToken } = await established();
     expect((await ordersGET(orderRequest("0".repeat(64)))).status).toBe(401);
-    expect((await ordersPOST(orderRequest("0".repeat(64), orderCommand(), { "content-length": "99999999" }))).status).toBe(401);
-    expect((await ordersPOST(orderRequest(sessionToken, orderCommand(), { origin: "https://foreign.example.test" }))).status).toBe(403);
-    expect((await ordersPOST(orderRequest(sessionToken, orderCommand(), { "content-length": "99999999" }))).status).toBe(413);
-    expect((await readPrivateCommerce(sessionToken)).commerce.orders).toHaveLength(0);
+    expect(
+      (
+        await ordersPOST(
+          orderRequest("0".repeat(64), orderCommand(), {
+            "content-length": "99999999",
+          }),
+        )
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await ordersPOST(
+          orderRequest(sessionToken, orderCommand(), {
+            origin: "https://foreign.example.test",
+          }),
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await ordersPOST(
+          orderRequest(sessionToken, orderCommand(), {
+            "content-length": "99999999",
+          }),
+        )
+      ).status,
+    ).toBe(413);
+    expect(
+      (await readPrivateCommerce(sessionToken)).commerce.orders,
+    ).toHaveLength(0);
   });
   it("returns private no-store order responses and handles an approved write", async () => {
     const { sessionToken } = await established();
-    const response = await ordersPOST(orderRequest(sessionToken, orderCommand()));
-    expect(response.status).toBe(200); expect(response.headers.get("cache-control")).toBe("private, no-store");
-    const json = await response.json(); expect(json.commerce.orders).toHaveLength(1); expect(json.result.transactionsCreated).toBe(1);
-    const loaded = await ordersGET(orderRequest(sessionToken)); expect((await loaded.json()).commerce.orders).toHaveLength(1);
+    const response = await ordersPOST(
+      orderRequest(sessionToken, orderCommand()),
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const json = await response.json();
+    expect(json.commerce.orders).toHaveLength(1);
+    expect(json.result.transactionsCreated).toBe(1);
+    const loaded = await ordersGET(orderRequest(sessionToken));
+    expect((await loaded.json()).commerce.orders).toHaveLength(1);
   });
   it("authenticates server API access with only an owner ID and leaves the encrypted profile unchanged", async () => {
     const { sessionToken } = await established();
@@ -590,12 +720,13 @@ describe("isolated private profile storage", () => {
 
   it("commits reviewed imports atomically and deduplicates file and source identities", async () => {
     const { sessionToken } = await established();
-    const one = transaction();
+    const inputHash = "b".repeat(64);
+    const one = reviewedImport(inputHash, 2);
     await expect(
       commitPrivateImport(
         sessionToken,
-        [one, transaction({ fromAccountId: randomUUID() })],
-        "a".repeat(64),
+        [one, reviewedImport(inputHash, 3, { fromAccountId: randomUUID() })],
+        inputHash,
         "synthetic.csv",
       ),
     ).rejects.toMatchObject({ code: "invalid" });
@@ -605,7 +736,7 @@ describe("isolated private profile storage", () => {
     const first = await commitPrivateImport(
       sessionToken,
       [one, { ...one, id: randomUUID() }],
-      "b".repeat(64),
+      inputHash,
       "synthetic.csv",
     );
     expect(first.imported).toBe(1);
@@ -613,7 +744,7 @@ describe("isolated private profile storage", () => {
     const repeated = await commitPrivateImport(
       sessionToken,
       [one],
-      "b".repeat(64),
+      inputHash,
       "synthetic.csv",
     );
     expect(repeated.imported).toBe(0);
@@ -623,11 +754,364 @@ describe("isolated private profile storage", () => {
     const sameSource = await commitPrivateImport(
       sessionToken,
       [{ ...one, id: randomUUID() }],
-      "c".repeat(64),
+      inputHash,
       "synthetic-copy.csv",
     );
     expect(sameSource.imported).toBe(0);
     expect(sameSource.duplicates).toBe(1);
+  });
+
+  it("adds previously unselected rows from the same statement and leaves a duplicate-only replay unchanged", async () => {
+    const { sessionToken } = await established();
+    const inputHash = "a".repeat(64);
+    const first = reviewedImport(inputHash, 2, {
+      externalReference: "SYNTHETIC-REFERENCE-1",
+    });
+    const later = reviewedImport(inputHash, 3, {
+      amount: "45.67",
+      externalReference: "SYNTHETIC-REFERENCE-2",
+    });
+    await commitPrivateImport(
+      sessionToken,
+      [first],
+      inputHash,
+      "synthetic.xlsx",
+    );
+    const file = path.join(testDirectory, "profile.enc.json");
+    const before = await fs.readFile(file, "utf8");
+    const replay = await commitPrivateImport(
+      sessionToken,
+      [first],
+      inputHash,
+      "synthetic.xlsx",
+    );
+    expect(replay).toMatchObject({ imported: 0, duplicates: 1 });
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+    const remaining = await commitPrivateImport(
+      sessionToken,
+      [first, later],
+      inputHash,
+      "synthetic.xlsx",
+    );
+    expect(remaining).toMatchObject({ imported: 1, duplicates: 1 });
+    const saved = await readPrivateProfile(sessionToken);
+    expect(saved?.workspace.transactions.map((row) => row.id)).toEqual([
+      first.id,
+      later.id,
+    ]);
+    expect(saved?.workspace.auditEvents).toHaveLength(2);
+    expect(
+      (
+        await commitPrivateImport(
+          sessionToken,
+          [later],
+          inputHash,
+          "synthetic.xlsx",
+        )
+      ).imported,
+    ).toBe(0);
+  });
+
+  it("deduplicates overlapping exports against a compatible bank reference without replacing the existing entry", async () => {
+    const { sessionToken } = await established();
+    const original = transaction({
+      amount: "00123.45",
+      description: " Synthetic   PURCHASE for isolated tests ",
+      externalReference: "SYNTHETIC-OVERLAP",
+    });
+    await savePrivateRecord(sessionToken, "transactions", original);
+    const inputHash = "c".repeat(64);
+    const result = await commitPrivateImport(
+      sessionToken,
+      [
+        reviewedImport(inputHash, 2, {
+          externalReference: "SYNTHETIC-OVERLAP",
+        }),
+      ],
+      inputHash,
+      "synthetic-overlap.xlsx",
+    );
+    expect(result).toMatchObject({ imported: 0, duplicates: 1 });
+    expect(result.workspace.transactions).toHaveLength(1);
+    expect(result.workspace.transactions[0]).toMatchObject({
+      id: original.id,
+      amount: "00123.45",
+      sourceSystem: "synthetic-test",
+    });
+    expect(result.workspace.auditEvents).toHaveLength(1);
+  });
+
+  it("scopes bank references to the mapped account and allows reviewed equal purchases without references", async () => {
+    const { sessionToken } = await established();
+    const otherAccount = randomUUID();
+    await savePrivateRecord(sessionToken, "accounts", {
+      ...workspace().accounts[0],
+      id: otherAccount,
+      name: "Second synthetic bank",
+    });
+    await savePrivateRecord(
+      sessionToken,
+      "transactions",
+      transaction({ externalReference: "SYNTHETIC-SHARED-REFERENCE" }),
+    );
+    const inputHash = "d".repeat(64);
+    const rows = [
+      reviewedImport(inputHash, 2, {
+        fromAccountId: otherAccount,
+        externalReference: "SYNTHETIC-SHARED-REFERENCE",
+      }),
+      reviewedImport(inputHash, 3),
+      reviewedImport(inputHash, 4),
+    ];
+    const result = await commitPrivateImport(
+      sessionToken,
+      rows,
+      inputHash,
+      "synthetic-separate.xlsx",
+    );
+    expect(result).toMatchObject({ imported: 3, duplicates: 0 });
+    expect(result.workspace.transactions).toHaveLength(4);
+  });
+
+  it("rolls back a whole batch when a later row conflicts with an existing bank reference", async () => {
+    const { sessionToken } = await established();
+    const original = transaction({ externalReference: "SYNTHETIC-CONFLICT" });
+    await savePrivateRecord(sessionToken, "transactions", original);
+    const file = path.join(testDirectory, "profile.enc.json");
+    const before = await fs.readFile(file, "utf8");
+    const inputHash = "e".repeat(64);
+    const rows = [
+      reviewedImport(inputHash, 2),
+      reviewedImport(inputHash, 3, {
+        amount: "10.00",
+        externalReference: "SYNTHETIC-CONFLICT",
+      }),
+    ];
+    await expect(
+      commitPrivateImport(
+        sessionToken,
+        rows,
+        inputHash,
+        "synthetic-conflict.xlsx",
+      ),
+    ).rejects.toMatchObject({
+      code: "invalid",
+      message: expect.stringContaining("different or ambiguous"),
+    });
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+    expect(
+      (await readPrivateProfile(sessionToken))?.workspace.transactions.map(
+        (row) => row.id,
+      ),
+    ).toEqual([original.id]);
+  });
+
+  it("recognizes the same transfer when it is reviewed from either linked bank statement", async () => {
+    const { sessionToken } = await established();
+    const otherAccount = randomUUID();
+    await savePrivateRecord(sessionToken, "accounts", {
+      ...workspace().accounts[0],
+      id: otherAccount,
+      name: "Synthetic transfer source",
+    });
+    const original = transaction({
+      kind: "transfer",
+      fromAccountId: otherAccount,
+      toAccountId: ACCOUNT,
+      externalReference: "SYNTHETIC-BOTH-SIDES",
+    });
+    await savePrivateRecord(sessionToken, "transactions", original);
+    const inputHash = "8".repeat(64);
+    const result = await commitPrivateImport(
+      sessionToken,
+      [
+        reviewedImport(inputHash, 2, {
+          kind: "transfer",
+          fromAccountId: otherAccount,
+          toAccountId: ACCOUNT,
+          externalReference: "SYNTHETIC-BOTH-SIDES",
+        }),
+      ],
+      inputHash,
+      "synthetic-incoming.xlsx",
+    );
+    expect(result).toMatchObject({ imported: 0, duplicates: 1 });
+    expect(result.workspace.transactions.map((row) => row.id)).toEqual([
+      original.id,
+    ]);
+    const incompatible = reviewedImport(inputHash, 3, {
+      kind: "income",
+      fromAccountId: null,
+      toAccountId: ACCOUNT,
+      externalReference: "SYNTHETIC-BOTH-SIDES",
+    });
+    await expect(
+      commitPrivateImport(
+        sessionToken,
+        [incompatible],
+        inputHash,
+        "synthetic-incoming.xlsx",
+      ),
+    ).rejects.toMatchObject({ code: "invalid" });
+    expect(
+      (await readPrivateProfile(sessionToken))?.workspace.transactions.map(
+        (row) => row.id,
+      ),
+    ).toEqual([original.id]);
+  });
+
+  it("rejects an ambiguous bank reference instead of merging multiple original entries", async () => {
+    const { sessionToken } = await established();
+    await savePrivateRecord(
+      sessionToken,
+      "transactions",
+      transaction({ externalReference: "SYNTHETIC-AMBIGUOUS" }),
+    );
+    await savePrivateRecord(
+      sessionToken,
+      "transactions",
+      transaction({ externalReference: "SYNTHETIC-AMBIGUOUS" }),
+    );
+    const file = path.join(testDirectory, "profile.enc.json");
+    const before = await fs.readFile(file, "utf8");
+    const inputHash = "f".repeat(64);
+    await expect(
+      commitPrivateImport(
+        sessionToken,
+        [
+          reviewedImport(inputHash, 2, {
+            externalReference: "SYNTHETIC-AMBIGUOUS",
+          }),
+        ],
+        inputHash,
+        "synthetic-ambiguous.xlsx",
+      ),
+    ).rejects.toMatchObject({ code: "invalid" });
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+  });
+
+  it("rechecks references under the lock when two stale reviewed exports commit concurrently", async () => {
+    const { sessionToken } = await established();
+    const hashes = ["1".repeat(64), "2".repeat(64)];
+    const results = await Promise.all(
+      hashes.map((inputHash) =>
+        commitPrivateImport(
+          sessionToken,
+          [
+            reviewedImport(inputHash, 2, {
+              externalReference: "SYNTHETIC-CONCURRENT",
+            }),
+          ],
+          inputHash,
+          "synthetic-concurrent.xlsx",
+        ),
+      ),
+    );
+    expect(results.map((result) => result.imported).sort()).toEqual([0, 1]);
+    expect(results.map((result) => result.duplicates).sort()).toEqual([0, 1]);
+    const saved = await readPrivateProfile(sessionToken);
+    expect(saved?.workspace.transactions).toHaveLength(1);
+    expect(saved?.workspace.auditEvents).toHaveLength(1);
+  });
+
+  it("rejects a concurrent conflicting bank reference and retains only the winning batch", async () => {
+    const { sessionToken } = await established();
+    const hashes = ["3".repeat(64), "4".repeat(64)];
+    const results = await Promise.allSettled(
+      hashes.map((inputHash, index) =>
+        commitPrivateImport(
+          sessionToken,
+          [
+            reviewedImport(inputHash, 2, {
+              amount: index ? "25.00" : "15.00",
+              externalReference: "SYNTHETIC-CONCURRENT-CONFLICT",
+            }),
+          ],
+          inputHash,
+          "synthetic-concurrent-conflict.xlsx",
+        ),
+      ),
+    );
+    expect(
+      results.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected?.status === "rejected" && rejected.reason).toMatchObject({
+      code: "invalid",
+    });
+    const saved = await readPrivateProfile(sessionToken);
+    expect(saved?.workspace.transactions).toHaveLength(1);
+    expect(saved?.workspace.auditEvents).toHaveLength(1);
+  });
+
+  it.each([
+    ["other source", { sourceSystem: "synthetic-test" }],
+    ["missing source", { sourceSystem: null }],
+    ["missing locator", { sourceObjectId: null }],
+    ["another file", { sourceObjectId: `${"6".repeat(64)}:2` }],
+    ["zero row", { sourceObjectId: `${"5".repeat(64)}:0` }],
+    ["fractional row", { sourceObjectId: `${"5".repeat(64)}:2.5` }],
+    ["unsafe row", { sourceObjectId: `${"5".repeat(64)}:9007199254740992` }],
+    ["pending entry", { status: "pending_review" }],
+    ["missing date", { occurredOn: null }],
+    ["foreign owner", { userId: "9126bd9a-b50c-4e4b-84d2-d4aa8f6ce128" }],
+    ["rounded amount", { amount: "1.234" }],
+    [
+      "expense destination",
+      { toAccountId: "c5b26d12-7946-4e2a-b7f0-b89247ea22c6" },
+    ],
+    [
+      "external-only expense",
+      { fromAccountId: null, externalPayer: "Synthetic external payer" },
+    ],
+    ["one-sided transfer", { kind: "transfer" }],
+    ["one-sided bill payment", { kind: "bill_payment" }],
+    ["outgoing income", { kind: "income" }],
+  ] as [string, Partial<Transaction>][])(
+    "rejects invalid import lineage or strict values: %s",
+    async (_name, overrides) => {
+      const { sessionToken } = await established();
+      const inputHash = "5".repeat(64);
+      const file = path.join(testDirectory, "profile.enc.json");
+      const before = await fs.readFile(file, "utf8");
+      await expect(
+        commitPrivateImport(
+          sessionToken,
+          [
+            reviewedImport(inputHash, 2),
+            reviewedImport(inputHash, 3, overrides),
+          ],
+          inputHash,
+          "synthetic-invalid.xlsx",
+        ),
+      ).rejects.toMatchObject({ code: "invalid" });
+      expect(await fs.readFile(file, "utf8")).toBe(before);
+    },
+  );
+
+  it("rejects an inactive mapped account without committing an earlier valid row", async () => {
+    const { sessionToken } = await established();
+    const inactiveAccount = randomUUID();
+    await savePrivateRecord(sessionToken, "accounts", {
+      ...workspace().accounts[0],
+      id: inactiveAccount,
+      active: false,
+    });
+    const inputHash = "7".repeat(64);
+    await expect(
+      commitPrivateImport(
+        sessionToken,
+        [
+          reviewedImport(inputHash, 2),
+          reviewedImport(inputHash, 3, { fromAccountId: inactiveAccount }),
+        ],
+        inputHash,
+        "synthetic-inactive.xlsx",
+      ),
+    ).rejects.toMatchObject({ code: "invalid" });
+    expect(
+      (await readPrivateProfile(sessionToken))?.workspace.transactions,
+    ).toHaveLength(0);
   });
 
   it("serializes simultaneous mutations so no saved financial record is lost", async () => {

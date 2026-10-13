@@ -31,7 +31,7 @@ Imports retain missing dates, unknown limits, and provisional matches. Known unp
 - Local image previews with photo navigation and 100–300% zoom in both receipt and order scanners.
 - Orders & refunds in the private profile: scan up to three order-history screenshots, review separate orders and items, save history or pending drafts, create a confirmed expense, or link an existing payment. Track cancellation/refund expectations separately and confirm actual incoming credits without duplicating cash movements. See [order and refund verification](docs/commerce-verification.md).
 - Issued statements and payment matching: statement amount, verified paid amount, provisional matches, credits, remaining amount and confirmed due date. Repayments do not count as expenses.
-- Reviewed CSV imports with row errors, duplicate suggestions, explicit approval, deterministic source IDs, and atomic idempotent cloud commits. A fictional sample is available on the Imports screen.
+- Reviewed Excel (.xlsx) bank statements and CSV imports with row errors, duplicate suggestions, explicit approval and deterministic source IDs. Excel statements are read locally, mapped to a selected bank account and let users review transaction types and categories. Private imports save atomically and support partial imports and safe retries. A fictional CSV sample is available on the Imports screen.
 - Fixed deposit records and pledged card links; institutional/personal loans, exact-dated installments and partial payment allocations.
 - Shared expenses linked to original purchases, participant shares and contributions matched to actual ledger movements.
 - In-app reminder preferences and audit history.
@@ -94,6 +94,6 @@ This is a working first version, not a completed production release of every pha
 
 ## Project layout
 
-`src/components` contains the app screens; `src/lib/finance.ts` owns pure financial calculations; `src/lib/imports.ts` owns CSV review; `src/lib/supabase` and `src/app/api` own authenticated access; `supabase/migrations` is the canonical database implementation. Drizzle metadata describes the normalized tables, and SQL owns RLS, grants, triggers, views and atomic procedures. [Import format and review rules](docs/imports.md) include the supported CSV fields.
+`src/components` contains the app screens; `src/lib/finance.ts` owns pure financial calculations; `src/lib/imports.ts` owns statement review and `src/lib/statement-workbook.ts` reads Excel bank exports; `src/lib/supabase` and `src/app/api` own authenticated access; `supabase/migrations` is the canonical database implementation. Drizzle metadata describes the normalized tables, and SQL owns RLS, grants, triggers, views and atomic procedures. [Import format and review rules](docs/imports.md) describe supported Excel layouts and CSV fields.
 
 Do not commit `.env.local`, statements, production seeds or financial backups. Fictional seed data is the only sample data in this project.

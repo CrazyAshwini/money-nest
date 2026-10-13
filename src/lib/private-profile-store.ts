@@ -14,7 +14,15 @@ import path from "node:path";
 import { z } from "zod";
 import type { OwnedRecord, Transaction, WorkspaceData } from "./types";
 import { validateWorkspaceRecord, workspaceRecordSchemas } from "./validation";
-import { applyCommerceCommand, assertCommerceTransactionEdit, commerceDataSchema, commerceSummary, emptyCommerce, CommerceError, type CommerceData } from "./commerce";
+import {
+  applyCommerceCommand,
+  assertCommerceTransactionEdit,
+  commerceDataSchema,
+  commerceSummary,
+  emptyCommerce,
+  CommerceError,
+  type CommerceData,
+} from "./commerce";
 
 export interface PrivateProfile {
   id: string;
@@ -258,7 +266,8 @@ async function readStore(dir: string): Promise<PrivateStore | null> {
       !Array.isArray(store.imports)
     )
       throw storageError();
-    if (store.commerce !== undefined) store.commerce = commerceDataSchema.parse(store.commerce);
+    if (store.commerce !== undefined)
+      store.commerce = commerceDataSchema.parse(store.commerce);
     return store;
   } catch {
     throw storageError();
@@ -570,7 +579,12 @@ export async function savePrivateRecord<K extends keyof WorkspaceData>(
         { ...input, userId: store.profile.id },
         store.profile.id,
       );
-      if (collection === "transactions") assertCommerceTransactionEdit(store.commerce ?? emptyCommerce(), store.workspace.transactions.find(row => row.id === record.id), record as Transaction);
+      if (collection === "transactions")
+        assertCommerceTransactionEdit(
+          store.commerce ?? emptyCommerce(),
+          store.workspace.transactions.find((row) => row.id === record.id),
+          record as Transaction,
+        );
     } catch {
       throw new PrivateProfileError(
         "invalid",
@@ -603,26 +617,103 @@ export async function readPrivateCommerce(sessionToken: string) {
   return withStore(async (_dir, maybeStore) => {
     const store = requireSession(maybeStore, sessionToken);
     const commerce = store.commerce ?? emptyCommerce();
-    if (commerce.orders.some(row => row.userId !== store.profile.id) || commerce.refunds.some(row => row.userId !== store.profile.id)) throw storageError();
+    if (
+      commerce.orders.some((row) => row.userId !== store.profile.id) ||
+      commerce.refunds.some((row) => row.userId !== store.profile.id)
+    )
+      throw storageError();
     return { commerce, summary: commerceSummary(commerce, store.workspace) };
   });
 }
-export async function commitPrivateCommerce(sessionToken: string, command: unknown) {
+export async function commitPrivateCommerce(
+  sessionToken: string,
+  command: unknown,
+) {
   return withStore(async (dir, maybeStore) => {
     const store = requireSession(maybeStore, sessionToken);
     try {
-      const applied = applyCommerceCommand(store.workspace, store.commerce ?? emptyCommerce(), store.profile.id, command);
-      if (!applied.result.duplicate || applied.result.ordersSaved || applied.result.refundsSaved) {
+      const applied = applyCommerceCommand(
+        store.workspace,
+        store.commerce ?? emptyCommerce(),
+        store.profile.id,
+        command,
+      );
+      if (
+        !applied.result.duplicate ||
+        applied.result.ordersSaved ||
+        applied.result.refundsSaved
+      ) {
         store.workspace = applied.workspace;
         store.commerce = applied.commerce;
         await writeStore(dir, store);
       }
-      return { commerce: applied.commerce, summary: commerceSummary(applied.commerce, applied.workspace), result: applied.result };
+      return {
+        commerce: applied.commerce,
+        summary: commerceSummary(applied.commerce, applied.workspace),
+        result: applied.result,
+      };
     } catch (error) {
-      if (error instanceof CommerceError) throw new PrivateProfileError("invalid", error.message);
+      if (error instanceof CommerceError)
+        throw new PrivateProfileError("invalid", error.message);
       throw error;
     }
   });
+}
+function importAccountsOverlap(left: Transaction, right: Transaction): boolean {
+  return [left.fromAccountId, left.toAccountId].some((accountId) =>
+    Boolean(
+      accountId &&
+      (accountId === right.fromAccountId || accountId === right.toAccountId),
+    ),
+  );
+}
+function normalizedImportDescription(value: string): string {
+  return value
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("en-IN");
+}
+function normalizedImportAmount(value: string): string {
+  const [whole, fraction = ""] = value.split(".");
+  return `${whole.replace(/^0+(?=\d)/, "")}.${fraction.padEnd(2, "0")}`;
+}
+function sameImportShape(left: Transaction, right: Transaction): boolean {
+  return (
+    left.userId === right.userId &&
+    left.kind === right.kind &&
+    left.occurredOn === right.occurredOn &&
+    normalizedImportAmount(left.amount) ===
+      normalizedImportAmount(right.amount) &&
+    normalizedImportDescription(left.description) ===
+      normalizedImportDescription(right.description) &&
+    left.fromAccountId === right.fromAccountId &&
+    left.toAccountId === right.toAccountId
+  );
+}
+function validImportDirection(record: Transaction): boolean {
+  const from = record.fromAccountId;
+  const to = record.toAccountId;
+  if (record.kind === "expense") return Boolean(from && !to);
+  if (record.kind === "income" || record.kind === "refund")
+    return Boolean(to && !from);
+  if (record.kind === "transfer" || record.kind === "bill_payment")
+    return Boolean(from && to && from !== to);
+  return Boolean(from) !== Boolean(to);
+}
+function validateImportLineage(record: Transaction, inputHash: string): void {
+  const locator = record.sourceObjectId?.split(":");
+  if (
+    record.status !== "posted" ||
+    !record.occurredOn ||
+    !validImportDirection(record) ||
+    record.sourceSystem !== "csv" ||
+    locator?.length !== 2 ||
+    locator[0] !== inputHash ||
+    !/^[1-9]\d*$/.test(locator[1]) ||
+    !Number.isSafeInteger(Number(locator[1]))
+  )
+    throw new Error();
 }
 export async function commitPrivateImport(
   sessionToken: string,
@@ -646,12 +737,6 @@ export async function commitPrivateImport(
         "Check the reviewed import details.",
       );
     const prior = store.imports.find((item) => item.inputHash === inputHash);
-    if (prior)
-      return {
-        imported: 0,
-        duplicates: transactions.length,
-        workspace: store.workspace,
-      };
     const original = store.workspace.transactions;
     const imported: Transaction[] = [];
     let duplicates = 0;
@@ -664,6 +749,41 @@ export async function commitPrivateImport(
           { ...input, userId: store.profile.id },
           store.profile.id,
         );
+        validateImportLineage(record, inputHash);
+        for (const accountId of [record.fromAccountId, record.toAccountId]) {
+          if (
+            accountId &&
+            !store.workspace.accounts.some(
+              (account) =>
+                account.id === accountId &&
+                account.userId === store.profile.id &&
+                account.active,
+            )
+          )
+            throw new Error();
+        }
+        const reference = record.externalReference?.trim();
+        const referenceMatches = reference
+          ? store.workspace.transactions.filter(
+              (row) =>
+                row.userId === store.profile.id &&
+                row.externalReference?.trim() === reference &&
+                importAccountsOverlap(row, record),
+            )
+          : [];
+        if (referenceMatches.length) {
+          if (
+            referenceMatches.length !== 1 ||
+            !sameImportShape(record, referenceMatches[0])
+          ) {
+            throw new PrivateProfileError(
+              "invalid",
+              "A bank reference already exists with different or ambiguous values. Review the existing transaction; no rows were saved.",
+            );
+          }
+          duplicates++;
+          continue;
+        }
         const duplicate = store.workspace.transactions.some(
           (row) =>
             row.id === record.id ||
@@ -682,14 +802,23 @@ export async function commitPrivateImport(
           record,
         ];
       }
-    } catch {
+    } catch (error) {
       store.workspace.transactions = original;
+      if (error instanceof PrivateProfileError) throw error;
       throw new PrivateProfileError(
         "invalid",
         "The reviewed import contains invalid records or links.",
       );
     }
-    store.imports.push({ inputHash, imported: imported.length, duplicates });
+    // A file can be approved in subsets. Row/source identities remain the retry boundary.
+    // A replay that only contains duplicates must not rewrite the encrypted profile.
+    if (!imported.length)
+      return { imported: 0, duplicates, workspace: store.workspace };
+    if (prior) {
+      prior.imported += imported.length;
+      prior.duplicates += duplicates;
+    } else
+      store.imports.push({ inputHash, imported: imported.length, duplicates });
     audit(
       store,
       "imports",
@@ -705,6 +834,7 @@ export async function commitPrivateImport(
     };
   });
 }
+
 export async function logoutPrivateProfile(sessionToken: string) {
   return withStore(async (dir, store) => {
     if (!store || !TOKEN_PATTERN.test(sessionToken)) return;

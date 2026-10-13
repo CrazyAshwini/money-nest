@@ -1922,6 +1922,8 @@ td small {
 }
 .upload-zone h3 {
   font-size: 16px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .upload-zone p {
   font-size: 11px;
@@ -1959,6 +1961,134 @@ td small {
   border-top: 1px solid var(--border);
   padding-top: 20px;
   margin-top: 15px;
+}
+.statement-account {
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+  max-width: 560px;
+}
+.statement-account label,
+.statement-row-fields label {
+  font-size: 13px;
+  font-weight: 500;
+}
+.statement-account p,
+.statement-review-hint,
+.statement-row-note,
+.statement-summary small {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.statement-account select,
+.statement-row-fields select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+}
+.statement-selection,
+.statement-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  margin: 16px 0;
+  font-size: 13px;
+}
+.statement-summary small {
+  flex-basis: 100%;
+}
+.statement-candidates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  gap: 12px;
+}
+.statement-candidate {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 0;
+}
+.statement-candidate-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.statement-candidate-heading input {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.statement-candidate-heading .grow {
+  min-width: 0;
+}
+.statement-candidate-heading strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.statement-candidate-heading small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.statement-amount {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.statement-row-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.statement-row-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.statement-row-fields label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.statement-row-note {
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+.statement-candidate .text-link {
+  font-size: 13px;
+  margin-top: 8px;
+}
+@media (max-width: 480px) {
+  .statement-candidate-heading {
+    flex-wrap: wrap;
+  }
+  .statement-candidate-heading .grow {
+    flex-basis: calc(100% - 30px);
+  }
+  .statement-amount {
+    margin-left: 25px;
+  }
+  .statement-row-fields {
+    grid-template-columns: 1fr;
+  }
+  .statement-selection {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 .settings-row {
   display: flex;

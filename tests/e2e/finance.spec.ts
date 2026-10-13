@@ -696,7 +696,7 @@ test("CSV sample requires review, commits once, and repeat upload proposes zero 
   await expect(
     page.getByRole("heading", { name: "Statement imports", exact: true }),
   ).toBeVisible();
-  const input = page.getByLabel("Upload statement CSV", { exact: true });
+  const input = page.getByLabel("Upload bank statement", { exact: true });
   await input.setInputFiles(path.resolve("public/sample-statement.csv"));
   await expect(
     page.getByRole("heading", {
@@ -726,7 +726,7 @@ test("CSV sample requires review, commits once, and repeat upload proposes zero 
   await expect.poll(transactionCount).toBe(beforeCount + 4);
   await input.setInputFiles(path.resolve("public/sample-statement.csv"));
   await expect(
-    page.getByText("sample-statement.csv · 4 rows · 4 existing matches", {
+    page.getByText("4 rows · 4 existing matches", {
       exact: true,
     }),
   ).toBeVisible();
@@ -750,11 +750,13 @@ test("PDF uploads show the unsupported-format message without ledger changes", a
   page,
 }) => {
   await page.goto("/imports");
-  await page.getByLabel("Upload statement CSV", { exact: true }).setInputFiles({
-    name: "statement.pdf",
-    mimeType: "application/pdf",
-    buffer: Buffer.from("%PDF-1.7\nsynthetic fixture"),
-  });
+  await page
+    .getByLabel("Upload bank statement", { exact: true })
+    .setInputFiles({
+      name: "statement.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.7\nsynthetic fixture"),
+    });
   await expect(page.getByRole("main").getByRole("alert")).toContainText(
     "PDF and image parsing are not available",
   );
