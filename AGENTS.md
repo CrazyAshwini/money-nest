@@ -7,3 +7,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Money Nest context
+
+Before planning changes, read `docs/project-context.md` and the linked dated review for verified behavior, open findings, and test limitations. Treat supplied reports as claims to verify; follow the user's current request for scope and authorization.
