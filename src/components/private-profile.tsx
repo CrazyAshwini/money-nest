@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, LockKeyhole, LogOut, UserRound } from "lucide-react";
 import { useFinance } from "./finance-provider";
-import { Badge, Field, Section } from "./ui";
+import { Badge, Field, PasswordField, Section } from "./ui";
 
 export function PrivateProfilePage() {
   const {
@@ -337,28 +337,19 @@ export function PrivateProfilePage() {
               />
             </Field>
           )}
-          <Field label="Password">
-            <input
-              name="password"
-              type="password"
-              minLength={10}
-              maxLength={128}
-              autoComplete={needsSetup ? "new-password" : "current-password"}
-              placeholder="At least 10 characters"
-              required
-            />
-          </Field>
+          <PasswordField
+            label="Password"
+            minLength={10}
+            autoComplete={needsSetup ? "new-password" : "current-password"}
+            placeholder="At least 10 characters"
+          />
           {needsSetup && (
-            <Field label="Confirm password">
-              <input
-                name="confirmation"
-                type="password"
-                minLength={10}
-                maxLength={128}
-                autoComplete="new-password"
-                required
-              />
-            </Field>
+            <PasswordField
+              label="Confirm password"
+              name="confirmation"
+              minLength={10}
+              autoComplete="new-password"
+            />
           )}
           {error && (
             <p className="error" role="alert">

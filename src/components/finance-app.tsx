@@ -54,6 +54,7 @@ import {
   GroupsPage,
   SettingsPage,
   LoginPage,
+  PasswordRecoveryPage,
   NotificationsPage,
 } from "./workspace-pages";
 import {
@@ -160,6 +161,7 @@ export function FinanceApp() {
         </div>
       </main>
     );
+  if (page === "reset-password") return <PasswordRecoveryPage />;
   if (page === "login" || mode === "login")
     return backend === "local" ? <PrivateProfilePage /> : <LoginPage />;
   if (page === "profile" && mode !== "private" && mode !== "cloud")

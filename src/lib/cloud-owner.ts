@@ -58,3 +58,9 @@ export function cloudSignupEmailAllowed(email: string) {
       email.trim().toLowerCase() === expected,
   );
 }
+
+/** Public recovery requests may only send mail to the configured owner address. */
+export function cloudRecoveryEmailAllowed(email: string) {
+  const expected = ownerEmail();
+  return Boolean(expected && email.trim().toLowerCase() === expected);
+}

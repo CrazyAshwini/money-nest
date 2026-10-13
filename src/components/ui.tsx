@@ -1,8 +1,8 @@
 "use client";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, ChevronRight, Plus } from "lucide-react";
+import { X, ChevronRight, Plus, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode, ComponentType } from "react";
+import { useId, useState, type ReactNode, type ComponentType } from "react";
 export function Modal({
   title,
   description,
@@ -169,6 +169,57 @@ export function Field({
       <span>{label}</span>
       {children}
     </label>
+  );
+}
+export function PasswordField({
+  label,
+  name = "password",
+  autoComplete = "current-password",
+  placeholder = "",
+  required = true,
+  minLength = 8,
+  maxLength = 128,
+}: {
+  label: string;
+  name?: string;
+  autoComplete?: string;
+  placeholder?: string;
+  required?: boolean;
+  minLength?: number;
+  maxLength?: number;
+}) {
+  const id = useId();
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <div className="password-control">
+        <input
+          id={id}
+          type={visible ? "text" : "password"}
+          name={name}
+          autoComplete={autoComplete}
+          minLength={minLength}
+          maxLength={maxLength}
+          required={required}
+          placeholder={placeholder}
+          spellCheck={false}
+        />
+        <button
+          className="password-toggle"
+          type="button"
+          aria-label={visible ? "Hide password" : "Show password"}
+          aria-pressed={visible}
+          onClick={() => setVisible((value) => !value)}
+        >
+          {visible ? (
+            <EyeOff size={17} aria-hidden="true" />
+          ) : (
+            <Eye size={17} aria-hidden="true" />
+          )}
+        </button>
+      </div>
+    </div>
   );
 }
 export function downloadFile(content: string, name: string, type = "text/csv") {

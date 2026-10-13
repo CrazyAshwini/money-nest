@@ -18,7 +18,15 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
-import { Section, Empty, Badge, Field, Modal, downloadFile } from "./ui";
+import {
+  Section,
+  Empty,
+  Badge,
+  Field,
+  PasswordField,
+  Modal,
+  downloadFile,
+} from "./ui";
 import { type EditorState } from "./editors";
 import { exportTransactionsCsv } from "@/lib/imports";
 import { formatMoney, formatDate, groupSummary, sumMoney } from "@/lib/finance";
@@ -700,22 +708,64 @@ export function NotificationsPage() {
     </>
   );
 }
+function LoginStory() {
+  return (
+    <div className="login-story">
+      <Link className="brand" href="/dashboard" aria-label="Money Nest home">
+        <span className="brand-icon" aria-hidden="true">
+          M
+        </span>
+        Money Nest
+      </Link>
+      <div>
+        <span className="eyebrow">MAKE ROOM FOR CLARITY</span>
+        <h2>
+          Know your money.
+          <br />
+          <span>Own your next move.</span>
+        </h2>
+        <p>
+          Your accounts, spending, bills, and plans.
+          <br />
+          One thoughtful space to see it all.
+        </p>
+        <div className="login-orbit">
+          <div className="orbit-circle" />
+          <span className="orbit-card">
+            <ShieldCheck size={25} />
+            <strong>Personal by design.</strong>
+            <small>Private to your account.</small>
+          </span>
+        </div>
+      </div>
+      <small>Built around your finances. And your peace of mind.</small>
+    </div>
+  );
+}
+
 export function LoginPage() {
   const { refresh, enterDemo, toast, signupEnabled } = useFinance();
   const router = useRouter();
   const [signup, setSignup] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
-  const creating = signup && signupEnabled;
+  const creating = signup && signupEnabled && !recovering;
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (url.searchParams.get("auth_error") === "confirmation") {
+    const authError = url.searchParams.get("auth_error");
+    if (authError === "confirmation" || authError === "recovery") {
       // Synchronize the server's safe callback result, then clear it from the address.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setError(
-        "This sign-in link is invalid or expired. Sign in again or request a new confirmation email.",
-      );
+      if (authError === "recovery") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setRecovering(true);
+        setError("This password-reset link has expired. Request another one.");
+      } else {
+        setError(
+          "This confirmation link is invalid or expired. Sign in again or create a new account.",
+        );
+      }
       url.searchParams.delete("auth_error");
       window.history.replaceState(null, "", url.pathname + url.search);
     }
@@ -733,13 +783,19 @@ export function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: creating ? "signup" : "login",
+          action: recovering ? "reset" : creating ? "signup" : "login",
           email: f.get("email"),
-          password: f.get("password"),
+          ...(!recovering ? { password: f.get("password") } : {}),
         }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "Unable to sign in.");
+      if (recovering) {
+        setSuccess(
+          "If this email can access the owner account, a reset link is on its way. Check your inbox and spam folder.",
+        );
+        return;
+      }
       if (result.needsEmailConfirmation) {
         setSuccess(
           "Account created. Check your email to confirm your account, then sign in.",
@@ -757,47 +813,24 @@ export function LoginPage() {
   }
   return (
     <main className="login">
-      <div className="login-story">
-        <Link className="brand" href="/dashboard" aria-label="Money Nest home">
-          <span className="brand-icon" aria-hidden="true">
-            M
-          </span>
-          Money Nest
-        </Link>
-        <div>
-          <span className="eyebrow">MAKE ROOM FOR CLARITY</span>
-          <h2>
-            Know your money.
-            <br />
-            <span>Own your next move.</span>
-          </h2>
-          <p>
-            Your accounts, spending, bills, and plans.
-            <br />
-            One thoughtful space to see it all.
-          </p>
-          <div className="login-orbit">
-            <div className="orbit-circle" />
-            <span className="orbit-card">
-              <ShieldCheck size={25} />
-              <strong>Personal by design.</strong>
-              <small>Private to your account.</small>
-            </span>
-          </div>
-        </div>
-        <small>Built around your finances. And your peace of mind.</small>
-      </div>
+      <LoginStory />
       <div className="login-form">
         <span className="login-icon">
           <LockKeyhole size={24} />
         </span>
         <h1>
-          {creating ? "Make yourself at home" : "Welcome to your workspace"}
+          {recovering
+            ? "Reset your cloud password"
+            : creating
+              ? "Make yourself at home"
+              : "Welcome to your workspace"}
         </h1>
         <p>
-          {creating
-            ? "Create your private finance account."
-            : "A clearer picture of your finances starts here."}
+          {recovering
+            ? "We’ll email a secure link if this address belongs to the owner account."
+            : creating
+              ? "Create your private finance account."
+              : "A clearer picture of your finances starts here."}
         </p>
         <form onSubmit={submit}>
           <Field label="Email address">
@@ -809,16 +842,13 @@ export function LoginPage() {
               required
             />
           </Field>
-          <Field label="Password">
-            <input
-              type="password"
-              name="password"
+          {!recovering && (
+            <PasswordField
+              label="Password"
               autoComplete={creating ? "new-password" : "current-password"}
-              minLength={8}
-              required
               placeholder="At least 8 characters"
             />
-          </Field>
+          )}
           {error && (
             <p className="error" role="alert">
               {error}
@@ -830,11 +860,47 @@ export function LoginPage() {
             </p>
           )}
           <button className="button primary" disabled={busy}>
-            {busy ? "Connecting…" : creating ? "Create account" : "Sign in"}
+            {busy
+              ? recovering
+                ? "Sending…"
+                : "Connecting…"
+              : recovering
+                ? "Send reset link"
+                : creating
+                  ? "Create account"
+                  : "Sign in"}
             <ArrowRight size={16} />
           </button>
         </form>
-        {signupEnabled && (
+        {!recovering && !creating && (
+          <button
+            className="text-link"
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setRecovering(true);
+              setError("");
+              setSuccess("");
+            }}
+          >
+            Forgot your password?
+          </button>
+        )}
+        {recovering && (
+          <button
+            className="text-link"
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setRecovering(false);
+              setError("");
+              setSuccess("");
+            }}
+          >
+            Back to sign in
+          </button>
+        )}
+        {!recovering && signupEnabled && (
           <button
             className="text-link"
             type="button"
@@ -850,27 +916,116 @@ export function LoginPage() {
               : "New here? Create an account"}
           </button>
         )}
-        <div className="login-divider">
-          <span>or take a look around</span>
-        </div>
-        <button
-          className="button"
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            sessionStorage.setItem("finance-os:mode", "demo");
-            enterDemo();
-            router.push("/dashboard");
-            toast("Exploring the fictional demo workspace.");
-          }}
-        >
-          Explore fictional demo <ArrowUpRight size={16} />
-        </button>
-        <p className="login-note">
-          <ShieldCheck size={13} />
-          Sign-in is limited to the Money Nest owner account. Your workspace
-          syncs across your devices.
-        </p>
+        {!recovering && (
+          <>
+            <div className="login-divider">
+              <span>or take a look around</span>
+            </div>
+            <button
+              className="button"
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                sessionStorage.setItem("finance-os:mode", "demo");
+                enterDemo();
+                router.push("/dashboard");
+                toast("Exploring the fictional demo workspace.");
+              }}
+            >
+              Explore fictional demo <ArrowUpRight size={16} />
+            </button>
+            <p className="login-note">
+              <ShieldCheck size={13} />
+              Sign-in is limited to the Money Nest owner account. Your workspace
+              syncs across your devices.
+            </p>
+          </>
+        )}
+        {!recovering && !creating && (
+          <p className="login-help">
+            Your computer-only profile password is separate from your cloud
+            password. If you haven’t made a cloud account yet, choose “New here?
+            Create an account” and confirm your email.
+          </p>
+        )}
+      </div>
+    </main>
+  );
+}
+
+export function PasswordRecoveryPage() {
+  const { refresh, toast } = useFinance();
+  const router = useRouter();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busy) return;
+    setError("");
+    const form = new FormData(event.currentTarget);
+    if (form.get("password") !== form.get("confirmation")) {
+      setError("The passwords do not match.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update-password",
+          password: form.get("password"),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(
+          result.error ||
+            "Your password could not be updated. Request a new reset link.",
+        );
+      await refresh();
+      toast("Cloud password updated.");
+      router.replace("/dashboard");
+    } catch (issue) {
+      setError(issue instanceof Error ? issue.message : "Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <main className="login">
+      <LoginStory />
+      <div className="login-form">
+        <span className="login-icon">
+          <LockKeyhole size={24} />
+        </span>
+        <h1>Choose a new cloud password</h1>
+        <p>This changes your cloud sign-in only, not your local profile.</p>
+        <form onSubmit={submit}>
+          <PasswordField
+            label="New password"
+            autoComplete="new-password"
+            placeholder="At least 8 characters"
+          />
+          <PasswordField
+            label="Confirm new password"
+            name="confirmation"
+            autoComplete="new-password"
+            placeholder="Enter it again"
+          />
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          <button className="button primary" disabled={busy}>
+            {busy ? "Updating…" : "Update password"}
+            <ArrowRight size={16} />
+          </button>
+        </form>
+        <Link href="/login" className="text-link">
+          Back to sign in
+        </Link>
       </div>
     </main>
   );

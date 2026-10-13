@@ -79,6 +79,10 @@ export const APP_PAGE_METADATA = {
     description:
       "Sign in to your Money Nest workspace to manage accounts, transactions, bills and financial goals.",
   },
+  "reset-password": {
+    title: "Reset your cloud password",
+    description: "Choose a new password for your Money Nest cloud account.",
+  },
 } as const;
 
 export type AppPage = keyof typeof APP_PAGE_METADATA;

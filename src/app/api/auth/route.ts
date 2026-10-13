@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { privateProfileEnabled } from "@/lib/private-profile-store";
 import { privateAuthPOST } from "@/lib/private-profile-http";
 import {
+  cloudRecoveryEmailAllowed,
   cloudSignupEmailAllowed,
   cloudSignupEnabled,
   cloudUserAllowed,
@@ -24,7 +25,7 @@ const response = (body: unknown, status = 200) =>
   });
 
 const input = z.object({
-  action: z.enum(["login", "signup", "logout"]),
+  action: z.enum(["login", "signup", "logout", "reset", "update-password"]),
   email: z.string().trim().max(254).pipe(z.email()).optional(),
   password: z.string().min(8).max(128).optional(),
 });
@@ -59,11 +60,7 @@ export async function POST(request: NextRequest) {
       },
       403,
     );
-  if (
-    action === "signup" &&
-    email &&
-    !cloudSignupEmailAllowed(email)
-  )
+  if (action === "signup" && email && !cloudSignupEmailAllowed(email))
     return response(
       { error: "Sign-up is limited to the Money Nest owner account." },
       403,
@@ -74,6 +71,57 @@ export async function POST(request: NextRequest) {
       error ? { error: "Could not sign out. Try again." } : { ok: true },
       error ? 400 : 200,
     );
+  }
+  if (action === "reset") {
+    if (!email) return response({ error: "Enter a valid email address." }, 400);
+    const origin = cloudApplicationOrigin(request);
+    if (!origin)
+      return response({ error: "Password recovery is not configured." }, 503);
+    if (cloudRecoveryEmailAllowed(email)) {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: new URL(
+          "/auth/callback?next=/reset-password",
+          origin,
+        ).toString(),
+      });
+      if (error)
+        return response(
+          { error: "We could not send a reset email. Please try again later." },
+          429,
+        );
+    }
+    // Keep the response the same for allowed and other email addresses.
+    return response({ ok: true });
+  }
+  if (action === "update-password") {
+    if (!password)
+      return response(
+        { error: "Enter a new password of at least 8 characters." },
+        400,
+      );
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+    if (userError || !cloudUserAllowed(user)) {
+      await supabase.auth.signOut();
+      return response(
+        {
+          error:
+            "This password-reset link is invalid or expired. Request another reset link and try again.",
+        },
+        401,
+      );
+    }
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error)
+      return response(
+        {
+          error: "The password could not be updated. Try a different password.",
+        },
+        400,
+      );
+    return response({ ok: true });
   }
   if (!email || !password)
     return response({ error: "Email and password are required." }, 400);
@@ -95,7 +143,7 @@ export async function POST(request: NextRequest) {
       {
         error:
           action === "login"
-            ? "Sign-in failed. Check your credentials and email confirmation."
+            ? "Sign-in failed. Your local profile password is separate from your cloud password. If you have not created a cloud account, create one and confirm your email; otherwise use Forgot your password."
             : "Sign-up could not be completed. Check your details or try again later.",
       },
       400,
@@ -103,7 +151,8 @@ export async function POST(request: NextRequest) {
   if (action === "login" && !result.data.session)
     return response(
       {
-        error: "Sign-in failed. Check your credentials and email confirmation.",
+        error:
+          "Sign-in failed. Your local profile password is separate from your cloud password. If you have not created a cloud account, create one and confirm your email; otherwise use Forgot your password.",
       },
       400,
     );

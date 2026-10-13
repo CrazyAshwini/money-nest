@@ -29,7 +29,8 @@ function destination(value: string | null) {
     !value ||
     !value.startsWith("/") ||
     value.startsWith("//") ||
-    /[\\\x00-\x20]/.test(value)
+    value.includes("\\") ||
+    [...value].some((character) => character.charCodeAt(0) <= 0x20)
   )
     return "/dashboard";
   // Auth credentials never remain in the next page's address, and callbacks cannot loop.
@@ -61,11 +62,20 @@ export async function GET(request: NextRequest) {
       },
     );
   }
-  const failed = () => redirect(origin, "/login?auth_error=confirmation");
+  const params = request.nextUrl.searchParams;
+  const recovery =
+    params.get("next") === "/reset-password" ||
+    params.get("type") === "recovery";
+  const failed = () =>
+    redirect(
+      origin,
+      recovery
+        ? "/login?auth_error=recovery"
+        : "/login?auth_error=confirmation",
+    );
   if (privateProfileEnabled()) return failed();
   const supabase = await createSupabaseServerClient();
   if (!supabase) return failed();
-  const params = request.nextUrl.searchParams;
   const code = params.get("code");
   const hash = params.get("token_hash");
   const type = params.get("type");
