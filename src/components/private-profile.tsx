@@ -24,6 +24,9 @@ export function PrivateProfilePage() {
   const [busy, setBusy] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState("");
+  const [transferFile, setTransferFile] = useState<File | null>(null);
+  const [transferInfo, setTransferInfo] = useState("");
+  const [transferBusy, setTransferBusy] = useState(false);
 
   useEffect(() => {
     const token = new URLSearchParams(window.location.hash.slice(1)).get(
@@ -49,29 +52,31 @@ export function PrivateProfilePage() {
     setBusy(true);
     setError("");
     try {
-      const updating = mode === "private" && profile;
+      const updating = (mode === "private" || mode === "cloud") && profile;
       const password = String(form.get("password") ?? "");
       if (!updating && needsSetup && password !== form.get("confirmation"))
         throw new Error("The passwords do not match.");
       const response = await fetch("/api/profile", {
-        method: "POST",
+        method: mode === "cloud" ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
-          updating
-            ? { action: "update", displayName: form.get("displayName") }
-            : needsSetup
-              ? {
-                  action: "setup",
-                  token: setupToken,
-                  displayName: form.get("displayName"),
-                  email: form.get("email"),
-                  password,
-                }
-              : {
-                  action: "login",
-                  password,
-                  ...(emailRequired ? { email: form.get("email") } : {}),
-                },
+          mode === "cloud"
+            ? { displayName: form.get("displayName") }
+            : updating
+              ? { action: "update", displayName: form.get("displayName") }
+              : needsSetup
+                ? {
+                    action: "setup",
+                    token: setupToken,
+                    displayName: form.get("displayName"),
+                    email: form.get("email"),
+                    password,
+                  }
+                : {
+                    action: "login",
+                    password,
+                    ...(emailRequired ? { email: form.get("email") } : {}),
+                  },
         ),
       });
       const result = await response.json();
@@ -99,11 +104,14 @@ export function PrivateProfilePage() {
     setSigningOut(true);
     setError("");
     try {
-      const response = await fetch("/api/profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "logout" }),
-      });
+      const response = await fetch(
+        mode === "cloud" ? "/api/auth" : "/api/profile",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "logout" }),
+        },
+      );
       if (!response.ok) throw new Error("Please try signing out again.");
       await refresh();
       toast("Signed out.");
@@ -116,7 +124,80 @@ export function PrivateProfilePage() {
     }
   }
 
-  if (mode === "private" && profile) {
+  async function exportForCloud() {
+    setTransferBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/profile/export", { cache: "no-store" });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || "Your profile could not be exported.");
+      }
+      const file = await response.blob();
+      const url = URL.createObjectURL(file);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "money-nest-transfer.json";
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast("Transfer file downloaded. Keep it private and upload it to your cloud profile.");
+    } catch (issue) {
+      setError(issue instanceof Error ? issue.message : "Please try again.");
+    } finally {
+      setTransferBusy(false);
+    }
+  }
+
+  async function importToCloud() {
+    if (!transferFile || transferBusy) return;
+    setTransferBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/profile/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: await transferFile.text(),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Your transfer could not be imported.");
+      setTransferFile(null);
+      setTransferInfo("");
+      await refresh();
+      toast("Your profile is now available in the cloud.");
+    } catch (issue) {
+      setError(issue instanceof Error ? issue.message : "Please try again.");
+    } finally {
+      setTransferBusy(false);
+    }
+  }
+
+  function selectTransferFile(file: File | undefined) {
+    setTransferFile(null);
+    setTransferInfo("");
+    setError("");
+    if (!file) return;
+    if (file.size > 4_000_000) {
+      setError("Transfer file must be smaller than 4 MB.");
+      return;
+    }
+    void file.text().then((text) => {
+      try {
+        const bundle = JSON.parse(text);
+        if (
+          bundle?.format !== "money-nest-private-export" ||
+          bundle?.version !== 1 ||
+          typeof bundle?.profile?.email !== "string"
+        )
+          throw new Error();
+        setTransferFile(file);
+        setTransferInfo(bundle.profile.email);
+      } catch {
+        setError("Choose a valid Money Nest transfer file.");
+      }
+    });
+  }
+
+  if ((mode === "private" || mode === "cloud") && profile) {
     return (
       <Section title="Your profile" className="profile-panel">
         <div className="profile-identity">
@@ -125,7 +206,11 @@ export function PrivateProfilePage() {
           </span>
           <div>
             <h2>{profile.displayName}</h2>
-            <p>Private profile · saved on this computer</p>
+            <p>
+              {mode === "cloud"
+                ? "Cloud profile · available on your devices"
+                : "Private profile · saved on this computer"}
+            </p>
           </div>
           <Badge tone="green">Signed in</Badge>
         </div>
@@ -151,6 +236,36 @@ export function PrivateProfilePage() {
             INR · Asia/Kolkata · {data.accounts.filter((a) => a.active).length}{" "}
             accounts · {data.transactions.length} transactions
           </p>
+          {mode === "private" && (
+            <div className="info-banner profile-transfer">
+              <div>
+                <strong>Use this profile on your phone</strong>
+                <p>Download a private copy of your records, then sign in to the cloud profile and import it.</p>
+              </div>
+              <button className="button" type="button" onClick={exportForCloud} disabled={transferBusy}>
+                {transferBusy ? "Preparing…" : "Download transfer file"}
+              </button>
+            </div>
+          )}
+          {mode === "cloud" && Object.values(data).every((rows) => rows.length === 0) && (
+            <div className="info-banner profile-transfer">
+              <div>
+                <strong>Bring your existing records to the cloud</strong>
+                <p>Choose the transfer file from your computer. It must use the same email as this account; your local copy stays on that computer.</p>
+              </div>
+              <Field label="Money Nest transfer file">
+                <input type="file" accept="application/json,.json" onChange={(event) => selectTransferFile(event.currentTarget.files?.[0])} />
+              </Field>
+              {transferInfo && (
+                <>
+                  <p>Ready to import the local profile for <strong>{transferInfo}</strong>.</p>
+                  <button className="button primary" type="button" onClick={importToCloud} disabled={transferBusy}>
+                    {transferBusy ? "Importing…" : "Import records to cloud"}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           {error && (
             <p className="error" role="alert">
               {error}

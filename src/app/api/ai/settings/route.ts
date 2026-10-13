@@ -1,27 +1,22 @@
 import "server-only";
 import { NextRequest } from "next/server";
+import { PrivateProfileError } from "@/lib/private-profile-store";
 import {
-  privateProfileEnabled,
-  PrivateProfileError,
-  authenticatePrivateProfile,
-} from "@/lib/private-profile-store";
-import { privateRequestAllowed } from "@/lib/private-request";
+  AIOwnerAuthenticationError,
+  authenticateAIOwnerRequest,
+  receiptUploadLimits,
+} from "@/lib/ai-owner-auth";
 import { privateResponse } from "@/lib/private-profile-http";
 import { readReceiptAISettings } from "@/lib/ai-receipt-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const sessionToken = (request: NextRequest) =>
-  request.cookies.get("finance-os-private-session")?.value ?? "";
-const unavailable = () =>
-  privateResponse(
-    {
-      error: "Sign in to a private profile to use receipt AI.",
-      code: "private_profile_required",
-    },
-    403,
-  );
 const failure = (error: unknown) => {
+  if (error instanceof AIOwnerAuthenticationError)
+    return privateResponse(
+      { error: error.message, code: error.code },
+      error.status,
+    );
   if (error instanceof PrivateProfileError && error.code === "auth")
     return privateResponse(
       { error: "Sign in to your profile.", code: "authentication_required" },
@@ -37,19 +32,14 @@ const failure = (error: unknown) => {
 };
 
 export async function GET(request: NextRequest) {
-  if (!privateRequestAllowed(request))
-    return privateResponse(
-      { error: "Request is not allowed.", code: "origin_not_allowed" },
-      403,
-    );
-  if (!privateProfileEnabled()) return unavailable();
   try {
-    await authenticatePrivateProfile(sessionToken(request));
+    const { cloud } = await authenticateAIOwnerRequest(request, false);
     // No masked credential, key prefix, profile identity or financial record leaves this endpoint.
     return privateResponse({
       available: true,
       ownerManaged: true,
       ...readReceiptAISettings(),
+      maxUploadBytes: receiptUploadLimits(cloud).maxImageBytes,
     });
   } catch (error) {
     return failure(error);
@@ -57,14 +47,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!privateRequestAllowed(request, true))
-    return privateResponse(
-      { error: "Request origin is not allowed.", code: "origin_not_allowed" },
-      403,
-    );
-  if (!privateProfileEnabled()) return unavailable();
   try {
-    await authenticatePrivateProfile(sessionToken(request));
+    await authenticateAIOwnerRequest(request);
     // User requests never read, replace or persist the app owner's credentials.
     return privateResponse(
       {

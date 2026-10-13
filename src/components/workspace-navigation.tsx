@@ -46,7 +46,8 @@ export function WorkspaceNavigation({
   reviewCount: number;
   onNavigate: () => void;
 }) {
-  const profileHref = mode === "private" ? "/profile" : "/settings";
+  const profileHref =
+    mode === "private" || mode === "cloud" ? "/profile" : "/settings";
   const initial = profile?.displayName.slice(0, 1).toUpperCase() || "P";
   return (
     <>

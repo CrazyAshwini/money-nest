@@ -9,6 +9,16 @@ import {
   type MutableCollection,
 } from "@/lib/supabase/validation";
 import type { WorkspaceData } from "@/lib/types";
+import { cloudSignupEnabled, cloudUserAllowed } from "@/lib/cloud-owner";
+import { cloudRequestAllowed } from "@/lib/cloud-request";
+import { readCloudProfile } from "@/lib/cloud-profile";
+import {
+  readCloudFinanceState,
+  type CloudFinanceState,
+} from "@/lib/supabase/commerce-store";
+import { validateWorkspaceRecord } from "@/lib/validation";
+import { assertCommerceTransactionEdit } from "@/lib/commerce";
+import type { Transaction } from "@/lib/types";
 import { privateProfileEnabled } from "@/lib/private-profile-store";
 import {
   privateWorkspaceGET,
@@ -24,12 +34,15 @@ const response = (body: unknown, status = 200) =>
 
 export async function GET(request: NextRequest) {
   if (privateProfileEnabled()) return privateWorkspaceGET(request);
+  if (!cloudRequestAllowed(request))
+    return response({ error: "Request origin is not allowed." }, 403);
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return response(
       {
         configured: false,
         authenticated: false,
+        signupEnabled: false,
         error: "Supabase is not configured.",
       },
       503,
@@ -43,29 +56,27 @@ export async function GET(request: NextRequest) {
       {
         configured: true,
         authenticated: false,
+        signupEnabled: cloudSignupEnabled(),
         error: "Sign in to access your private workspace.",
       },
       401,
     );
-  const entries = await Promise.all(
-    Object.entries(tables).map(async ([collection, table]) => {
-      // Paginate through every owned row; PostgREST defaults to a 1000 row cap.
-      const records: Record<string, unknown>[] = [];
-      for (let offset = 0; ; offset += 1000) {
-        const result = await supabase
-          .from(`api_${table}`)
-          .select("*")
-          .eq("user_id", user.id)
-          .order("id")
-          .range(offset, offset + 999);
-        if (result.error) throw new Error("WORKSPACE_DATABASE_UNAVAILABLE");
-        records.push(...result.data.map(fromDatabase));
-        if (result.data.length < 1000) break;
-      }
-      return [collection, records] as const;
-    }),
-  ).catch(() => null);
-  if (!entries)
+  if (!cloudUserAllowed(user))
+    return response(
+      {
+        configured: true,
+        authenticated: false,
+        signupEnabled: false,
+        error: "This account cannot access the workspace.",
+      },
+      403,
+    );
+  // A single database snapshot keeps order payment links and the ledger consistent.
+  const loaded = await Promise.all([
+    readCloudFinanceState(supabase, user.id),
+    readCloudProfile(supabase, user),
+  ]).catch(() => null);
+  if (!loaded)
     return response(
       {
         configured: true,
@@ -78,17 +89,17 @@ export async function GET(request: NextRequest) {
   return response({
     configured: true,
     authenticated: true,
+    backend: "supabase",
+    signupEnabled: cloudSignupEnabled(),
     userId: user.id,
-    workspace: Object.fromEntries(entries) as unknown as WorkspaceData,
+    workspace: loaded[0].workspace,
+    profile: loaded[1],
   });
 }
 
 export async function POST(request: NextRequest) {
   if (privateProfileEnabled()) return privateWorkspacePOST(request);
-  if (
-    request.headers.get("origin") &&
-    request.headers.get("origin") !== request.nextUrl.origin
-  )
+  if (!cloudRequestAllowed(request, true))
     return response({ error: "Request origin is not allowed." }, 403);
   const supabase = await createSupabaseServerClient();
   if (!supabase)
@@ -102,20 +113,14 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (error || !user || user.is_anonymous)
     return response({ error: "Authentication required." }, 401);
+  if (!cloudUserAllowed(user))
+    return response(
+      { error: "This account cannot access the workspace." },
+      403,
+    );
   if (Number(request.headers.get("content-length") || 0) > 100000)
     return response({ error: "Request is too large." }, 413);
   const body = await request.json().catch(() => null);
-  if (
-    body?.collection === "groups" &&
-    body?.record?.kind === "contribution_pool"
-  )
-    return response(
-      {
-        error:
-          "Contribution pools are currently available in private local profiles.",
-      },
-      400,
-    );
   if (
     !body ||
     typeof body.collection !== "string" ||
@@ -135,6 +140,39 @@ export async function POST(request: NextRequest) {
       403,
     );
   const record = parsed.data as Record<string, unknown>;
+  let state: CloudFinanceState;
+  try {
+    state = await readCloudFinanceState(supabase, user.id);
+  } catch {
+    return response(
+      { error: "Your workspace could not be checked. Reload and try again." },
+      503,
+    );
+  }
+  try {
+    validateWorkspaceRecord(
+      state.workspace,
+      collection,
+      parsed.data as WorkspaceData[typeof collection][number],
+      user.id,
+    );
+    if (collection === "transactions")
+      assertCommerceTransactionEdit(
+        state.commerce,
+        state.workspace.transactions.find((row) => row.id === record.id),
+        parsed.data as Transaction,
+      );
+  } catch (failure) {
+    return response(
+      {
+        error:
+          failure instanceof Error
+            ? failure.message
+            : "Check the record details and payment links.",
+      },
+      400,
+    );
+  }
   if (
     collection === "reminders" &&
     record.channel !== "in_app" &&

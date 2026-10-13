@@ -1,0 +1,16 @@
+.env*
+!.env.example
+.vercel/
+.next/
+node_modules/
+artifacts/
+private/
+statements/
+backups/
+outputs/
+test-results/
+playwright-report/
+coverage/
+*.private.json
+*.log
+*.tsbuildinfo

@@ -6,6 +6,7 @@ import {
   DEFAULT_RECEIPT_GATEWAY_MODEL,
   RECEIPT_GATEWAY_MODELS,
   MAX_RECEIPT_BYTES,
+  MAX_HOSTED_RECEIPT_BYTES,
   MAX_RECEIPT_IMAGES,
   MAX_RECEIPT_TRANSACTIONS,
   receiptBatchGenerationSchema,
@@ -904,6 +905,59 @@ describe("receipt cloud boundaries", () => {
       accepted.images.reduce((size, image) => size + image.length, 0),
     ).toBe(MAX_RECEIPT_BYTES);
     for (const image of accepted.images) image.fill(0);
+  });
+
+  it("accepts the hosted 4 MB image total with room for multipart fields and rejects even one extra byte", async () => {
+    const limits = {
+      maxImageBytes: MAX_HOSTED_RECEIPT_BYTES,
+      maxMultipartBytes: MAX_HOSTED_RECEIPT_BYTES + 64 * 1024,
+    };
+    const bytes = Buffer.alloc(MAX_HOSTED_RECEIPT_BYTES);
+    PNG.copy(bytes);
+    const accepted = await readReceiptUpload(
+      request(upload({ bytes })),
+      configuration,
+      limits,
+    );
+    expect(accepted.images[0].length).toBe(MAX_HOSTED_RECEIPT_BYTES);
+    accepted.images[0].fill(0);
+    const tooLarge = Buffer.alloc(MAX_HOSTED_RECEIPT_BYTES + 1);
+    PNG.copy(tooLarge);
+    await expect(
+      readReceiptUpload(
+        request(upload({ bytes: tooLarge })),
+        configuration,
+        limits,
+      ),
+    ).rejects.toMatchObject({
+      code: "too_large",
+      status: 413,
+      message: "Keep all receipt photos within 4 MB in total.",
+    });
+  });
+
+  it("enforces the hosted cap across all photos and rejects oversized multipart before parsing images", async () => {
+    const limits = {
+      maxImageBytes: MAX_HOSTED_RECEIPT_BYTES,
+      maxMultipartBytes: MAX_HOSTED_RECEIPT_BYTES + 64 * 1024,
+    };
+    const bytes = Buffer.alloc(MAX_HOSTED_RECEIPT_BYTES);
+    PNG.copy(bytes);
+    await expect(
+      readReceiptUpload(
+        request(upload({ bytes, multiple: true })),
+        configuration,
+        limits,
+      ),
+    ).rejects.toMatchObject({ code: "too_large", status: 413 });
+    const unread = request("not parsed", {
+      "content-type": "multipart/form-data; boundary=synthetic",
+      "content-length": String(limits.maxMultipartBytes + 1),
+    });
+    await expect(
+      readReceiptUpload(unread, configuration, limits),
+    ).rejects.toMatchObject({ code: "too_large", status: 413 });
+    expect(unread.bodyUsed).toBe(false);
   });
 
   it("enforces the separate multipart body limit before reading or sending photos", async () => {

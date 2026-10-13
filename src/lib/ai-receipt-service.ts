@@ -167,6 +167,10 @@ export async function readBoundedBody(request: Request, maxBytes: number) {
 export async function readReceiptUpload(
   request: Request,
   expected: Pick<ReceiptAIConfiguration, "provider" | "model">,
+  limits = {
+    maxImageBytes: MAX_RECEIPT_BYTES,
+    maxMultipartBytes: MAX_MULTIPART_BYTES,
+  },
 ) {
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().startsWith("multipart/form-data;"))
@@ -175,7 +179,7 @@ export async function readReceiptUpload(
       "Choose a PNG, JPEG or WebP image.",
       400,
     );
-  const raw = await readBoundedBody(request, MAX_MULTIPART_BYTES);
+  const raw = await readBoundedBody(request, limits.maxMultipartBytes);
   let form: FormData;
   try {
     form = await new Response(raw, {
@@ -242,14 +246,17 @@ export async function readReceiptUpload(
     );
   const imageFiles = files as File[];
   if (
-    imageFiles.reduce((total, file) => total + file.size, 0) > MAX_RECEIPT_BYTES
+    imageFiles.reduce((total, file) => total + file.size, 0) >
+    limits.maxImageBytes
   )
     throw new ReceiptAIError(
       "too_large",
-      "Keep all receipt photos within 5 MB in total.",
+      `Keep all receipt photos within ${limits.maxImageBytes / (1024 * 1024)} MB in total.`,
       413,
     );
-  if (imageFiles.some((file) => validateReceiptFile(file)))
+  if (
+    imageFiles.some((file) => validateReceiptFile(file, limits.maxImageBytes))
+  )
     throw new ReceiptAIError(
       "invalid_image",
       "Choose a valid PNG, JPEG or WebP image.",

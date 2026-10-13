@@ -1,11 +1,11 @@
 import "server-only";
 import { NextRequest } from "next/server";
+import { PrivateProfileError } from "@/lib/private-profile-store";
 import {
-  privateProfileEnabled,
-  PrivateProfileError,
-  authenticatePrivateProfile,
-} from "@/lib/private-profile-store";
-import { privateRequestAllowed } from "@/lib/private-request";
+  AIOwnerAuthenticationError,
+  authenticateAIOwnerRequest,
+  receiptUploadLimits,
+} from "@/lib/ai-owner-auth";
 import { privateResponse } from "@/lib/private-profile-http";
 import {
   acquireReceiptScan,
@@ -22,26 +22,11 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
-  if (!privateRequestAllowed(request, true))
-    return privateResponse(
-      { error: "Request origin is not allowed.", code: "origin_not_allowed" },
-      403,
-    );
-  if (!privateProfileEnabled())
-    return privateResponse(
-      {
-        error: "Sign in to a private profile to scan a receipt.",
-        code: "private_profile_required",
-      },
-      403,
-    );
   let release: (() => void) | undefined;
   let images: Buffer[] = [];
   try {
     // Authenticate and require a configured key before reading uploads or spending provider credits.
-    const { ownerId } = await authenticatePrivateProfile(
-      request.cookies.get("finance-os-private-session")?.value ?? "",
-    );
+    const { ownerId, cloud } = await authenticateAIOwnerRequest(request);
     const configuration = readReceiptAIConfiguration();
     if (!configuration)
       throw new ReceiptAIError(
@@ -51,7 +36,11 @@ export async function POST(request: NextRequest) {
       );
     release = acquireReceiptScan(ownerId);
     const metadata = receiptProviderMetadata(configuration.provider);
-    const upload = await readReceiptUpload(request, configuration);
+    const upload = await readReceiptUpload(
+      request,
+      configuration,
+      receiptUploadLimits(cloud),
+    );
     images = upload.images;
     const extractions = await scanReceiptBatchWithAI({
       configuration,
@@ -72,6 +61,11 @@ export async function POST(request: NextRequest) {
       model: configuration.model,
     });
   } catch (error) {
+    if (error instanceof AIOwnerAuthenticationError)
+      return privateResponse(
+        { error: error.message, code: error.code },
+        error.status,
+      );
     if (error instanceof PrivateProfileError && error.code === "auth")
       return privateResponse(
         { error: "Sign in to your profile.", code: "authentication_required" },

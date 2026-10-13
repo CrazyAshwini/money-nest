@@ -1,6 +1,6 @@
 "use client";
 import { ReceiptAISettingsPanel } from "./ai-settings";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Decimal from "decimal.js";
@@ -482,7 +482,7 @@ export function SettingsPage() {
               Export CSV
             </button>
           </div>
-          {mode === "private" && (
+          {(mode === "private" || mode === "cloud") && (
             <div className="settings-row">
               <div>
                 <strong>Your profile</strong>
@@ -701,12 +701,25 @@ export function NotificationsPage() {
   );
 }
 export function LoginPage() {
-  const { refresh, enterDemo, toast } = useFinance();
+  const { refresh, enterDemo, toast, signupEnabled } = useFinance();
   const router = useRouter();
   const [signup, setSignup] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
+  const creating = signup && signupEnabled;
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("auth_error") === "confirmation") {
+      // Synchronize the server's safe callback result, then clear it from the address.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setError(
+        "This sign-in link is invalid or expired. Sign in again or request a new confirmation email.",
+      );
+      url.searchParams.delete("auth_error");
+      window.history.replaceState(null, "", url.pathname + url.search);
+    }
+  }, []);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (busy) return;
@@ -720,7 +733,7 @@ export function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: signup ? "signup" : "login",
+          action: creating ? "signup" : "login",
           email: f.get("email"),
           password: f.get("password"),
         }),
@@ -734,7 +747,7 @@ export function LoginPage() {
         return;
       }
       await refresh();
-      toast(signup ? "Account created. You are signed in." : "Signed in.");
+      toast(creating ? "Account created. You are signed in." : "Signed in.");
       router.push("/dashboard");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Connection failed.");
@@ -779,10 +792,10 @@ export function LoginPage() {
           <LockKeyhole size={24} />
         </span>
         <h1>
-          {signup ? "Make yourself at home" : "Welcome to your workspace"}
+          {creating ? "Make yourself at home" : "Welcome to your workspace"}
         </h1>
         <p>
-          {signup
+          {creating
             ? "Create your private finance account."
             : "A clearer picture of your finances starts here."}
         </p>
@@ -800,7 +813,7 @@ export function LoginPage() {
             <input
               type="password"
               name="password"
-              autoComplete={signup ? "new-password" : "current-password"}
+              autoComplete={creating ? "new-password" : "current-password"}
               minLength={8}
               required
               placeholder="At least 8 characters"
@@ -817,24 +830,26 @@ export function LoginPage() {
             </p>
           )}
           <button className="button primary" disabled={busy}>
-            {busy ? "Connecting…" : signup ? "Create account" : "Sign in"}
+            {busy ? "Connecting…" : creating ? "Create account" : "Sign in"}
             <ArrowRight size={16} />
           </button>
         </form>
-        <button
-          className="text-link"
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            setSignup(!signup);
-            setError("");
-            setSuccess("");
-          }}
-        >
-          {signup
-            ? "Already have an account? Sign in"
-            : "New here? Create an account"}
-        </button>
+        {signupEnabled && (
+          <button
+            className="text-link"
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setSignup(!signup);
+              setError("");
+              setSuccess("");
+            }}
+          >
+            {creating
+              ? "Already have an account? Sign in"
+              : "New here? Create an account"}
+          </button>
+        )}
         <div className="login-divider">
           <span>or take a look around</span>
         </div>
@@ -853,8 +868,8 @@ export function LoginPage() {
         </button>
         <p className="login-note">
           <ShieldCheck size={13} />
-          Sign-in requires a configured Supabase project. The demo works locally
-          with fictional records.
+          Sign-in is limited to the Money Nest owner account. Your workspace
+          syncs across your devices.
         </p>
       </div>
     </main>

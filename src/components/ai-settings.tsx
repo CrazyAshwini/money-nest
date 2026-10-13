@@ -3,15 +3,19 @@
 import { useEffect, useState } from "react";
 import { useFinance } from "./finance-provider";
 import { Badge, Section } from "./ui";
-import type { ReceiptAISettings } from "@/lib/receipt-scan";
+import {
+  receiptUploadMaxBytes,
+  type ReceiptAISettings,
+} from "@/lib/receipt-scan";
 
 export function ReceiptAISettingsPanel() {
   const { mode } = useFinance();
   const [settings, setSettings] = useState<ReceiptAISettings | null>(null);
   const [error, setError] = useState("");
   const [loadAttempt, setLoadAttempt] = useState(0);
+  const signedIn = mode === "private" || mode === "cloud";
   useEffect(() => {
-    if (mode !== "private") return;
+    if (!signedIn) return;
     const controller = new AbortController();
     async function load() {
       try {
@@ -44,6 +48,10 @@ export function ReceiptAISettingsPanel() {
             provider: result.provider,
             model: result.model,
             requiresRedaction: result.requiresRedaction,
+            maxUploadBytes: receiptUploadMaxBytes(
+              mode === "cloud",
+              result.maxUploadBytes,
+            ),
           });
           setError("");
         }
@@ -58,7 +66,7 @@ export function ReceiptAISettingsPanel() {
     }
     void load();
     return () => controller.abort();
-  }, [mode, loadAttempt]);
+  }, [mode, signedIn, loadAttempt]);
 
   function retry() {
     setSettings(null);
@@ -72,10 +80,8 @@ export function ReceiptAISettingsPanel() {
         title="Receipt AI"
         subtitle="Create transactions from payment screenshots and shopping receipts."
       >
-        {mode !== "private" ? (
-          <p className="muted">
-            Sign in to your private profile to scan receipts.
-          </p>
+        {!signedIn ? (
+          <p className="muted">Sign in to your profile to scan receipts.</p>
         ) : (
           <>
             <div className="settings-row">
@@ -99,7 +105,13 @@ export function ReceiptAISettingsPanel() {
             {settings?.configured ? (
               <p className="muted">
                 Upload an image in Add transaction, review the extracted
-                details, then save.
+                details, then save. Upload up to{" "}
+                {receiptUploadMaxBytes(
+                  mode === "cloud",
+                  settings.maxUploadBytes,
+                ) /
+                  (1024 * 1024)}{" "}
+                MB in total.
               </p>
             ) : settings ? (
               <p className="muted">

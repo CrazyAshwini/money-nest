@@ -562,6 +562,32 @@ export async function readPrivateProfile(
       : null,
   );
 }
+
+/** An explicit, password-free export for a user moving this local profile to cloud storage. */
+export async function exportPrivateProfile(sessionToken: string) {
+  return withStore(async (_dir, maybeStore) => {
+    const store = requireSession(maybeStore, sessionToken);
+    const commerce = commerceDataSchema.parse(
+      store.commerce ?? emptyCommerce(),
+    );
+    if (
+      commerce.orders.some((row) => row.userId !== store.profile.id) ||
+      commerce.refunds.some((row) => row.userId !== store.profile.id)
+    )
+      throw storageError();
+    return {
+      format: "money-nest-private-export" as const,
+      version: 1 as const,
+      profile: {
+        id: store.profile.id,
+        displayName: store.profile.displayName,
+        email: store.profile.email ?? null,
+      },
+      workspace: store.workspace,
+      commerce,
+    };
+  });
+}
 export async function savePrivateRecord<K extends keyof WorkspaceData>(
   sessionToken: string,
   collection: K,

@@ -7,7 +7,7 @@ import { useFinance } from "./finance-provider";
 import { Modal } from "./ui";
 import { UploadedImagePreview } from "./uploaded-image-preview";
 import {
-  MAX_RECEIPT_BYTES,
+  receiptUploadMaxBytes,
   MAX_RECEIPT_IMAGES,
   MAX_RECEIPT_TRANSACTIONS,
   findReceiptDuplicates,
@@ -60,7 +60,12 @@ export function ReceiptScanner({
   const cameraInputs = useRef<Array<HTMLInputElement | null>>([]);
   const reviewPanel = useRef<HTMLDivElement | null>(null);
   const generation = useRef(0);
-  const signedIn = mode === "private";
+  const signedIn = mode === "private" || mode === "cloud";
+  const maxUploadBytes = receiptUploadMaxBytes(
+    mode === "cloud",
+    settings?.maxUploadBytes,
+  );
+  const maxUploadMB = maxUploadBytes / (1024 * 1024);
 
   useEffect(() => {
     return () => {
@@ -120,6 +125,10 @@ export function ReceiptScanner({
         provider: body.provider,
         model: body.model,
         requiresRedaction: body.requiresRedaction,
+        maxUploadBytes: receiptUploadMaxBytes(
+          mode === "cloud",
+          body.maxUploadBytes,
+        ),
       });
       if (body.provider !== previousProvider) {
         setResult(null);
@@ -194,12 +203,13 @@ export function ReceiptScanner({
           ...current.slice(index + files.length).map((image) => image.file),
         ]
       : files;
-    const invalid = nextFiles.map(validateReceiptFile).find(Boolean);
+    const invalid = nextFiles
+      .map((file) => validateReceiptFile(file, maxUploadBytes))
+      .find(Boolean);
     if (
       invalid ||
       nextFiles.length > (longBill ? MAX_RECEIPT_IMAGES : 1) ||
-      nextFiles.reduce((total, file) => total + file.size, 0) >
-        MAX_RECEIPT_BYTES
+      nextFiles.reduce((total, file) => total + file.size, 0) > maxUploadBytes
     ) {
       updateImages([]);
       setError(
@@ -208,7 +218,7 @@ export function ReceiptScanner({
             ? longBill
               ? `Use up to ${MAX_RECEIPT_IMAGES} photos for one receipt.`
               : "Choose one photo, or enable multiple photos for a long bill."
-            : "Use photos no larger than 5 MB in total."),
+            : `Use photos no larger than ${maxUploadMB} MB in total.`),
       );
       return;
     }
@@ -457,7 +467,7 @@ export function ReceiptScanner({
           <div id={panelId} className="receipt-panel">
             {!signedIn ? (
               <p className="receipt-note">
-                Sign in to your private profile to scan a receipt.{" "}
+                Sign in to your profile to scan a receipt.{" "}
                 <Link href="/profile">Open profile</Link>
               </p>
             ) : (
@@ -616,8 +626,8 @@ export function ReceiptScanner({
                 </div>
                 <p className="receipt-file-hint">
                   PNG, JPEG or WebP ·{" "}
-                  {longBill ? `up to ${MAX_RECEIPT_IMAGES} photos, ` : ""}5 MB
-                  total
+                  {longBill ? `up to ${MAX_RECEIPT_IMAGES} photos, ` : ""}
+                  {maxUploadMB} MB total
                   {longBill && (
                     <span>
                       Keep photos in receipt order. They form one transaction.

@@ -5,6 +5,7 @@ import { isoDateSchema, positiveMoneySchema } from "./validation";
 import { withSellerDescription } from "./seller-description";
 
 export const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
+export const MAX_HOSTED_RECEIPT_BYTES = 4 * 1024 * 1024;
 export const MAX_RECEIPT_IMAGES = 3;
 export const MAX_RECEIPT_TRANSACTIONS = 20;
 export const RECEIPT_GATEWAY_MODELS = [
@@ -87,7 +88,18 @@ export interface ReceiptAISettings {
   provider: string;
   model: string;
   requiresRedaction: boolean;
+  maxUploadBytes?: number;
   models?: ReadonlyArray<{ id: string; label: string }>;
+}
+
+/** Never let metadata increase the deployment's upload limit. */
+export function receiptUploadMaxBytes(cloud: boolean, advertised?: unknown) {
+  const maximum = cloud ? MAX_HOSTED_RECEIPT_BYTES : MAX_RECEIPT_BYTES;
+  return typeof advertised === "number" &&
+    Number.isSafeInteger(advertised) &&
+    advertised > 0
+    ? Math.min(advertised, maximum)
+    : maximum;
 }
 
 const clean = (text: string | null): string | null =>
@@ -221,14 +233,18 @@ export function findReceiptDuplicates(
   });
 }
 
-export function validateReceiptFile(file: {
-  name: string;
-  type: string;
-  size: number;
-}): string | null {
+export function validateReceiptFile(
+  file: {
+    name: string;
+    type: string;
+    size: number;
+  },
+  maxBytes = MAX_RECEIPT_BYTES,
+): string | null {
   if (!file.size)
     return "This image is empty. Choose a payment screenshot or receipt.";
-  if (file.size > MAX_RECEIPT_BYTES) return "Use an image no larger than 5 MB.";
+  if (file.size > maxBytes)
+    return `Use an image no larger than ${maxBytes / (1024 * 1024)} MB.`;
   if (
     !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
     !/\.(?:png|jpe?g|webp)$/i.test(file.name)

@@ -23,6 +23,7 @@ type ContextValue = {
   profile: UserProfile | null;
   needsSetup: boolean;
   emailRequired: boolean;
+  signupEnabled: boolean;
   userId: string;
   month: string;
   setMonth: (month: string) => void;
@@ -66,6 +67,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [backend, setBackend] = useState<"local" | "supabase" | null>(null);
   const [needsSetup, setNeedsSetup] = useState(false);
   const [emailRequired, setEmailRequired] = useState(false);
+  const [signupEnabled, setSignupEnabled] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const path = usePathname();
   const router = useRouter();
@@ -131,6 +133,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
             : "supabase",
       );
       setNeedsSetup(result.needsSetup === true);
+      setSignupEnabled(result.signupEnabled === true);
       setEmailRequired(
         result.emailRequired === true || Boolean(result.profile?.email),
       );
@@ -171,6 +174,18 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       if (timer.current) clearTimeout(timer.current);
     };
   }, [refresh]);
+  useEffect(() => {
+    if (mode !== "cloud") return;
+    const reload = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    window.addEventListener("focus", reload);
+    document.addEventListener("visibilitychange", reload);
+    return () => {
+      window.removeEventListener("focus", reload);
+      document.removeEventListener("visibilitychange", reload);
+    };
+  }, [mode, refresh]);
   // Surface a browser-storage quota failure to the user when persisting the external store fails.
   useEffect(() => {
     if (mode === "demo") {
@@ -314,6 +329,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         profile,
         needsSetup,
         emailRequired,
+        signupEnabled,
         userId: mode === "demo" ? DEMO_USER_ID : authUserId,
         month,
         setMonth,

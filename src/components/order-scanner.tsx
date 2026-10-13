@@ -7,7 +7,7 @@ import { useFinance } from "./finance-provider";
 import { Modal } from "./ui";
 import { UploadedImagePreview } from "./uploaded-image-preview";
 import {
-  MAX_RECEIPT_BYTES,
+  receiptUploadMaxBytes,
   MAX_RECEIPT_IMAGES,
   validateReceiptFile,
   type ReceiptAISettings,
@@ -28,10 +28,15 @@ export function OrderScanner({
 }) {
   const { mode } = useFinance();
   const panelId = useId();
-  const signedIn = mode === "private";
+  const signedIn = mode === "private" || mode === "cloud";
   const refundScan = intent === "refunds";
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState<ReceiptAISettings | null>(null);
+  const maxUploadBytes = receiptUploadMaxBytes(
+    mode === "cloud",
+    settings?.maxUploadBytes,
+  );
+  const maxUploadMB = maxUploadBytes / (1024 * 1024);
   const [checking, setChecking] = useState(false);
   const [images, setImages] = useState<DraftImage[]>([]);
   const [preview, setPreview] = useState<{
@@ -121,6 +126,10 @@ export function OrderScanner({
         provider: body.provider,
         model: body.model,
         requiresRedaction: body.requiresRedaction,
+        maxUploadBytes: receiptUploadMaxBytes(
+          mode === "cloud",
+          body.maxUploadBytes,
+        ),
       });
       if (body.provider !== previousProvider || body.model !== previousModel)
         setResult(null);
@@ -167,19 +176,20 @@ export function OrderScanner({
       ...files,
       ...current.slice(index + files.length).map((image) => image.file),
     ];
-    const invalid = nextFiles.map(validateReceiptFile).find(Boolean);
+    const invalid = nextFiles
+      .map((file) => validateReceiptFile(file, maxUploadBytes))
+      .find(Boolean);
     if (
       invalid ||
       nextFiles.length > MAX_RECEIPT_IMAGES ||
-      nextFiles.reduce((total, file) => total + file.size, 0) >
-        MAX_RECEIPT_BYTES
+      nextFiles.reduce((total, file) => total + file.size, 0) > maxUploadBytes
     ) {
       updateImages([]);
       setError(
         invalid ||
           (nextFiles.length > MAX_RECEIPT_IMAGES
             ? `Choose up to ${MAX_RECEIPT_IMAGES} screenshots.`
-            : "Use screenshots no larger than 5 MB in total."),
+            : `Use screenshots no larger than ${maxUploadMB} MB in total.`),
       );
       return;
     }
@@ -336,7 +346,7 @@ export function OrderScanner({
           <div id={panelId} className="receipt-panel">
             {!signedIn ? (
               <p className="receipt-note">
-                Sign in to your private profile to scan order history.{" "}
+                Sign in to your profile to scan order history.{" "}
                 <Link href="/profile">Open profile</Link>
               </p>
             ) : (
@@ -482,8 +492,8 @@ export function OrderScanner({
                   })}
                 </div>
                 <p className="receipt-file-hint">
-                  PNG, JPEG or WebP · up to {MAX_RECEIPT_IMAGES} screenshots · 5
-                  MB total
+                  PNG, JPEG or WebP · up to {MAX_RECEIPT_IMAGES} screenshots ·{" "}
+                  {maxUploadMB} MB total
                 </p>
                 {checking ? (
                   <p className="receipt-note" role="status">

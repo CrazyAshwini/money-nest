@@ -3,6 +3,8 @@ import {
   detectReceiptMediaType,
   findReceiptDuplicates,
   MAX_RECEIPT_BYTES,
+  MAX_HOSTED_RECEIPT_BYTES,
+  receiptUploadMaxBytes,
   MAX_RECEIPT_TRANSACTIONS,
   normalizeReceiptExtraction,
   receiptDraft,
@@ -272,6 +274,28 @@ describe("receipt duplicate checks", () => {
   });
 });
 describe("receipt image bounds", () => {
+  it("keeps hosted metadata within 4 MB and retains the local 5 MB limit", () => {
+    expect(receiptUploadMaxBytes(true)).toBe(MAX_HOSTED_RECEIPT_BYTES);
+    expect(receiptUploadMaxBytes(false)).toBe(MAX_RECEIPT_BYTES);
+    for (const value of [
+      MAX_RECEIPT_BYTES,
+      Number.MAX_SAFE_INTEGER,
+      -1,
+      0,
+      NaN,
+      "untrusted",
+    ])
+      expect(receiptUploadMaxBytes(true, value)).toBe(MAX_HOSTED_RECEIPT_BYTES);
+    const image = {
+      name: "synthetic.png",
+      type: "image/png",
+      size: MAX_HOSTED_RECEIPT_BYTES + 1,
+    };
+    expect(validateReceiptFile(image, MAX_HOSTED_RECEIPT_BYTES)).toContain(
+      "4 MB",
+    );
+    expect(validateReceiptFile(image)).toBeNull();
+  });
   it("accepts supported nonempty images and rejects large, empty, PDF and mismatched extensions", () => {
     expect(
       validateReceiptFile({

@@ -162,7 +162,8 @@ export function FinanceApp() {
     );
   if (page === "login" || mode === "login")
     return backend === "local" ? <PrivateProfilePage /> : <LoginPage />;
-  if (page === "profile" && mode !== "private") return <PrivateProfilePage />;
+  if (page === "profile" && mode !== "private" && mode !== "cloud")
+    return <PrivateProfilePage />;
   if (mode === "error")
     return (
       <main className="loading">
@@ -245,7 +246,11 @@ export function FinanceApp() {
                 {metrics.reviewCount > 0 && <i />}
               </Link>
               <Link
-                href={mode === "private" ? "/profile" : "/settings"}
+                href={
+                  mode === "private" || mode === "cloud"
+                    ? "/profile"
+                    : "/settings"
+                }
                 className="avatar mini"
                 aria-label="Your profile"
               >

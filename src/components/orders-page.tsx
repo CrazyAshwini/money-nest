@@ -95,7 +95,7 @@ export function OrdersPage() {
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
-      if (mode !== "private") return;
+      if (mode !== "private" && mode !== "cloud") return;
       setLoading(true);
       try {
         const response = await fetch("/api/orders", {
@@ -271,11 +271,11 @@ export function OrdersPage() {
     }
   }
 
-  if (mode !== "private")
+  if (mode !== "private" && mode !== "cloud")
     return (
       <Empty
-        title="Use your private profile"
-        description="Order imports and refund tracking are available in the private profile on this computer."
+        title="Sign in to your profile"
+        description="Sign in to import orders and track your refunds."
       />
     );
   const summary = commerceSummary(commerce, data);
