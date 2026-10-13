@@ -113,7 +113,6 @@ export function Empty({
 }) {
   return (
     <div className="empty">
-      <div className="empty-icon">◇</div>
       <h3>{title}</h3>
       <p>{description}</p>
       {onAdd && (
@@ -145,7 +144,7 @@ export function Stat({
     <div className={`stat ${tone}`}>
       <div className="stat-top">
         <span>{title}</span>
-        <Icon size={18} />
+        <Icon size={18} aria-hidden="true" />
       </div>
       <strong>{value}</strong>
       <div className="stat-bottom">

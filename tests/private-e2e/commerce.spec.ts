@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createDemoData } from "../../src/lib/seed";
 import {
+  formatMoney,
   ledgerBalance,
   monthlySummary,
   subtractMoney,
@@ -20,12 +21,13 @@ import {
   provisionPrivateProfile,
 } from "../../src/lib/private-profile-store";
 import type { Transaction, WorkspaceData } from "../../src/lib/types";
-import type {
-  CommerceCommand,
-  CommerceData,
-  ReviewedOrderDraft,
-  RefundDraft,
-  ScannedOrderDraft,
+import {
+  commerceSummary,
+  type CommerceCommand,
+  type CommerceData,
+  type ReviewedOrderDraft,
+  type RefundDraft,
+  type ScannedOrderDraft,
 } from "../../src/lib/commerce";
 import type { OrderScanResult } from "../../src/lib/scan-orders";
 
@@ -928,6 +930,170 @@ test("order history scan reviews overlapping screenshots and retries a lost save
   await page.screenshot({
     path: path.resolve("artifacts/orders-history-desktop.png"),
   });
+});
+
+test("Orders loading never shows fake totals and refreshing keeps the loaded figures and history", async ({
+  page,
+}) => {
+  const untouched = await state(page);
+  await commit(page, "synthetic-loading-history", [
+    reviewed("loading-saved-order", {
+      action: "link",
+      matchedTransactionId: otherPurchaseId,
+      occurredOn: "2026-10-02",
+      amount: "200.00",
+      merchant: "Synthetic other refund purchase",
+      description: "Synthetic other refund purchase",
+    }),
+  ]);
+  const before = await state(page);
+  expect(before.workspace.transactions).toEqual(
+    untouched.workspace.transactions,
+  );
+  const saved = before.commerce.orders.find(
+    (order) => order.candidateId === "loading-saved-order",
+  );
+  if (!saved?.description)
+    throw new Error("The synthetic loading fixture needs a saved order.");
+  const summary = commerceSummary(before.commerce, before.workspace);
+  expect(summary.gross).not.toBe("0.00");
+  let releaseInitial = () => {};
+  let releaseRefresh = () => {};
+  const initialGate = new Promise<void>((resolve) => {
+    releaseInitial = resolve;
+  });
+  const refreshGate = new Promise<void>((resolve) => {
+    releaseRefresh = resolve;
+  });
+  let getRequests = 0;
+  await page.route("**/api/orders", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    getRequests += 1;
+    if (getRequests === 1) await initialGate;
+    else if (getRequests === 2) await refreshGate;
+    else if (getRequests === 3)
+      return route.fulfill({
+        status: 500,
+        json: { error: "Orders could not be loaded." },
+      });
+    await route.continue();
+  });
+  try {
+    await page.goto("/orders");
+    const panel = page.locator(".commerce-page");
+    const loading = panel
+      .getByRole("status")
+      .filter({ hasText: "Loading orders…" });
+    const skeletons = panel.locator('div[aria-hidden="true"]');
+    await expect.poll(() => getRequests).toBe(1);
+    await expect(loading).toBeVisible();
+    await expect(panel).toHaveAttribute("aria-busy", "true");
+    await expect(
+      panel.getByRole("heading", { name: "Order history", exact: true }),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("heading", { name: "Refunds", exact: true }),
+    ).toBeVisible();
+    await expect(skeletons.first()).toBeVisible();
+    expect(
+      (await skeletons.allTextContents()).every((text) => text.trim() === ""),
+    ).toBe(true);
+    await expect(panel.locator(".commerce-totals")).toHaveCount(0);
+    await expect(panel.getByText("₹0.00", { exact: true })).toHaveCount(0);
+    await expect(
+      panel.getByText("Your orders, in one place", { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      panel.getByText("Track a return or cancellation", { exact: true }),
+    ).toHaveCount(0);
+    await mkdir(path.resolve("artifacts"), { recursive: true });
+    await panel.screenshot({
+      path: path.resolve("artifacts/ui-refinement-orders-loading.png"),
+    });
+    releaseInitial();
+    await expect(panel).toHaveAttribute("aria-busy", "false");
+    const totals = panel.locator(".commerce-totals");
+    const paid = totals
+      .locator("div")
+      .filter({ hasText: "Paid purchases" })
+      .locator("strong");
+    const history = panel
+      .locator(".commerce-order")
+      .filter({ hasText: saved.description });
+    await expect(paid).toHaveText(formatMoney(summary.gross));
+    await expect(history).toBeVisible();
+    await expect(
+      panel.getByRole("heading", {
+        name: `Order history · ${before.commerce.orders.length}`,
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("heading", {
+        name: `Refunds · ${before.commerce.refunds.length}`,
+        exact: true,
+      }),
+    ).toBeVisible();
+    const loadedTotals = await totals.innerText();
+    const loadedHistory = await panel
+      .locator(".commerce-order")
+      .allTextContents();
+    await page
+      .getByRole("button", { name: "Refresh orders", exact: true })
+      .click();
+    await expect.poll(() => getRequests).toBe(2);
+    await expect(loading).toBeVisible();
+    await expect(panel).toHaveAttribute("aria-busy", "true");
+    await expect(
+      page.getByRole("button", { name: "Refresh orders", exact: true }),
+    ).toBeDisabled();
+    await expect(history).toBeVisible();
+    expect(await totals.innerText()).toBe(loadedTotals);
+    expect(await panel.locator(".commerce-order").allTextContents()).toEqual(
+      loadedHistory,
+    );
+    await expect(skeletons).toHaveCount(0);
+    releaseRefresh();
+    await expect(panel).toHaveAttribute("aria-busy", "false");
+    await expect(loading).toHaveCount(0);
+    await page.reload();
+    await expect.poll(() => getRequests).toBe(3);
+    await expect(panel.getByRole("alert")).toHaveText(
+      "Orders could not be loaded.",
+    );
+    await expect(
+      panel.getByRole("heading", { name: "Order history", exact: true }),
+    ).toBeVisible();
+    await expect(
+      panel.getByRole("heading", { name: "Refunds", exact: true }),
+    ).toBeVisible();
+    await expect(panel).toHaveAttribute("aria-busy", "false");
+    await expect(panel.locator(".commerce-totals")).toHaveCount(0);
+    await expect(
+      panel.getByText("Your orders, in one place", { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      panel.getByText("Track a return or cancellation", { exact: true }),
+    ).toHaveCount(0);
+    await panel.screenshot({
+      path: path.resolve("artifacts/ui-refinement-orders-error.png"),
+    });
+    await page
+      .getByRole("button", { name: "Refresh orders", exact: true })
+      .click();
+    await expect.poll(() => getRequests).toBe(4);
+    await expect(panel).toHaveAttribute("aria-busy", "false");
+    await expect(panel.getByRole("alert")).toHaveCount(0);
+    await expect(paid).toHaveText(formatMoney(summary.gross));
+    await expect(history).toBeVisible();
+    expect(await totals.innerText()).toBe(loadedTotals);
+    expect((await state(page)).workspace.transactions).toEqual(
+      before.workspace.transactions,
+    );
+  } finally {
+    releaseInitial();
+    releaseRefresh();
+  }
 });
 
 test("mobile manual orders offer category-specific platforms and keep each draft independent without cash movement", async ({

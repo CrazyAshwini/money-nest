@@ -165,7 +165,7 @@ export function RefundEditor({
       className="transaction-modal commerce-modal"
       overlayClassName="transaction-modal-overlay"
     >
-      <form onSubmit={(event) => void submit(event)}>
+      <form onSubmit={(event) => void submit(event)} aria-busy={busy}>
         {verify && refund ? (
           <>
             <p className="commerce-note">

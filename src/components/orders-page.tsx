@@ -7,6 +7,7 @@ import { useFinance } from "./finance-provider";
 import { Badge, Empty, Field, Section } from "./ui";
 import { OrderScanner } from "./order-scanner";
 import { RefundEditor } from "./refund-editor";
+import { LoadingSkeleton } from "./loading-skeleton";
 import {
   commerceSummary,
   emptyCommerce,
@@ -77,6 +78,7 @@ export function OrdersPage() {
   const { mode, data, userId, refresh, toast } = useFinance();
   const [commerce, setCommerce] = useState<CommerceData>(emptyCommerce);
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [drafts, setDrafts] = useState<ReviewedOrderDraft[]>([]);
@@ -94,6 +96,7 @@ export function OrdersPage() {
   const load = useCallback(
     async (signal?: AbortSignal) => {
       if (mode !== "private") return;
+      setLoading(true);
       try {
         const response = await fetch("/api/orders", {
           cache: "no-store",
@@ -104,6 +107,7 @@ export function OrdersPage() {
         if (!response.ok)
           throw new Error(body.error || "Orders could not be loaded.");
         setCommerce(body.commerce);
+        setLoaded(true);
         setError("");
       } catch (failure) {
         if (signal?.aborted) return;
@@ -141,6 +145,7 @@ export function OrdersPage() {
       if (!response.ok)
         throw new Error(body.error || "Changes could not be saved.");
       setCommerce(body.commerce);
+      setLoaded(true);
       await refresh();
       toast(
         body.result?.duplicate
@@ -284,7 +289,7 @@ export function OrdersPage() {
   );
 
   return (
-    <div className="commerce-page">
+    <div className="commerce-page" aria-busy={loading || busy}>
       <div className="commerce-actions">
         <OrderScanner onExtract={extracted} />
         <button
@@ -304,6 +309,7 @@ export function OrdersPage() {
           className="button"
           onClick={() => void load()}
           aria-label="Refresh orders"
+          disabled={loading}
         >
           <RotateCcw size={16} />
         </button>
@@ -313,24 +319,28 @@ export function OrdersPage() {
           {error}
         </p>
       )}
-      <div className="commerce-totals">
-        <div>
-          <span>Paid purchases</span>
-          <strong>{formatMoney(summary.gross)}</strong>
+      {loading && !loaded ? (
+        <LoadingSkeleton variant="totals" />
+      ) : loaded ? (
+        <div className="commerce-totals">
+          <div>
+            <span>Paid purchases</span>
+            <strong>{formatMoney(summary.gross)}</strong>
+          </div>
+          <div>
+            <span>Confirmed refunds</span>
+            <strong>{formatMoney(summary.confirmedRefunds)}</strong>
+          </div>
+          <div>
+            <span>Net confirmed</span>
+            <strong>{formatMoney(summary.net)}</strong>
+          </div>
+          <div>
+            <span>Refunds pending</span>
+            <strong>{formatMoney(summary.pendingRefunds)}</strong>
+          </div>
         </div>
-        <div>
-          <span>Confirmed refunds</span>
-          <strong>{formatMoney(summary.confirmedRefunds)}</strong>
-        </div>
-        <div>
-          <span>Net confirmed</span>
-          <strong>{formatMoney(summary.net)}</strong>
-        </div>
-        <div>
-          <span>Refunds pending</span>
-          <strong>{formatMoney(summary.pendingRefunds)}</strong>
-        </div>
-      </div>
+      ) : null}
       {!!drafts.length && (
         <Section
           title={`Review ${drafts.length} order${drafts.length === 1 ? "" : "s"}`}
@@ -855,7 +865,7 @@ export function OrdersPage() {
         </Section>
       )}
       <Section
-        title={`Order history · ${commerce.orders.length}`}
+        title={`Order history${loaded ? ` · ${commerce.orders.length}` : ""}`}
         action={
           <input
             className="commerce-search"
@@ -866,9 +876,14 @@ export function OrdersPage() {
           />
         }
       >
-        {loading ? (
-          <p className="commerce-note">Loading orders…</p>
-        ) : !orders.length ? (
+        {loading && (
+          <p className="commerce-note" role="status">
+            Loading orders…
+          </p>
+        )}
+        {loading && !loaded ? (
+          <LoadingSkeleton />
+        ) : !loaded && error ? null : !orders.length ? (
           <Empty
             title="Your orders, in one place"
             description="Scan an order history or add an order. Review it before creating any expense."
@@ -969,11 +984,13 @@ export function OrdersPage() {
         )}
       </Section>
       <Section
-        title={`Refunds · ${commerce.refunds.length}`}
+        title={`Refunds${loaded ? ` · ${commerce.refunds.length}` : ""}`}
         subtitle="Pending requests stay separate from confirmed incoming credits."
         action={<OrderScanner intent="refunds" onExtract={extracted} />}
       >
-        {!commerce.refunds.length ? (
+        {loading && !loaded ? (
+          <LoadingSkeleton />
+        ) : !loaded && error ? null : !commerce.refunds.length ? (
           <Empty
             title="Track a return or cancellation"
             description="Add a refund request or scan its screenshot. Confirm the credit after it reaches your account."

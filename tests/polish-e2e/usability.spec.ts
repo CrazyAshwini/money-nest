@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { cloneDemoData } from "../../src/lib/seed";
+import { CATEGORIES } from "../../src/lib/types";
 
 const data = cloneDemoData();
 const mainRoutes = [
@@ -31,6 +32,8 @@ const detailRoutes = [
   `/loans/${data.loans[0].id}`,
   `/split-bills/${data.groups[0].id}`,
 ];
+
+const DEMO_STORAGE_KEY = "finance-os:fictional-demo:v1";
 
 async function ready(page: Page) {
   await expect(page.locator(".loading .spin")).toHaveCount(0);
@@ -183,6 +186,251 @@ test("long profile names and email addresses fit the phone drawer and profile", 
     page.getByRole("link", { name: email, exact: true }),
   ).toHaveAttribute("href", `mailto:${email}`);
   await noOverflow(page, "long profile email");
+});
+
+test("spending charts support the keyboard and expose exact daily amounts without mobile overflow", async ({
+  page,
+}) => {
+  const fixture = cloneDemoData();
+  const template = fixture.transactions.find(
+    (transaction) =>
+      transaction.kind === "expense" && transaction.status === "posted",
+  );
+  if (!template)
+    throw new Error("The fictional chart fixture needs an expense template.");
+  const purchaseId = "ffffffff-ffff-4fff-8fff-fffffffffff1";
+  fixture.transactions = [
+    {
+      ...template,
+      id: purchaseId,
+      amount: "1234567890123456.70",
+      occurredOn: "2026-10-03",
+      description: "Synthetic large chart purchase",
+    },
+    {
+      ...template,
+      id: "ffffffff-ffff-4fff-8fff-fffffffffff2",
+      amount: "0.08",
+      occurredOn: "2026-10-03",
+      description: "Synthetic chart decimal addition",
+    },
+    {
+      ...template,
+      id: "ffffffff-ffff-4fff-8fff-fffffffffff3",
+      amount: "9.99",
+      status: "pending_review",
+      occurredOn: "2026-10-04",
+      description: "Synthetic pending chart item",
+    },
+    {
+      ...template,
+      id: "ffffffff-ffff-4fff-8fff-fffffffffff4",
+      amount: "0.08",
+      kind: "refund",
+      fromAccountId: null,
+      toAccountId: template.fromAccountId,
+      occurredOn: "2026-10-06",
+      description: "Synthetic matched chart refund",
+      refundOfTransactionId: purchaseId,
+    },
+    ...CATEGORIES.map((category, index) => ({
+      ...template,
+      id: `11111111-1111-4111-8111-${String(index + 1).padStart(12, "0")}`,
+      category,
+      amount: "1.00",
+      occurredOn: "2026-10-09",
+      description: `Synthetic ${category} chart legend purchase`,
+    })),
+  ];
+  await page.addInitScript(
+    ({ fixture, key }) => localStorage.setItem(key, JSON.stringify(fixture)),
+    { fixture, key: DEMO_STORAGE_KEY },
+  );
+  await page.setViewportSize({ width: 320, height: 850 });
+  await page.goto("/analytics");
+  await ready(page);
+  const chart = page.getByRole("group", {
+    name: "Spending by day",
+    exact: true,
+  });
+  await expect(chart).toBeVisible();
+  const table = chart.getByRole("table", {
+    name: "Spending by day",
+    exact: true,
+  });
+  await expect(table).toHaveCount(1);
+  await expect(
+    table.getByRole("columnheader", { name: "Date", exact: true }),
+  ).toHaveCount(1);
+  await expect(
+    table.getByRole("columnheader", { name: "Spending", exact: true }),
+  ).toHaveCount(1);
+  const dailyAmount = (day: string) =>
+    table
+      .getByRole("rowheader", { name: day, exact: true })
+      .locator("..")
+      .getByRole("cell");
+  await expect(dailyAmount("3")).toHaveText("₹1,23,45,67,89,01,23,456.78");
+  await expect(dailyAmount("4")).toHaveText("₹0.00");
+  const keyboardChart = chart.getByRole("application", {
+    name: /^Spending by day:/,
+  });
+  await keyboardChart.focus();
+  await expect(keyboardChart).toBeFocused();
+  await keyboardChart.press("ArrowRight");
+  const tooltip = chart.locator(".recharts-tooltip-wrapper");
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText("Spending");
+  await expect(keyboardChart).toBeFocused();
+  await keyboardChart.press("ArrowRight");
+  await expect(tooltip).toContainText("₹1,23,45,67,89,01,23,456.78");
+  await page
+    .getByRole("combobox", { name: "Spending display", exact: true })
+    .selectOption("net");
+  await expect(dailyAmount("6")).toHaveText("−₹0.08");
+  for (const width of [320, 768, 1440, 1600]) {
+    await page.setViewportSize({ width, height: 850 });
+    await keyboardChart.focus();
+    for (let index = 0; index < 31; index++) {
+      await keyboardChart.press("ArrowLeft");
+    }
+    await keyboardChart.press("ArrowRight");
+    await keyboardChart.press("ArrowRight");
+    await expect(tooltip).toContainText("₹1,23,45,67,89,01,23,456.78");
+    await expect
+      .poll(
+        () =>
+          tooltip.evaluate((element) => {
+            const region = element.getBoundingClientRect();
+            const textNodes = document.createTreeWalker(
+              element,
+              NodeFilter.SHOW_TEXT,
+            );
+            const lines: { left: number; right: number }[] = [];
+            for (
+              let node = textNodes.nextNode();
+              node;
+              node = textNodes.nextNode()
+            ) {
+              if (!node.textContent?.trim()) continue;
+              const text = document.createRange();
+              text.selectNodeContents(node);
+              lines.push(
+                ...Array.from(text.getClientRects(), (line) => ({
+                  left: line.left,
+                  right: line.right,
+                })),
+              );
+            }
+            return {
+              fitsViewport:
+                region.left >= -1 &&
+                region.right <= document.documentElement.clientWidth + 1,
+              textFitsTooltip:
+                lines.length > 0 &&
+                lines.every(
+                  (line) =>
+                    line.left >= region.left - 1 &&
+                    line.right <= region.right + 1,
+                ),
+              left: region.left,
+              right: region.right,
+              lines,
+            };
+          }),
+        { message: `${width}px chart tooltip and text must fit their bounds` },
+      )
+      .toMatchObject({ fitsViewport: true, textFitsTooltip: true });
+    if (width === 320) {
+      await mkdir(path.resolve("artifacts"), { recursive: true });
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({
+        path: path.resolve("artifacts/ui-refinement-analytics-mobile.png"),
+        fullPage: true,
+      });
+    }
+    await noOverflow(page, `${width}px chart with large currency`);
+    const legend = page.locator(".category-legend");
+    await expect(legend.locator(":scope > div")).toHaveCount(CATEGORIES.length);
+    await expect
+      .poll(
+        () =>
+          legend.evaluate((element) => {
+            const panel = element.closest(".panel");
+            if (!panel)
+              throw new Error(
+                "The category legend needs its containing panel.",
+              );
+            const region = panel.getBoundingClientRect();
+            const text = document.createRange();
+            text.selectNodeContents(element);
+            const entries = [
+              element.getBoundingClientRect(),
+              ...Array.from(element.children, (row) =>
+                row.getBoundingClientRect(),
+              ),
+              ...text.getClientRects(),
+            ];
+            return {
+              fitsPanel: entries.every(
+                (entry) =>
+                  entry.left >= region.left - 1 &&
+                  entry.right <= region.right + 1 &&
+                  entry.top >= region.top - 1 &&
+                  entry.bottom <= region.bottom + 1,
+              ),
+              panelBottom: region.bottom,
+              legendBottom: element.getBoundingClientRect().bottom,
+            };
+          }),
+        { message: `${width}px full category legend must fit its panel` },
+      )
+      .toMatchObject({ fitsPanel: true });
+    const total = page
+      .getByRole("img", { name: /^Spending breakdown:/ })
+      .locator("strong");
+    const bounds = await total.evaluate((element) => {
+      const center = element.parentElement;
+      if (!center)
+        throw new Error("The spending breakdown needs its centered total.");
+      const region = center.getBoundingClientRect();
+      const text = document.createRange();
+      text.selectNodeContents(element);
+      return {
+        region: {
+          left: region.left,
+          right: region.right,
+          top: region.top,
+          bottom: region.bottom,
+        },
+        lines: Array.from(text.getClientRects(), (line) => ({
+          left: line.left,
+          right: line.right,
+          top: line.top,
+          bottom: line.bottom,
+        })),
+      };
+    });
+    expect(bounds.lines.length).toBeGreaterThan(0);
+    for (const line of bounds.lines) {
+      expect(
+        line.left,
+        `${width}px total clipped on the left`,
+      ).toBeGreaterThanOrEqual(bounds.region.left - 1);
+      expect(
+        line.right,
+        `${width}px total clipped on the right`,
+      ).toBeLessThanOrEqual(bounds.region.right + 1);
+      expect(
+        line.top,
+        `${width}px total clipped at the top`,
+      ).toBeGreaterThanOrEqual(bounds.region.top - 1);
+      expect(
+        line.bottom,
+        `${width}px total clipped at the bottom`,
+      ).toBeLessThanOrEqual(bounds.region.bottom + 1);
+    }
+  }
 });
 
 test("all rendered local links resolve and footer data links reach their section", async ({

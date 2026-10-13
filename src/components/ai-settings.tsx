@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sparkles } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { Badge, Section } from "./ui";
 import type { ReceiptAISettings } from "@/lib/receipt-scan";
@@ -72,7 +71,6 @@ export function ReceiptAISettingsPanel() {
       <Section
         title="Receipt AI"
         subtitle="Create transactions from payment screenshots and shopping receipts."
-        action={<Sparkles size={18} />}
       >
         {mode !== "private" ? (
           <p className="muted">

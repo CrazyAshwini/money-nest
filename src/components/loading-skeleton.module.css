@@ -1,0 +1,54 @@
+.rows,
+.totals {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.totals {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.item {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.label,
+.value,
+.detail {
+  display: block;
+  max-width: 100%;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--muted) 14%, var(--panel));
+}
+
+.label {
+  width: 44%;
+  height: 10px;
+}
+
+.value {
+  width: 65%;
+  height: 20px;
+}
+
+.detail {
+  width: 80%;
+  height: 10px;
+}
+
+@media (max-width: 650px) {
+  .totals {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .item {
+    padding: 12px;
+  }
+}

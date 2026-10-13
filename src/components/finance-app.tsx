@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import * as Dialog from "@radix-ui/react-dialog";
 import { NAV_ITEMS, WorkspaceNavigation } from "./workspace-navigation";
 import { resolveAppPage } from "@/lib/page-metadata";
+import { LoadingSkeleton } from "./loading-skeleton";
 import "./shell.css";
 import Decimal from "decimal.js";
 import {
@@ -92,6 +93,34 @@ const tones = [
   "#8bc6cf",
   "#cfb58a",
 ];
+const categoryColorIndex: Readonly<Record<string, number>> = {
+  food: 0,
+  groceries: 1,
+  shopping: 2,
+  stationery: 5,
+  transport: 4,
+  education: 3,
+  housing: 5,
+  utilities: 4,
+  subscriptions: 2,
+  health: 1,
+  travel: 3,
+  entertainment: 0,
+  other: 5,
+};
+const categoryColor = (category: string) => {
+  const normalized = category.trim().toLowerCase();
+  const known = Object.hasOwn(categoryColorIndex, normalized)
+    ? categoryColorIndex[normalized]
+    : undefined;
+  const index =
+    known ??
+    Array.from(normalized).reduce(
+      (sum, character) => sum + character.codePointAt(0)!,
+      0,
+    ) % tones.length;
+  return tones[index];
+};
 export function FinanceApp() {
   const {
     mode,
@@ -122,10 +151,13 @@ export function FinanceApp() {
   }, []);
   if (mode === "loading")
     return (
-      <main className="loading">
+      <main className="loading" role="status" aria-busy="true">
         <div className="brand-icon">M</div>
-        <LoaderCircle className="spin" />
+        <LoaderCircle className="spin" aria-hidden="true" />
         <p>Opening your finance workspace…</p>
+        <div className="workspace-skeleton">
+          <LoadingSkeleton />
+        </div>
       </main>
     );
   if (page === "login" || mode === "login")
@@ -712,6 +744,7 @@ function SpendingPanel() {
   const points = dailySpending(data, month, { net }).map((p) => ({
     label: p.day === 1 ? `1 ${monthLabel(month).split(" ")[0]}` : String(p.day),
     amount: Number(p.amount),
+    amountText: p.amount,
   }));
   return (
     <Section
@@ -746,12 +779,13 @@ function CategoryPanel() {
   const { data, month } = useFinance();
   const categories = spendingByCategory(data, month);
   const total = sumMoney(categories.map((c) => c.amount));
+  const totalLabel = formatMoney(total, { decimals: 0 });
   let acc = 0;
   const gradient = categories
-    .map((c, i) => {
+    .map((c) => {
       const start = acc;
       acc += c.percentage;
-      return `${tones[i % tones.length]} ${start}% ${acc}%`;
+      return `${categoryColor(c.category)} ${start}% ${acc}%`;
     })
     .join(",");
   return (
@@ -762,7 +796,9 @@ function CategoryPanel() {
     >
       <div className="category-chart">
         <div
-          className="donut"
+          className={`donut${totalLabel.length > 15 ? " donut-large" : ""}`}
+          role="img"
+          aria-label={`Spending breakdown: ${categories.map((category) => `${category.category} ${formatMoney(category.amount)}`).join(", ")}`}
           style={{
             background: categories.length
               ? `conic-gradient(${gradient})`
@@ -771,14 +807,14 @@ function CategoryPanel() {
         >
           <div>
             <small>Total spent</small>
-            <strong>{formatMoney(total, { decimals: 0 })}</strong>
+            <strong>{totalLabel}</strong>
           </div>
         </div>
         <div className="category-legend">
-          {categories.slice(0, 5).map((c, i) => (
+          {categories.map((c) => (
             <div key={c.category}>
               <span>
-                <i style={{ background: tones[i % tones.length] }} />
+                <i style={{ background: categoryColor(c.category) }} />
                 {c.category}
               </span>
               <strong>{c.percentage.toFixed(0)}%</strong>
@@ -1734,11 +1770,11 @@ function AnalyticsPage() {
       )}
       <Section title="Category detail">
         <div className="record-list">
-          {spendingByCategory(data, month).map((c, i) => (
+          {spendingByCategory(data, month).map((c) => (
             <div className="record-row" key={c.category}>
               <span
                 className="category-dot"
-                style={{ background: tones[i % tones.length] }}
+                style={{ background: categoryColor(c.category) }}
               />
               <strong className="grow">{c.category}</strong>
               <span className="muted">
