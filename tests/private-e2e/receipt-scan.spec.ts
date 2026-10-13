@@ -2261,10 +2261,25 @@ test("provider failure can be retried without overwriting a manual draft", async
   page,
 }) => {
   await mockSettings(page);
-  await page.route("**/api/ai/receipt", async (route) => {
-    await route.fulfill({
+  const failures = [
+    {
+      status: 422,
+      code: "unreadable_receipt",
+      error:
+        "The receipt could not be interpreted. Try a clearer image or enter the transaction manually.",
+    },
+    {
       status: 503,
-      json: { error: "Receipt scanning is temporarily unavailable." },
+      code: "scan_unavailable",
+      error: "Receipt scanning is temporarily unavailable.",
+    },
+  ];
+  let failureIndex = 0;
+  await page.route("**/api/ai/receipt", async (route) => {
+    const failure = failures[Math.min(failureIndex++, failures.length - 1)];
+    await route.fulfill({
+      status: failure.status,
+      json: { error: failure.error, code: failure.code },
     });
   });
   const before = await transactions(page);
@@ -2274,23 +2289,27 @@ test("provider failure can be retried without overwriting a manual draft", async
     .fill("Synthetic draft before outage");
   await dialog.getByLabel("Amount · ₹", { exact: true }).fill("33.21");
   await upload(dialog);
-  await receipt(dialog)
-    .getByRole("button", { name: "Scan with AI", exact: true })
-    .click();
-  await expect(
-    receipt(dialog).getByText("Receipt scanning is temporarily unavailable.", {
-      exact: true,
-    }),
-  ).toBeVisible();
-  await expect(
-    receipt(dialog).getByRole("button", { name: "Use details", exact: true }),
-  ).toHaveCount(0);
-  await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
-    "Synthetic draft before outage",
-  );
-  await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
-    "33.21",
-  );
+  for (const failure of failures) {
+    await receipt(dialog)
+      .getByRole("button", { name: "Scan with AI", exact: true })
+      .click();
+    await expect(
+      receipt(dialog).getByText(failure.error, { exact: true }),
+    ).toBeVisible();
+    await expect(
+      receipt(dialog).getByRole("button", { name: "Use details", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      receipt(dialog).getByText(failure.code, { exact: true }),
+    ).toHaveCount(0);
+    await expect(dialog.locator('textarea[name="description"]')).toHaveValue(
+      "Synthetic draft before outage",
+    );
+    await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
+      "33.21",
+    );
+    expect((await transactions(page)).length).toBe(before.length);
+  }
   await page.unroute("**/api/ai/receipt");
   await mockScan(page);
   await receipt(dialog)

@@ -8,6 +8,8 @@ import {
   MAX_RECEIPT_BYTES,
   MAX_RECEIPT_IMAGES,
   MAX_RECEIPT_TRANSACTIONS,
+  receiptBatchGenerationSchema,
+  receiptGenerationSchema,
   type ReceiptExtraction,
 } from "./receipt-scan";
 
@@ -23,7 +25,8 @@ const mocked = vi.hoisted(() => ({
   authenticate: vi.fn(),
 }));
 vi.mock("server-only", () => ({}));
-vi.mock("ai", () => ({
+vi.mock("ai", async (original) => ({
+  ...(await original<typeof import("ai")>()),
   createGateway: mocked.gateway,
   generateText: mocked.generate,
   Output: { object: (settings: unknown) => settings },
@@ -179,9 +182,11 @@ beforeEach(() => {
   mocked.enabled.mockReturnValue(true);
   mocked.authenticate.mockResolvedValue({ ownerId: randomUUID() });
   mocked.generate.mockImplementation(async (call) => ({
-    output: call.output.schema.shape.extractions
-      ? { extractions: [extraction] }
-      : extraction,
+    output:
+      call.output.schema.shape?.extractions ||
+      call.output.schema.jsonSchema?.properties?.extractions
+        ? { extractions: [extraction] }
+        : extraction,
   }));
   mocked.prepareImage.mockImplementation(
     async (bytes: Uint8Array, mediaType: string) => ({
@@ -411,6 +416,147 @@ describe("separate order-history cloud boundary", () => {
 });
 
 describe("receipt cloud boundaries", () => {
+  it("simplifies only Gemini batch transport bounds while retaining the complete typed contract and strict validator", async () => {
+    await scanReceiptBatchWithAI({
+      configuration: googleConfiguration,
+      images: [PNG],
+      redacted: true,
+    });
+    const transport = mocked.generate.mock.calls[0][0].output.schema;
+    const schema = transport.jsonSchema;
+    const serialized = JSON.stringify(schema);
+    for (const constraint of ["minLength", "maxLength", "minItems", "maxItems"])
+      expect(serialized).not.toContain(`"${constraint}"`);
+    expect(schema).toMatchObject({
+      type: "object",
+      required: ["extractions"],
+      additionalProperties: false,
+      properties: {
+        extractions: {
+          type: "array",
+          items: {
+            type: "object",
+            required: Object.keys(receiptGenerationSchema.shape),
+            additionalProperties: false,
+            properties: {
+              amount: { anyOf: [{ type: "string" }, { type: "null" }] },
+              platform: { anyOf: [{ type: "string" }, { type: "null" }] },
+              kind: {
+                anyOf: [
+                  {
+                    type: "string",
+                    enum: [
+                      "expense",
+                      "income",
+                      "transfer",
+                      "bill_payment",
+                      "refund",
+                      "adjustment",
+                    ],
+                  },
+                  { type: "null" },
+                ],
+              },
+              paymentStatus: {
+                type: "string",
+                enum: ["successful", "pending", "failed", "unknown"],
+              },
+              warnings: { type: "array", items: { type: "string" } },
+            },
+          },
+        },
+      },
+    });
+    expect(await transport.validate({ extractions: [extraction] })).toEqual({
+      success: true,
+      value: { extractions: [extraction] },
+    });
+    const missingPlatform = { ...extraction };
+    delete missingPlatform.platform;
+    for (const invalid of [
+      { extractions: [] },
+      {
+        extractions: Array.from(
+          { length: MAX_RECEIPT_TRANSACTIONS + 1 },
+          () => extraction,
+        ),
+      },
+      { extractions: [{ ...extraction, description: "x".repeat(251) }] },
+      { extractions: [{ ...extraction, warnings: Array(9).fill("Check") }] },
+      { extractions: [missingPlatform] },
+      { extractions: [{ ...extraction, paymentStatus: "invented" }] },
+    ])
+      expect(await transport.validate(invalid)).toMatchObject({
+        success: false,
+        error: expect.any(Error),
+      });
+    expect(mocked.generate.mock.calls[0][0].providerOptions).toBeUndefined();
+    expect(mocked.gateway).not.toHaveBeenCalled();
+  });
+
+  it("keeps Gateway batch and legacy single generation schemas unchanged", async () => {
+    await scanReceiptBatchWithAI({ configuration, images: [PNG] });
+    expect(mocked.generate.mock.calls[0][0].output.schema).toBe(
+      receiptBatchGenerationSchema,
+    );
+    await scanReceiptWithAI({
+      configuration: googleConfiguration,
+      images: [PNG],
+      redacted: true,
+    });
+    expect(mocked.generate.mock.calls[1][0].output.schema).toBe(
+      receiptGenerationSchema,
+    );
+    expect(mocked.generate).toHaveBeenCalledTimes(2);
+  });
+
+  it("revalidates Gemini output after generation even if a transport stub bypasses its validator", async () => {
+    mocked.generate.mockResolvedValueOnce({
+      output: {
+        extractions: [
+          extraction,
+          { ...extraction, description: "sensitive-untrusted-text".repeat(20) },
+        ],
+      },
+    });
+    await expect(
+      scanReceiptBatchWithAI({
+        configuration: googleConfiguration,
+        images: [PNG],
+        redacted: true,
+      }),
+    ).rejects.toMatchObject({ code: "unreadable_receipt", status: 422 });
+    expect(mocked.generate).toHaveBeenCalledTimes(1);
+    expect(mocked.gateway).not.toHaveBeenCalled();
+    const prepared = mocked.generate.mock.calls[0][0].messages[0].content[0]
+      .data as Buffer;
+    expect(prepared.every((byte) => byte === 0)).toBe(true);
+  });
+
+  it.each(["NoObjectGeneratedError", "AI_NoObjectGeneratedError"])(
+    "sanitizes %s as unreadable structured output without leaking upstream receipt text",
+    async (name) => {
+      const failure = new Error(
+        `${SYNTHETIC_KEY} sensitive-untrusted-provider-output`,
+      );
+      failure.name = name;
+      mocked.generate.mockRejectedValueOnce(failure);
+      const response = await receiptPOST(request(upload()));
+      expect(response.status).toBe(422);
+      const body = await response.json();
+      expect(body.code).toBe("unreadable_receipt");
+      expect(JSON.stringify(body)).not.toContain(SYNTHETIC_KEY);
+      expect(JSON.stringify(body)).not.toContain(
+        "sensitive-untrusted-provider-output",
+      );
+      const uploaded = mocked.generate.mock.calls[0][0].messages[0].content[0]
+        .data as Buffer;
+      expect(uploaded.every((byte) => byte === 0)).toBe(true);
+      expect(mocked.generate).toHaveBeenCalledTimes(1);
+      expect(mocked.google).not.toHaveBeenCalled();
+    },
+  );
+
   it("extracts and normalizes independent visible order totals in one cloud request", async () => {
     const second = {
       ...extraction,

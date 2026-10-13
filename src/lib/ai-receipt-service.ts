@@ -1,7 +1,14 @@
 /** Node-only cloud scanning. Images and model responses are never persisted here. */
 import "server-only";
 import { createHash } from "node:crypto";
-import { createGateway, generateText, Output } from "ai";
+import {
+  createGateway,
+  generateText,
+  jsonSchema,
+  Output,
+  zodSchema,
+  type Schema,
+} from "ai";
 import { createGoogle } from "@ai-sdk/google";
 import { z } from "zod";
 import { prepareGeminiReceiptImage, ReceiptImageError } from "./receipt-image";
@@ -363,11 +370,41 @@ type ReceiptScanInput = {
   | { bytes: Uint8Array; mediaType: ReceiptMediaType; images?: never }
 );
 
+/** Google rejects the bounded nested batch schema; keep those bounds in local validation. */
+async function geminiReceiptBatchProviderSchema() {
+  const original = await zodSchema(receiptBatchGenerationSchema).jsonSchema;
+  const dropLengthConstraints = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(dropLengthConstraints);
+    if (value && typeof value === "object")
+      return Object.fromEntries(
+        Object.entries(value)
+          .filter(
+            ([key]) =>
+              !["minLength", "maxLength", "minItems", "maxItems"].includes(key),
+          )
+          .map(([key, entry]) => [key, dropLengthConstraints(entry)]),
+      );
+    return value;
+  };
+  return jsonSchema<z.infer<typeof receiptBatchGenerationSchema>>(
+    dropLengthConstraints(original) as Awaited<Schema["jsonSchema"]>,
+    {
+      validate: (value) => {
+        const checked = receiptBatchGenerationSchema.safeParse(value);
+        return checked.success
+          ? { success: true, value: checked.data }
+          : { success: false, error: checked.error };
+      },
+    },
+  );
+}
+
 async function scanStructuredImages<T>(
   input: ReceiptScanInput,
   schema: z.ZodType<T>,
   prompt: string,
   maxOutputTokens = 4096,
+  providerSchema?: Schema<T>,
 ): Promise<T> {
   const validated = ownerConfigurationSchema.safeParse(input.configuration);
   if (!validated.success)
@@ -454,7 +491,7 @@ async function scanStructuredImages<T>(
           content,
         },
       ],
-      output: Output.object({ schema }),
+      output: Output.object({ schema: providerSchema ?? schema }),
       maxOutputTokens,
       reasoning: "low",
       maxRetries: 0,
@@ -508,6 +545,9 @@ export async function scanReceiptBatchWithAI(
     receiptBatchGenerationSchema,
     RECEIPT_BATCH_EXTRACTION_PROMPT,
     16384,
+    input.configuration.provider === "gemini"
+      ? await geminiReceiptBatchProviderSchema()
+      : undefined,
   );
   return output.extractions.map((value) => {
     const extraction = normalizeReceiptExtraction(value);
@@ -663,6 +703,8 @@ export function receiptProviderFailure(error: unknown): ReceiptAIError {
   if (
     name === "NoOutputGeneratedError" ||
     name === "AI_NoOutputGeneratedError" ||
+    name === "NoObjectGeneratedError" ||
+    name === "AI_NoObjectGeneratedError" ||
     name === "TypeValidationError" ||
     name === "AI_TypeValidationError" ||
     name === "ZodError"
