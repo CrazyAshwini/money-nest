@@ -9,6 +9,7 @@ import { UploadedImagePreview } from "./uploaded-image-preview";
 import {
   MAX_RECEIPT_BYTES,
   MAX_RECEIPT_IMAGES,
+  MAX_RECEIPT_TRANSACTIONS,
   findReceiptDuplicates,
   normalizeReceiptExtraction,
   receiptDraft,
@@ -23,12 +24,15 @@ export type AppliedReceipt = {
   draft: Partial<Transaction>;
   fingerprint: string;
   requiresPendingReview: boolean;
+  canConfirmPayment?: boolean;
 };
 
 export function ReceiptScanner({
   onApply,
+  onApplyBatch,
 }: {
   onApply: (receipt: AppliedReceipt) => void;
+  onApplyBatch?: (receipts: AppliedReceipt[]) => void;
 }) {
   const { mode, data, userId } = useFinance();
   const panelId = useId();
@@ -42,6 +46,8 @@ export function ReceiptScanner({
     opener: HTMLButtonElement;
   } | null>(null);
   const [result, setResult] = useState<ReceiptScanResult | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [settingsError, setSettingsError] = useState("");
@@ -155,6 +161,8 @@ export function ReceiptScanner({
   function resetReview() {
     cancelScan();
     setResult(null);
+    setActiveIndex(0);
+    setSelectedIndices([]);
     setApplied(false);
     setRedacted(false);
     setError("");
@@ -283,18 +291,59 @@ export function ReceiptScanner({
         !/^[a-f0-9]{64}$/.test(body.fingerprint)
       )
         throw new Error("AI returned incomplete details. Try another image.");
-      let extraction: ReceiptScanResult["extraction"];
+      let extractions: ReceiptScanResult["extraction"][];
+      let fingerprints: string[];
       try {
-        extraction = normalizeReceiptExtraction(body.extraction);
+        const candidates =
+          body.extractions === undefined ? [body.extraction] : body.extractions;
+        if (
+          !Array.isArray(candidates) ||
+          !candidates.length ||
+          candidates.length > MAX_RECEIPT_TRANSACTIONS
+        )
+          throw new Error("Invalid transaction list.");
+        extractions = candidates.map(normalizeReceiptExtraction);
+        fingerprints =
+          body.fingerprints === undefined && extractions.length === 1
+            ? [body.fingerprint]
+            : body.fingerprints;
+        if (
+          !Array.isArray(fingerprints) ||
+          fingerprints.length !== extractions.length ||
+          fingerprints.some(
+            (fingerprint) =>
+              typeof fingerprint !== "string" ||
+              !/^[a-f0-9]{64}$/.test(fingerprint),
+          ) ||
+          new Set(fingerprints).size !== fingerprints.length
+        )
+          throw new Error("Invalid transaction references.");
       } catch {
         throw new Error("AI returned incomplete details. Try another image.");
       }
       setResult({
-        extraction,
-        fingerprint: body.fingerprint,
+        extraction: extractions[0],
+        fingerprint: fingerprints[0],
+        extractions,
+        fingerprints,
         provider: body.provider,
         model: typeof body.model === "string" ? body.model : settings.model,
       });
+      setActiveIndex(0);
+      setSelectedIndices(
+        extractions.flatMap((extraction, index) =>
+          (!extraction.currency || extraction.currency === "INR") &&
+          !findReceiptDuplicates(
+            extraction,
+            data.transactions.filter(
+              (transaction) => transaction.userId === userId,
+            ),
+            fingerprints[index],
+          ).length
+            ? [index]
+            : [],
+        ),
+      );
     } catch (failure) {
       if (request.signal.aborted || version !== generation.current) return;
       setError(
@@ -310,33 +359,52 @@ export function ReceiptScanner({
     }
   }
 
-  const duplicates = result
+  const currentExtraction =
+    result?.extractions?.[activeIndex] ?? result?.extraction;
+  const currentFingerprint =
+    result?.fingerprints?.[activeIndex] ?? result?.fingerprint;
+  const multipleTransactions = Boolean(
+    result?.extractions && result.extractions.length > 1,
+  );
+  const duplicates = currentExtraction
     ? findReceiptDuplicates(
-        result.extraction,
+        currentExtraction,
         data.transactions.filter(
           (transaction) => transaction.userId === userId,
         ),
-        result.fingerprint,
+        currentFingerprint,
       )
     : [];
   const foreignCurrency = Boolean(
-    result?.extraction.currency && result.extraction.currency !== "INR",
+    currentExtraction?.currency && currentExtraction.currency !== "INR",
   );
 
   function useDetails() {
-    if (!result || foreignCurrency || busy) return;
-    const { extraction } = result;
-    onApply({
-      draft: receiptDraft(extraction),
-      fingerprint: result.fingerprint,
-      requiresPendingReview:
-        extraction.confidence === "low" ||
-        extraction.documentType === "unknown" ||
-        extraction.paymentStatus === "pending" ||
-        extraction.paymentStatus === "failed" ||
-        (extraction.documentType === "payment" &&
-          extraction.paymentStatus !== "successful"),
+    if (!result || busy) return;
+    const indices = multipleTransactions ? selectedIndices : [activeIndex];
+    const receipts = indices.flatMap((index) => {
+      const extraction = result.extractions?.[index] ?? result.extraction;
+      if (extraction.currency && extraction.currency !== "INR") return [];
+      return [
+        {
+          draft: receiptDraft(extraction),
+          fingerprint: result.fingerprints?.[index] ?? result.fingerprint,
+          requiresPendingReview:
+            extraction.confidence === "low" ||
+            extraction.documentType === "unknown" ||
+            extraction.paymentStatus === "pending" ||
+            extraction.paymentStatus === "failed" ||
+            extraction.paymentStatus === "unknown",
+          canConfirmPayment:
+            extraction.paymentStatus === "unknown" &&
+            extraction.documentType !== "unknown" &&
+            extraction.confidence !== "low",
+        },
+      ];
     });
+    if (!receipts.length) return;
+    if (receipts.length > 1 && onApplyBatch) onApplyBatch(receipts);
+    else onApply(receipts[0]);
     setApplied(true);
     closeScanner();
   }
@@ -629,58 +697,144 @@ export function ReceiptScanner({
                     until you use the details.
                   </p>
                 )}
-                {result && (
+                {result && currentExtraction && (
                   <div
                     ref={reviewPanel}
                     className="receipt-result"
                     aria-label="AI receipt review"
                   >
                     <h3>Review extracted details</h3>
+                    {multipleTransactions && (
+                      <div className="receipt-candidates">
+                        <p className="receipt-note">
+                          {result.extractions!.length} transactions found.
+                          Select the ones to review and save.
+                        </p>
+                        {result.extractions!.map((extraction, index) => {
+                          const foreign = Boolean(
+                            extraction.currency &&
+                            extraction.currency !== "INR",
+                          );
+                          const duplicate =
+                            findReceiptDuplicates(
+                              extraction,
+                              data.transactions.filter(
+                                (transaction) => transaction.userId === userId,
+                              ),
+                              result.fingerprints?.[index],
+                            ).length > 0;
+                          return (
+                            <div
+                              className="receipt-candidate"
+                              key={result.fingerprints?.[index] ?? index}
+                            >
+                              <label className="receipt-review-check">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Select transaction ${index + 1}`}
+                                  checked={selectedIndices.includes(index)}
+                                  disabled={foreign || busy}
+                                  onChange={(event) => {
+                                    setActiveIndex(index);
+                                    setSelectedIndices((current) =>
+                                      event.target.checked
+                                        ? onApplyBatch
+                                          ? [...current, index].sort(
+                                              (a, b) => a - b,
+                                            )
+                                          : [index]
+                                        : current.filter(
+                                            (position) => position !== index,
+                                          ),
+                                    );
+                                  }}
+                                />
+                                <span>
+                                  <strong>
+                                    {extraction.currency ||
+                                      "Currency unconfirmed"}{" "}
+                                    {extraction.amount || "Amount unconfirmed"}
+                                  </strong>
+                                  <small>
+                                    {extraction.description ||
+                                      extraction.merchant ||
+                                      `Transaction ${index + 1}`}{" "}
+                                    ·{" "}
+                                    {extraction.occurredOn ||
+                                      "Date unconfirmed"}
+                                  </small>
+                                  {duplicate && (
+                                    <small>
+                                      Possible duplicate — not selected
+                                      automatically.
+                                    </small>
+                                  )}
+                                  {foreign && (
+                                    <small>
+                                      Convert to a verified INR amount manually.
+                                    </small>
+                                  )}
+                                </span>
+                              </label>
+                              <button
+                                type="button"
+                                className="receipt-text-button"
+                                aria-label={`Review transaction ${index + 1}`}
+                                aria-pressed={activeIndex === index}
+                                onClick={() => setActiveIndex(index)}
+                              >
+                                Review
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     <dl className="receipt-details">
                       <div>
                         <dt>Amount</dt>
                         <dd>
-                          {result.extraction.amount
-                            ? `${result.extraction.currency || "Currency unconfirmed"} ${result.extraction.amount}`
+                          {currentExtraction.amount
+                            ? `${currentExtraction.currency || "Currency unconfirmed"} ${currentExtraction.amount}`
                             : "Unconfirmed"}
                         </dd>
                       </div>
                       <div>
                         <dt>Date</dt>
-                        <dd>{result.extraction.occurredOn || "Unconfirmed"}</dd>
+                        <dd>{currentExtraction.occurredOn || "Unconfirmed"}</dd>
                       </div>
                       <div>
                         <dt>Seller</dt>
-                        <dd>{result.extraction.merchant || "Unconfirmed"}</dd>
+                        <dd>{currentExtraction.merchant || "Unconfirmed"}</dd>
                       </div>
                       <div>
                         <dt>Platform</dt>
-                        <dd>{result.extraction.platform || "Unconfirmed"}</dd>
+                        <dd>{currentExtraction.platform || "Unconfirmed"}</dd>
                       </div>
                       <div>
                         <dt>Reference</dt>
                         <dd>
-                          {result.extraction.externalReference || "Unconfirmed"}
+                          {currentExtraction.externalReference || "Unconfirmed"}
                         </dd>
                       </div>
                       <div>
                         <dt>Payment method</dt>
                         <dd>
-                          {result.extraction.accountHint || "Unconfirmed"}
+                          {currentExtraction.accountHint || "Unconfirmed"}
                         </dd>
                       </div>
                       <div>
                         <dt>Payment status</dt>
                         <dd>
-                          {result.extraction.paymentStatus.replaceAll("_", " ")}
+                          {currentExtraction.paymentStatus.replaceAll("_", " ")}
                         </dd>
                       </div>
                     </dl>
-                    {result.extraction.warnings.length > 0 && (
+                    {currentExtraction.warnings.length > 0 && (
                       <div className="receipt-warning" role="status">
                         <strong>Check before saving</strong>
                         <ul>
-                          {result.extraction.warnings.map((warning, index) => (
+                          {currentExtraction.warnings.map((warning, index) => (
                             <li key={index}>{warning}</li>
                           ))}
                         </ul>
@@ -705,7 +859,7 @@ export function ReceiptScanner({
                     )}
                     {foreignCurrency && (
                       <p className="receipt-warning" role="alert">
-                        This image uses {result.extraction.currency}. Your
+                        This image uses {currentExtraction.currency}. Your
                         ledger uses INR, so these details cannot be applied.
                         Enter a verified INR amount manually.
                       </p>
@@ -762,9 +916,19 @@ export function ReceiptScanner({
                   type="button"
                   className="receipt-pill receipt-primary"
                   onClick={useDetails}
-                  disabled={foreignCurrency || applied || busy}
+                  disabled={
+                    (multipleTransactions
+                      ? !selectedIndices.length
+                      : foreignCurrency) ||
+                    applied ||
+                    busy
+                  }
                 >
-                  {applied ? "Details applied" : "Use details"}
+                  {applied
+                    ? "Details applied"
+                    : multipleTransactions
+                      ? "Use selected details"
+                      : "Use details"}
                 </button>
               ) : (
                 <button

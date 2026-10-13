@@ -413,9 +413,13 @@ function Kpis() {
       <Stat
         title="Total bank balance"
         value={
-          m.reportedBankCount > 0 ? formatMoney(m.bankBalance) : "Not reported"
+          m.knownBankCount > 0 ? formatMoney(m.bankBalance) : "Not reported"
         }
-        caption={`${m.reportedBankCount < m.totalBankCount ? `${m.reportedBankCount}/${m.totalBankCount} reported` : "Reported"} · ${m.bankAsOf ? formatDate(m.bankAsOf) : "No snapshots"}`}
+        caption={
+          m.updatedBankCount > 0 || m.openingBankCount > 0
+            ? `${m.knownBankCount < m.totalBankCount ? `${m.knownBankCount}/${m.totalBankCount} known · ` : ""}Calculated · posted movements through ${formatDate(today)}`
+            : `${m.knownBankCount < m.totalBankCount ? `${m.knownBankCount}/${m.totalBankCount} reported` : "Reported"} · ${m.bankAsOf ? formatDate(m.bankAsOf) : "No snapshots"}`
+        }
         icon={Landmark}
         tone="stat-highlight"
       >
@@ -585,15 +589,15 @@ function BankCard({
         {kindLabel(account.kind)} · ••{account.maskedSuffix || "—"}
       </span>
       <strong>
-        {balance.reported !== null
-          ? formatMoney(balance.reported)
+        {balance.current !== null
+          ? formatMoney(balance.current)
           : "Not reported"}
       </strong>
       <div className="bank-card-footer">
         <span>
           <i />{" "}
-          {balance.asOf
-            ? `As of ${formatDate(balance.asOf)}`
+          {balance.currentAsOf
+            ? `${balance.currentSource === "opening" || balance.movementsSinceSnapshot > 0 ? "Calculated" : "Reported"} · ${formatDate(balance.currentAsOf)}`
             : "Snapshot needed"}
         </span>
         <ChevronRight size={13} />
@@ -973,6 +977,22 @@ function AccountsPage({
             </>
           }
         />
+        {(a.kind === "bank" || a.kind === "wallet") && (
+          <div className="info-banner">
+            <Landmark size={17} aria-hidden="true" />
+            <span>
+              <strong>
+                Updated balance · {formatOptional(balance.current)}
+              </strong>
+              <br />
+              {balance.currentSource === "snapshot"
+                ? `Reported snapshot + posted movements after ${formatDate(balance.currentBaselineAsOf)}, through ${formatDate(today)}. Snapshot-day entries are treated as included.`
+                : balance.currentSource === "opening"
+                  ? `Opening balance + dated posted movements through ${formatDate(today)}.`
+                  : "Add a reported snapshot or a known opening balance to calculate this account's balance."}
+            </span>
+          </div>
+        )}
         <div className="three-stats">
           <Stat
             title="Reported balance / outstanding"

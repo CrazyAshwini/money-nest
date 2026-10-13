@@ -225,6 +225,271 @@ describe("exact ledger arithmetic", () => {
     ).toBe("unknown");
   });
 });
+describe("updated bank and wallet balances", () => {
+  function report(
+    data: WorkspaceData,
+    accountId = DEMO_ACCOUNT_IDS.bank,
+    reportedBalance = "900.10",
+    asOf = "2026-10-04T08:00:00Z",
+  ) {
+    data.snapshots.push({
+      id: `snapshot-${data.snapshots.length}`,
+      userId: DEMO_USER_ID,
+      accountId,
+      asOf,
+      reportedBalance,
+      source: "user_report",
+      verifiedByUser: true,
+    });
+  }
+  it("updates bank cash after a posted expense without rewriting the report or reconciliation", () => {
+    const data = fixture();
+    txn(data, { occurredOn: "2026-10-03", amount: "100.00" });
+    report(data);
+    const originalSnapshots = JSON.stringify(data.snapshots);
+    const baseline = accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY);
+    const expense = txn(data, { occurredOn: "2026-10-05", amount: "0.20" });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({
+      current: "899.90",
+      currentSource: "snapshot",
+      currentAsOf: DEMO_TODAY,
+      movementsSinceSnapshot: 1,
+      reported: baseline.reported,
+      calculated: baseline.calculated,
+      difference: baseline.difference,
+      reconciliation: baseline.reconciliation,
+    });
+    expect(JSON.stringify(data.snapshots)).toBe(originalSnapshots);
+    expense.amount = "0.30";
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current,
+    ).toBe("899.80");
+    expense.status = "voided";
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current,
+    ).toBe("900.10");
+  });
+  it("does not count history or the snapshot calendar day twice, including later-entered history", () => {
+    const data = fixture();
+    report(data, DEMO_ACCOUNT_IDS.bank, "900.10", "2026-10-03T19:00:00Z");
+    txn(data, { occurredOn: "2026-10-03", amount: "400.00" });
+    txn(data, {
+      occurredOn: "2026-10-04",
+      amount: "500.00",
+      createdAt: "2026-10-09T12:00:00Z",
+    });
+    txn(data, { occurredOn: "2026-10-05", amount: "0.20" });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({
+      current: "899.90",
+      movementsSinceSnapshot: 1,
+    });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, "2026-10-04").current,
+    ).toBe("900.10");
+  });
+  it("applies posted income, refunds, repayments and both sides of transfers with decimal arithmetic", () => {
+    const data = fixture();
+    report(data, DEMO_ACCOUNT_IDS.bank, "900.10");
+    report(data, DEMO_ACCOUNT_IDS.savings, "100.20");
+    report(data, DEMO_ACCOUNT_IDS.wallet, "20.10");
+    const before = dashboardMetrics(data, "2026-10", DEMO_TODAY);
+    const expense = txn(data, { occurredOn: "2026-10-05", amount: "0.20" });
+    txn(data, {
+      kind: "income",
+      occurredOn: "2026-10-05",
+      amount: "0.30",
+      fromAccountId: null,
+      toAccountId: DEMO_ACCOUNT_IDS.bank,
+    });
+    txn(data, {
+      kind: "refund",
+      occurredOn: "2026-10-05",
+      amount: "0.10",
+      fromAccountId: null,
+      toAccountId: DEMO_ACCOUNT_IDS.bank,
+      refundOfTransactionId: expense.id,
+    });
+    txn(data, {
+      kind: "bill_payment",
+      occurredOn: "2026-10-05",
+      amount: "0.40",
+      toAccountId: DEMO_ACCOUNT_IDS.platinum,
+    });
+    txn(data, {
+      kind: "transfer",
+      occurredOn: "2026-10-06",
+      amount: "10.05",
+      toAccountId: DEMO_ACCOUNT_IDS.savings,
+    });
+    txn(data, {
+      kind: "transfer",
+      occurredOn: "2026-10-06",
+      amount: "0.15",
+      toAccountId: DEMO_ACCOUNT_IDS.wallet,
+    });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current,
+    ).toBe("889.70");
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.savings, DEMO_TODAY).current,
+    ).toBe("110.25");
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.wallet, DEMO_TODAY).current,
+    ).toBe("20.25");
+    const after = dashboardMetrics(data, "2026-10", DEMO_TODAY);
+    expect(after.bankBalance).toBe(addMoney(before.bankBalance, "-0.35"));
+    expect(after.updatedBankCount).toBe(2);
+  });
+  it("excludes pending, voided, undated, future and other-user rows", () => {
+    const data = fixture();
+    report(data);
+    for (const values of [
+      { status: "pending_review" as const, occurredOn: "2026-10-05" },
+      { status: "voided" as const, occurredOn: "2026-10-05" },
+      { occurredOn: null },
+      { occurredOn: "2026-10-10" },
+      { occurredOn: "2026-10-05", userId: "another-user" },
+    ])
+      txn(data, values);
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({
+      current: "900.10",
+      movementsSinceSnapshot: 0,
+    });
+  });
+  it("resets the baseline at a newer valid snapshot and ignores future or other-user snapshots", () => {
+    const data = fixture();
+    report(data);
+    txn(data, { occurredOn: "2026-10-05", amount: "0.20" });
+    report(data, DEMO_ACCOUNT_IDS.bank, "899.90", "2026-10-06T08:00:00Z");
+    txn(data, { occurredOn: "2026-10-07", amount: "0.30" });
+    report(data, DEMO_ACCOUNT_IDS.bank, "1.00", "2026-10-10T08:00:00Z");
+    data.snapshots.push({
+      ...data.snapshots[1],
+      id: "foreign-snapshot",
+      userId: "another-user",
+      reportedBalance: "2.00",
+    });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({
+      reported: "899.90",
+      current: "899.60",
+      movementsSinceSnapshot: 1,
+    });
+  });
+  it("keeps the latest known cash baseline when a newer snapshot reports only another field", () => {
+    const data = fixture();
+    for (const account of data.accounts) account.openingBalance = null;
+    report(data);
+    data.snapshots.push({
+      id: "newer-other-field",
+      userId: DEMO_USER_ID,
+      accountId: DEMO_ACCOUNT_IDS.bank,
+      asOf: "2026-10-06T08:00:00Z",
+      reportedAvailable: "800.00",
+      source: "user_report",
+      verifiedByUser: true,
+    });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({
+      reported: null,
+      calculated: null,
+      difference: null,
+      reconciliation: "unknown",
+      asOf: "2026-10-06T08:00:00Z",
+      current: "900.10",
+      currentSource: "snapshot",
+      currentAsOf: "2026-10-04T08:00:00Z",
+      currentBaselineAsOf: "2026-10-04T08:00:00Z",
+    });
+    expect(dashboardMetrics(data, "2026-10", DEMO_TODAY)).toMatchObject({
+      bankBalance: "900.10",
+      bankAsOf: "2026-10-04",
+      knownBankCount: 1,
+      reportedBankCount: 0,
+    });
+    txn(data, { occurredOn: "2026-10-05", amount: "0.20" });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({
+      reported: null,
+      calculated: null,
+      difference: null,
+      asOf: "2026-10-06T08:00:00Z",
+      current: "899.90",
+      currentAsOf: DEMO_TODAY,
+      currentBaselineAsOf: "2026-10-04T08:00:00Z",
+      movementsSinceSnapshot: 1,
+    });
+  });
+  it("uses a known opening ledger when no balance report exists and leaves missing baselines unknown", () => {
+    const data = fixture();
+    txn(data, { occurredOn: "2026-10-05", amount: "0.20" });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({
+      reported: null,
+      current: "999.80",
+      currentSource: "opening",
+    });
+    data.accounts.find(
+      (account) => account.id === DEMO_ACCOUNT_IDS.bank,
+    )!.openingBalance = null;
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({ current: null, currentSource: "unknown" });
+    expect(
+      accountBalance(data, "missing-account", DEMO_TODAY).current,
+    ).toBeNull();
+    data.accounts.find(
+      (account) => account.id === DEMO_ACCOUNT_IDS.savings,
+    )!.openingBalanceDate = "2026-10-10";
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.savings, DEMO_TODAY).current,
+    ).toBeNull();
+  });
+  it("keeps inactive accounts and wallets outside bank totals and leaves debt snapshots unchanged", () => {
+    const data = fixture();
+    for (const account of data.accounts) account.openingBalance = null;
+    report(data, DEMO_ACCOUNT_IDS.bank, "900.10");
+    report(data, DEMO_ACCOUNT_IDS.savings, "100.20");
+    report(data, DEMO_ACCOUNT_IDS.wallet, "1000.00");
+    data.accounts.find(
+      (account) => account.id === DEMO_ACCOUNT_IDS.savings,
+    )!.active = false;
+    data.snapshots.push({
+      id: "debt",
+      userId: DEMO_USER_ID,
+      accountId: DEMO_ACCOUNT_IDS.platinum,
+      asOf: "2026-10-04T08:00:00Z",
+      reportedOutstanding: "50.00",
+      source: "user_report",
+      verifiedByUser: true,
+    });
+    txn(data, {
+      occurredOn: "2026-10-05",
+      fromAccountId: DEMO_ACCOUNT_IDS.platinum,
+      amount: "10.00",
+    });
+    txn(data, { occurredOn: "2026-10-05", amount: "0.10" });
+    expect(dashboardMetrics(data, "2026-10", DEMO_TODAY)).toMatchObject({
+      bankBalance: "900.00",
+      knownBankCount: 1,
+      totalBankCount: 1,
+      cardOutstanding: "50.00",
+    });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY).current,
+    ).toBe("50.00");
+  });
+});
 describe("statement allocations", () => {
   it("derives partial, overdue and paid status from valid explicit allocations", () => {
     const data = fixture();

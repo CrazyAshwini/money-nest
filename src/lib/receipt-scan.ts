@@ -6,6 +6,7 @@ import { withSellerDescription } from "./seller-description";
 
 export const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
 export const MAX_RECEIPT_IMAGES = 3;
+export const MAX_RECEIPT_TRANSACTIONS = 20;
 export const RECEIPT_GATEWAY_MODELS = [
   { id: "openai/gpt-5.4-nano", label: "Everyday receipts" },
   { id: "openai/gpt-6-luna", label: "Advanced receipts" },
@@ -64,10 +65,20 @@ export const receiptExtractionSchema = z.object({
 export const receiptGenerationSchema = receiptExtractionSchema.extend({
   platform: receiptPlatformSchema,
 });
+/** One image may contain several payments/orders; bill line items remain one transaction. */
+export const receiptBatchGenerationSchema = z.object({
+  extractions: z
+    .array(receiptGenerationSchema)
+    .min(1)
+    .max(MAX_RECEIPT_TRANSACTIONS),
+});
 export type ReceiptExtraction = z.infer<typeof receiptExtractionSchema>;
 export interface ReceiptScanResult {
   extraction: ReceiptExtraction;
   fingerprint: string;
+  /** Older saved responses and clients only supplied the first-transaction aliases. */
+  extractions?: ReceiptExtraction[];
+  fingerprints?: string[];
   provider: string;
   model: string;
 }

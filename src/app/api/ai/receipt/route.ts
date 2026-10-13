@@ -12,7 +12,8 @@ import {
   receiptProviderMetadata,
   ReceiptAIError,
   readReceiptUpload,
-  scanReceiptWithAI,
+  scanReceiptBatchWithAI,
+  receiptTransactionFingerprints,
   readReceiptAIConfiguration,
 } from "@/lib/ai-receipt-service";
 
@@ -52,15 +53,21 @@ export async function POST(request: NextRequest) {
     const metadata = receiptProviderMetadata(configuration.provider);
     const upload = await readReceiptUpload(request, configuration);
     images = upload.images;
-    const extraction = await scanReceiptWithAI({
+    const extractions = await scanReceiptBatchWithAI({
       configuration,
       images,
       signal: request.signal,
       redacted: upload.redacted,
     });
+    const fingerprints = receiptTransactionFingerprints(
+      extractions,
+      upload.fingerprint,
+    );
     return privateResponse({
-      extraction,
-      fingerprint: upload.fingerprint,
+      extractions,
+      fingerprints,
+      extraction: extractions[0],
+      fingerprint: fingerprints[0],
       provider: metadata.provider,
       model: configuration.model,
     });

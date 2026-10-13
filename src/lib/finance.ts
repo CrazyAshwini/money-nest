@@ -148,6 +148,12 @@ export interface AccountBalance {
   reported: Money | null;
   calculated: Money | null;
   difference: Money | null;
+  /** Asset balance from the last known baseline and subsequent posted movements. */
+  current: Money | null;
+  currentAsOf: string | null;
+  currentBaselineAsOf: string | null;
+  currentSource: "snapshot" | "opening" | "unknown";
+  movementsSinceSnapshot: number;
   asOf: string | null;
   calculatedAsOf: string;
   reconciliation: "matched" | "difference" | "unknown";
@@ -173,10 +179,68 @@ export function accountBalance(
     reported !== null && calculated !== null
       ? subtractMoney(reported, calculated)
       : null;
+  const cutoff = localDateISO(asOf);
+  let current = reported;
+  let currentAsOf = snapshot?.asOf ?? null;
+  let currentBaselineAsOf = reported !== null ? (snapshot?.asOf ?? null) : null;
+  let currentSource: AccountBalance["currentSource"] =
+    reported === null ? "unknown" : "snapshot";
+  let movementsSinceSnapshot = 0;
+  if (account && !isDebtAccount(account)) {
+    // A newer report of another field must not erase a known cash baseline.
+    // Reconciliation above still uses the newest snapshot without substitution.
+    const balanceSnapshot = latestSnapshot(
+      {
+        ...data,
+        snapshots: data.snapshots.filter((s) => s.reportedBalance != null),
+      },
+      accountId,
+      asOf,
+    );
+    if (balanceSnapshot?.reportedBalance != null) {
+      let updated = dec(balanceSnapshot.reportedBalance);
+      const snapshotDate = localDateISO(balanceSnapshot.asOf);
+      currentSource = "snapshot";
+      currentAsOf = balanceSnapshot.asOf;
+      currentBaselineAsOf = balanceSnapshot.asOf;
+      for (const transaction of data.transactions) {
+        if (
+          transaction.userId !== account.userId ||
+          transaction.status !== "posted" ||
+          !transaction.occurredOn ||
+          // Date-only entries on the snapshot day are treated as included;
+          // createdAt is an entry timestamp, not evidence of a later payment.
+          transaction.occurredOn <= snapshotDate ||
+          transaction.occurredOn > cutoff ||
+          (transaction.fromAccountId !== accountId &&
+            transaction.toAccountId !== accountId)
+        )
+          continue;
+        if (transaction.fromAccountId === accountId)
+          updated = updated.minus(dec(transaction.amount));
+        if (transaction.toAccountId === accountId)
+          updated = updated.plus(dec(transaction.amount));
+        movementsSinceSnapshot++;
+      }
+      current = updated.toFixed(2);
+      if (movementsSinceSnapshot > 0) currentAsOf = cutoff;
+    } else {
+      current = ledgerBalance(data, accountId, cutoff);
+      currentSource = current === null ? "unknown" : "opening";
+      currentAsOf = current === null ? null : cutoff;
+      currentBaselineAsOf =
+        current === null ? null : (account.openingBalanceDate ?? null);
+    }
+  }
   return {
     reported,
     calculated,
     difference,
+    current,
+    currentAsOf,
+    currentBaselineAsOf,
+    currentSource,
+    movementsSinceSnapshot,
     asOf: snapshot?.asOf ?? null,
     calculatedAsOf,
     reconciliation:
@@ -601,20 +665,31 @@ export function dashboardMetrics(
   const payLater = data.accounts.filter(
     (a) => a.kind === "pay_later" && a.active,
   );
-  const bankSnapshots = banks.map((a) => latestSnapshot(data, a.id, today));
+  const bankBalances = banks.map((a) => accountBalance(data, a.id, today));
   const cardSnapshots = cards.map((a) => latestSnapshot(data, a.id, today));
   const payLaterSnapshots = payLater.map((a) =>
     latestSnapshot(data, a.id, today),
   );
   const spending = monthlySummary(data, month);
-  const bankDates = bankSnapshots
-    .map((s) => (s ? localDateISO(s.asOf) : undefined))
+  const bankDates = bankBalances
+    .map((balance) =>
+      balance.currentAsOf ? localDateISO(balance.currentAsOf) : undefined,
+    )
     .filter((v): v is string => Boolean(v));
   return {
-    bankBalance: sumMoney(bankSnapshots.map((s) => s?.reportedBalance)),
+    bankBalance: sumMoney(bankBalances.map((balance) => balance.current)),
     bankAsOf: bankDates.length ? [...bankDates].sort()[0] : null,
-    reportedBankCount: bankSnapshots.filter((s) => s?.reportedBalance != null)
+    reportedBankCount: bankBalances.filter(
+      (balance) => balance.reported !== null,
+    ).length,
+    knownBankCount: bankBalances.filter((balance) => balance.current !== null)
       .length,
+    updatedBankCount: bankBalances.filter(
+      (balance) => balance.movementsSinceSnapshot > 0,
+    ).length,
+    openingBankCount: bankBalances.filter(
+      (balance) => balance.currentSource === "opening",
+    ).length,
     totalBankCount: banks.length,
     monthSpending: spending.gross,
     netSpending: spending.net,

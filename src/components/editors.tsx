@@ -159,10 +159,15 @@ export function RecordEditor({
     ),
   );
   const [receipt, setReceipt] = useState<AppliedReceipt | null>(null);
+  const [receiptQueue, setReceiptQueue] = useState<
+    Array<{ receipt: AppliedReceipt; id: string }>
+  >([]);
+  const [receiptIndex, setReceiptIndex] = useState(0);
   const [otherPlatform, setOtherPlatform] = useState(
     editor.type === "transaction" && editor.record?.platform === OTHER_PLATFORM,
   );
   const [receiptReviewed, setReceiptReviewed] = useState(false);
+  const [receiptPaymentConfirmed, setReceiptPaymentConfirmed] = useState(false);
   const [pendingConfirmed, setPendingConfirmed] = useState(false);
   function updateTransaction<K extends keyof TransactionValues>(
     key: K,
@@ -170,9 +175,10 @@ export function RecordEditor({
   ) {
     setTransaction((current) => ({ ...current, [key]: value }));
     setReceiptReviewed(false);
+    setReceiptPaymentConfirmed(false);
     setPendingConfirmed(false);
   }
-  function applyReceipt(applied: AppliedReceipt) {
+  function applyReceiptFields(applied: AppliedReceipt) {
     const draft = applied.draft;
     setTransaction({
       ...transactionValues(undefined, "", ""),
@@ -188,14 +194,31 @@ export function RecordEditor({
     });
     setReceipt({
       ...applied,
+      canConfirmPayment:
+        applied.canConfirmPayment &&
+        !(draft.kind && draft.kind !== transaction.kind),
       requiresPendingReview:
         applied.requiresPendingReview ||
         Boolean(draft.kind && draft.kind !== transaction.kind),
     });
     setOtherPlatform(false);
     setReceiptReviewed(false);
+    setReceiptPaymentConfirmed(false);
     setPendingConfirmed(false);
     setError("");
+  }
+  function applyReceipt(applied: AppliedReceipt) {
+    setReceiptQueue([]);
+    setReceiptIndex(0);
+    applyReceiptFields(applied);
+  }
+  function applyReceiptBatch(receipts: AppliedReceipt[]) {
+    if (!receipts.length) return;
+    setReceiptQueue(
+      receipts.map((receipt) => ({ receipt, id: crypto.randomUUID() })),
+    );
+    setReceiptIndex(0);
+    applyReceiptFields(receipts[0]);
   }
   function changeCategory(category: string) {
     setTransaction((current) => {
@@ -213,6 +236,7 @@ export function RecordEditor({
       };
     });
     setReceiptReviewed(false);
+    setReceiptPaymentConfirmed(false);
     setPendingConfirmed(false);
   }
   function changePlatform(platform: string) {
@@ -231,6 +255,7 @@ export function RecordEditor({
           : platform,
     }));
     setReceiptReviewed(false);
+    setReceiptPaymentConfirmed(false);
     setPendingConfirmed(false);
   }
   const text = (f: FormData, key: string) => String(f.get(key) || "").trim();
@@ -312,6 +337,7 @@ export function RecordEditor({
         await save("transactions", {
           ...prev,
           ...base,
+          id: receiptQueue[receiptIndex]?.id ?? base.id,
           amount: value,
           currency: "INR",
           kind,
@@ -319,7 +345,8 @@ export function RecordEditor({
             prev?.status === "voided"
               ? "voided"
               : !date ||
-                  receipt?.requiresPendingReview ||
+                  (receipt?.requiresPendingReview &&
+                    !(receipt.canConfirmPayment && receiptPaymentConfirmed)) ||
                   ((kind === "transfer" || kind === "bill_payment") &&
                     (!from || (!to && !externalRepayment)))
                 ? "pending_review"
@@ -471,6 +498,19 @@ export function RecordEditor({
         };
         await save("groups", group);
       }
+      if (
+        editor.type === "transaction" &&
+        receiptQueue.length > 1 &&
+        receiptIndex < receiptQueue.length - 1
+      ) {
+        const nextIndex = receiptIndex + 1;
+        setReceiptIndex(nextIndex);
+        applyReceiptFields(receiptQueue[nextIndex].receipt);
+        toast(
+          `Transaction ${nextIndex} of ${receiptQueue.length} saved. Review the next transaction.`,
+        );
+        return;
+      }
       toast(
         `${names[editor.type][0].toUpperCase() + names[editor.type].slice(1)} saved.`,
       );
@@ -569,8 +609,24 @@ export function RecordEditor({
       }
     >
       <form onSubmit={submit} className="editor-form">
-        {editor.type === "transaction" && !editor.record && (
-          <ReceiptScanner onApply={applyReceipt} />
+        {editor.type === "transaction" &&
+          !editor.record &&
+          !receiptQueue.length && (
+            <ReceiptScanner
+              onApply={applyReceipt}
+              onApplyBatch={applyReceiptBatch}
+            />
+          )}
+        {receiptQueue.length > 1 && (
+          <div className="receipt-save-review" role="status">
+            <strong>
+              Transaction {receiptIndex + 1} of {receiptQueue.length}
+            </strong>
+            <p>
+              Review and save each transaction separately. {receiptIndex} saved;{" "}
+              {receiptQueue.length - receiptIndex} still to review.
+            </p>
+          </div>
         )}
         <div className="form-grid">
           {editor.type === "account" && (
@@ -1143,11 +1199,25 @@ export function RecordEditor({
                 Choose another transaction type from Transactions if needed.
               </p>
             )}
-            {receipt.requiresPendingReview && (
-              <p className="receipt-warning">
-                The payment is unconfirmed or unclear. This transaction will
-                stay in Needs review.
-              </p>
+            {receipt.requiresPendingReview &&
+              !(receipt.canConfirmPayment && receiptPaymentConfirmed) && (
+                <p className="receipt-warning">
+                  The payment is unconfirmed or unclear. This transaction will
+                  stay in Needs review.
+                </p>
+              )}
+            {receipt.canConfirmPayment && (
+              <label className="receipt-review-check">
+                <input
+                  type="checkbox"
+                  checked={receiptPaymentConfirmed}
+                  onChange={(event) => {
+                    setReceiptPaymentConfirmed(event.target.checked);
+                    setReceiptReviewed(false);
+                  }}
+                />
+                <span>I confirmed that this payment was completed.</span>
+              </label>
             )}
             <label className="receipt-review-check">
               <input
@@ -1180,7 +1250,12 @@ export function RecordEditor({
             className="button primary"
             disabled={busy || Boolean(receipt && !receiptReviewed)}
           >
-            {busy ? "Saving…" : "Save " + names[editor.type]}
+            {busy
+              ? "Saving…"
+              : receiptQueue.length > 1 &&
+                  receiptIndex < receiptQueue.length - 1
+                ? "Save and next"
+                : "Save " + names[editor.type]}
           </button>
         </div>
       </form>

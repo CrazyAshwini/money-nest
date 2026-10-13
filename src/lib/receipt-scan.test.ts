@@ -3,9 +3,11 @@ import {
   detectReceiptMediaType,
   findReceiptDuplicates,
   MAX_RECEIPT_BYTES,
+  MAX_RECEIPT_TRANSACTIONS,
   normalizeReceiptExtraction,
   receiptDraft,
   receiptGenerationSchema,
+  receiptBatchGenerationSchema,
   validateReceiptFile,
   type ReceiptExtraction,
 } from "./receipt-scan";
@@ -46,6 +48,29 @@ const transaction = (changes: Partial<Transaction> = {}): Transaction => ({
 });
 
 describe("receipt extraction boundaries", () => {
+  it("bounds multi-transaction output and requires a separate platform value for every entry", () => {
+    const row = extraction({ platform: null });
+    expect(
+      receiptBatchGenerationSchema.safeParse({ extractions: [row, row] })
+        .success,
+    ).toBe(true);
+    expect(
+      receiptBatchGenerationSchema.safeParse({ extractions: [] }).success,
+    ).toBe(false);
+    expect(
+      receiptBatchGenerationSchema.safeParse({
+        extractions: Array.from(
+          { length: MAX_RECEIPT_TRANSACTIONS + 1 },
+          () => row,
+        ),
+      }).success,
+    ).toBe(false);
+    expect(
+      receiptBatchGenerationSchema.safeParse({
+        extractions: [row, extraction()],
+      }).success,
+    ).toBe(false);
+  });
   it("separates the visible ordering platform and includes the seller in the description", () => {
     const result = normalizeReceiptExtraction(
       extraction({

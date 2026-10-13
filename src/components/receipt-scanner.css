@@ -308,6 +308,34 @@
   font-size: 15px;
   margin: 0 0 15px;
 }
+.receipt-candidates {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.receipt-candidate {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  justify-content: space-between;
+  border: 1px solid #dce6d9;
+  border-radius: 10px;
+  padding: 10px;
+  min-width: 0;
+}
+.receipt-candidate .receipt-review-check {
+  min-width: 0;
+  margin: 0;
+  color: #354d38;
+  font-size: 12px;
+}
+.receipt-candidate .receipt-review-check > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.receipt-candidate .receipt-text-button {
+  flex-shrink: 0;
+}
 .receipt-details {
   display: grid;
   font-size: 12px;

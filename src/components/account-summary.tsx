@@ -119,13 +119,13 @@ export function BankAccountSummary({
             <AccountIdentity account={account} />
             <div className="stat-account-balance">
               <b>
-                {balance.reported === null
+                {balance.current === null
                   ? "Not reported"
-                  : formatMoney(balance.reported)}
+                  : formatMoney(balance.current)}
               </b>
               <small>
-                {balance.asOf
-                  ? `${balance.reported === null ? "Balance not reported" : "Reported"} · ${formatDate(balance.asOf)}`
+                {balance.currentAsOf
+                  ? `${balance.currentSource === "opening" || balance.movementsSinceSnapshot > 0 ? "Calculated" : "Reported"} · ${formatDate(balance.currentAsOf)}`
                   : "Snapshot needed"}
               </small>
             </div>

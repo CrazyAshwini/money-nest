@@ -7,6 +7,7 @@ import {
   RECEIPT_GATEWAY_MODELS,
   MAX_RECEIPT_BYTES,
   MAX_RECEIPT_IMAGES,
+  MAX_RECEIPT_TRANSACTIONS,
   type ReceiptExtraction,
 } from "./receipt-scan";
 
@@ -47,6 +48,8 @@ import {
   readReceiptUpload,
   receiptProviderFailure,
   scanReceiptWithAI,
+  scanReceiptBatchWithAI,
+  receiptTransactionFingerprints,
   scanOrderHistoryWithAI,
   orderBatchFingerprint,
 } from "./ai-receipt-service";
@@ -175,7 +178,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocked.enabled.mockReturnValue(true);
   mocked.authenticate.mockResolvedValue({ ownerId: randomUUID() });
-  mocked.generate.mockResolvedValue({ output: extraction });
+  mocked.generate.mockImplementation(async (call) => ({
+    output: call.output.schema.shape.extractions
+      ? { extractions: [extraction] }
+      : extraction,
+  }));
   mocked.prepareImage.mockImplementation(
     async (bytes: Uint8Array, mediaType: string) => ({
       bytes: Buffer.from(bytes),
@@ -404,6 +411,214 @@ describe("separate order-history cloud boundary", () => {
 });
 
 describe("receipt cloud boundaries", () => {
+  it("extracts and normalizes independent visible order totals in one cloud request", async () => {
+    const second = {
+      ...extraction,
+      amount: "178",
+      description: "Synthetic hair oil",
+      paymentStatus: "unknown",
+      platform: "Amazon",
+      merchant: null,
+      occurredOn: "2026-10-11",
+    };
+    mocked.generate.mockResolvedValueOnce({
+      output: {
+        extractions: [
+          {
+            ...second,
+            amount: "1,084.00",
+            description: "Synthetic suitcase",
+          },
+          second,
+        ],
+      },
+    });
+    const result = await scanReceiptBatchWithAI({
+      configuration,
+      images: [PNG],
+    });
+    expect(result).toHaveLength(2);
+    expect(result.map((row) => row.amount)).toEqual(["1084.00", "178.00"]);
+    expect(result.map((row) => row.occurredOn)).toEqual([
+      "2026-10-11",
+      "2026-10-11",
+    ]);
+    expect(result.every((row) => row.paymentStatus === "unknown")).toBe(true);
+    const call = mocked.generate.mock.calls[0][0];
+    expect(call.system).toContain("Extract ALL visible distinct actual");
+    expect(call.system).toContain("Buy it again sidebars");
+    expect(call.system).toContain("partially cut-off card");
+    expect(call.system).toContain("same long bill form one transaction");
+    expect(call.system).toContain("do not sum bill line items");
+    expect(call.system).toContain("not an arrival estimate or delivery date");
+    expect(call.system).not.toContain("Extract one transaction only");
+    expect(call).toMatchObject({
+      maxOutputTokens: 16384,
+      maxRetries: 0,
+      telemetry: {
+        isEnabled: false,
+        recordInputs: false,
+        recordOutputs: false,
+      },
+    });
+    expect(call.tools).toBeUndefined();
+    expect(call.messages[0].content).toHaveLength(1);
+    expect(mocked.generate).toHaveBeenCalledTimes(1);
+    expect(mocked.google).not.toHaveBeenCalled();
+  });
+
+  it("keeps each transaction's uncertainty and invalid amount/date independent", async () => {
+    mocked.generate.mockResolvedValueOnce({
+      output: {
+        extractions: [
+          extraction,
+          {
+            ...extraction,
+            amount: "0",
+            occurredOn: "2026-02-30",
+            paymentStatus: "pending",
+            confidence: "low",
+          },
+          {
+            ...extraction,
+            amount: "8.10",
+            currency: "usd",
+            paymentStatus: "failed",
+          },
+        ],
+      },
+    });
+    const result = await scanReceiptBatchWithAI({
+      configuration,
+      images: [PNG],
+    });
+    expect(result[0]).toEqual(extraction);
+    expect(result[1]).toMatchObject({ amount: null, occurredOn: null });
+    expect(result[1].warnings.join(" ")).toContain("pending");
+    expect(result[2]).toMatchObject({ amount: "8.10", currency: "USD" });
+    expect(result[2].warnings.join(" ")).toContain("failed");
+    expect(result[2].warnings.join(" ")).toContain("not in INR");
+  });
+
+  it.each(["empty", "oversized", "missing_platform", "malformed_second"])(
+    "rejects %s batch output without leaking provider data or accepting a partial batch",
+    async (scenario) => {
+      let rows: unknown[] = [extraction];
+      if (scenario === "empty") rows = [];
+      if (scenario === "oversized")
+        rows = Array.from(
+          { length: MAX_RECEIPT_TRANSACTIONS + 1 },
+          () => extraction,
+        );
+      if (scenario === "missing_platform") {
+        const legacy = { ...extraction };
+        delete legacy.platform;
+        rows.push(legacy);
+      }
+      if (scenario === "malformed_second")
+        rows.push({ ...extraction, kind: "untrusted-private-provider-data" });
+      mocked.generate.mockResolvedValueOnce({ output: { extractions: rows } });
+      const response = await receiptPOST(request(upload()));
+      expect(response.status).toBe(422);
+      const body = await response.json();
+      expect(body.code).toBe("unreadable_receipt");
+      expect(JSON.stringify(body)).not.toContain(
+        "untrusted-private-provider-data",
+      );
+      expect(body.extractions).toBeUndefined();
+      const providerBytes = mocked.generate.mock.calls[0][0].messages[0]
+        .content[0].data as Buffer;
+      expect(providerBytes.every((byte) => byte === 0)).toBe(true);
+      expect(mocked.generate).toHaveBeenCalledTimes(1);
+      expect(mocked.google).not.toHaveBeenCalled();
+    },
+  );
+
+  it("uses distinct stable per-transaction identities, including identical-value siblings", () => {
+    const first = { ...extraction, externalReference: null };
+    const second = {
+      ...first,
+      description: "Synthetic second purchase",
+      amount: "42.00",
+    };
+    const uploadHash = "a".repeat(64);
+    const forward = receiptTransactionFingerprints(
+      [first, second, first],
+      uploadHash,
+    );
+    const reverse = receiptTransactionFingerprints(
+      [first, first, { ...second, confidence: "low", warnings: ["Check"] }],
+      uploadHash,
+    );
+    expect(new Set(forward).size).toBe(3);
+    expect(forward.every((value) => /^[a-f0-9]{64}$/.test(value))).toBe(true);
+    expect(forward.toSorted()).toEqual(reverse.toSorted());
+    expect(receiptTransactionFingerprints([first], uploadHash)).toEqual([
+      uploadHash,
+    ]);
+    expect(
+      receiptTransactionFingerprints([first, second], "b".repeat(64))[0],
+    ).not.toBe(forward[0]);
+  });
+
+  it("returns aligned batch arrays with legacy first-transaction aliases and no ledger write", async () => {
+    mocked.generate.mockResolvedValueOnce({
+      output: {
+        extractions: [extraction, { ...extraction, amount: "20.00" }],
+      },
+    });
+    const response = await receiptPOST(request(upload()));
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(
+      body.extractions.map((row: ReceiptExtraction) => row.amount),
+    ).toEqual(["123.45", "20.00"]);
+    expect(body.fingerprints).toHaveLength(2);
+    expect(body.fingerprints[0]).not.toBe(body.fingerprints[1]);
+    expect(body.extraction).toEqual(body.extractions[0]);
+    expect(body.fingerprint).toBe(body.fingerprints[0]);
+    expect(body.ownerId).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain(SYNTHETIC_KEY);
+    expect(mocked.authenticate).toHaveBeenCalledTimes(1);
+    const providerBytes = mocked.generate.mock.calls[0][0].messages[0]
+      .content[0].data as Buffer;
+    expect(providerBytes.every((byte) => byte === 0)).toBe(true);
+  });
+
+  it("clears every Gemini batch identifier and prepared image without Gateway fallback", async () => {
+    mocked.generate.mockResolvedValueOnce({
+      output: {
+        extractions: [
+          { ...extraction, accountHint: "Synthetic account ending 1234" },
+          {
+            ...extraction,
+            externalReference: "reconstructed-synthetic-second-reference",
+            accountHint: "Synthetic account ending 0000",
+            amount: "20.00",
+          },
+        ],
+      },
+    });
+    const result = await scanReceiptBatchWithAI({
+      configuration: googleConfiguration,
+      images: [PNG, PNG],
+      redacted: true,
+    });
+    expect(result).toHaveLength(2);
+    expect(
+      result.every(
+        (row) => row.accountHint === null && row.externalReference === null,
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("reconstructed");
+    expect(mocked.prepareImage).toHaveBeenCalledTimes(2);
+    for (const content of mocked.generate.mock.calls[0][0].messages[0].content)
+      expect(content.data.every((byte: number) => byte === 0)).toBe(true);
+    expect(mocked.google).toHaveBeenCalledTimes(1);
+    expect(mocked.gateway).not.toHaveBeenCalled();
+  });
+
   it("checks actual bytes when Content-Length is missing or false", async () => {
     const ordinary = request("12345", { "content-length": "2" });
     await expect(readBoundedBody(ordinary, 4)).rejects.toMatchObject({
@@ -831,6 +1046,8 @@ describe("authenticated AI endpoints", () => {
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(await response.json()).toMatchObject({
       extraction,
+      extractions: [extraction],
+      fingerprints: [createHash("sha256").update(PNG).digest("hex")],
       fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
       provider: "Vercel AI Gateway",
       model: DEFAULT_RECEIPT_GATEWAY_MODEL,
@@ -861,12 +1078,10 @@ describe("authenticated AI endpoints", () => {
         expect(
           call.messages[0].content.map((part: { data: Buffer }) => part.data),
         ).toEqual([PNG, second, third]);
-        expect(call.system).toContain(
-          "do not sum repeated or overlapping totals",
-        );
+        expect(call.system).toContain("repeated or overlapping totals");
         expect(call.system).toContain("contradictory totals");
         if (fails) throw { statusCode: 429 };
-        return { output: extraction };
+        return { output: { extractions: [extraction] } };
       });
       const response = await receiptPOST(request(form));
       expect(response.status).toBe(fails ? 429 : 200);
@@ -895,7 +1110,9 @@ describe("authenticated AI endpoints", () => {
     const providerImage = mocked.generate.mock.calls[0][0].messages[0]
       .content[0].data as Buffer;
     expect(providerImage.every((byte) => byte === 0)).toBe(true);
-    mocked.generate.mockResolvedValueOnce({ output: extraction });
+    mocked.generate.mockResolvedValueOnce({
+      output: { extractions: [extraction] },
+    });
     expect((await receiptPOST(request(upload()))).status).toBe(200);
   });
 });

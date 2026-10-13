@@ -278,6 +278,122 @@ test("expense creation/edit persists and increases spending exactly once; transf
   await noPageOverflow(page);
 });
 
+test("a posted expense after the reported date updates the bank card and dashboard once", async ({
+  page,
+}) => {
+  const bankId = await page.evaluate(
+    ({ storageKey, bankName }) => {
+      if (sessionStorage.getItem("finance-os:mode") !== "demo")
+        throw new Error("This fixture requires an isolated demo workspace.");
+      const workspace = JSON.parse(
+        localStorage.getItem(storageKey)!,
+      ) as WorkspaceData;
+      const bank = workspace.accounts.find(
+        (account) => account.name === bankName && account.active,
+      );
+      const snapshot = workspace.snapshots.find(
+        (item) => item.accountId === bank?.id,
+      );
+      if (!bank || !snapshot)
+        throw new Error("The synthetic bank snapshot fixture is required.");
+      snapshot.asOf = "2026-10-08T08:00:00Z";
+      snapshot.reportedBalance = "1000.00";
+      // Seed movements are already included in this fixture's reported balance.
+      for (const transaction of workspace.transactions)
+        if (
+          transaction.occurredOn &&
+          (transaction.fromAccountId === bank.id ||
+            transaction.toAccountId === bank.id) &&
+          transaction.occurredOn > "2026-10-08"
+        )
+          transaction.occurredOn = "2026-10-08";
+      localStorage.setItem(storageKey, JSON.stringify(workspace));
+      return bank.id;
+    },
+    { storageKey: STORAGE_KEY, bankName: BANK },
+  );
+  const bankTotal = async () => {
+    const value = await page
+      .locator(".stats-grid .stat")
+      .filter({ hasText: "Total bank balance" })
+      .locator(":scope > strong")
+      .innerText();
+    return new Decimal(value.replace(/[^\d.-]/g, "")).toFixed(2);
+  };
+  const accountCard = () =>
+    page.locator("a.bank-card").filter({ hasText: BANK });
+  await page.reload();
+  const baseline = await bankTotal();
+  await page.goto("/accounts");
+  await expect(accountCard().locator(":scope > strong")).toHaveText(
+    "₹1,000.00",
+  );
+  await page.goto("/dashboard");
+  await addTransaction(page, {
+    description: "E2E expense after the reported balance",
+    amount: "100.40",
+  });
+  const expectedTotal = new Decimal(baseline).minus("100.40").toFixed(2);
+  await expect.poll(bankTotal).toBe(expectedTotal);
+  await page.reload();
+  await expect.poll(bankTotal).toBe(expectedTotal);
+  await page.goto("/accounts");
+  await expect(accountCard().locator(":scope > strong")).toHaveText("₹899.60");
+  await accountCard().click();
+  await expect(
+    page.locator(".info-banner").filter({ hasText: "Updated balance" }),
+  ).toContainText("₹899.60");
+  await expect(
+    page
+      .locator(".three-stats .stat")
+      .filter({ hasText: "Reported balance / outstanding" })
+      .locator(":scope > strong"),
+  ).toHaveText("₹1,000.00");
+
+  await page.evaluate(
+    ({ storageKey, bankId }) => {
+      if (sessionStorage.getItem("finance-os:mode") !== "demo")
+        throw new Error("This fixture requires an isolated demo workspace.");
+      const workspace = JSON.parse(
+        localStorage.getItem(storageKey)!,
+      ) as WorkspaceData;
+      const template = workspace.transactions.find(
+        (transaction) =>
+          transaction.description === "E2E expense after the reported balance",
+      );
+      if (!template || template.fromAccountId !== bankId)
+        throw new Error("The synthetic posted expense must be present.");
+      workspace.transactions.push(
+        {
+          ...template,
+          id: "00000000-0000-4000-8000-000000009811",
+          description: "E2E pending expense does not debit a balance",
+          amount: "15.25",
+          status: "pending_review",
+        },
+        {
+          ...template,
+          id: "00000000-0000-4000-8000-000000009812",
+          description: "E2E voided expense does not debit a balance",
+          amount: "29.75",
+          status: "voided",
+        },
+      );
+      localStorage.setItem(storageKey, JSON.stringify(workspace));
+    },
+    { storageKey: STORAGE_KEY, bankId },
+  );
+  await page.reload();
+  await expect(
+    page.locator(".info-banner").filter({ hasText: "Updated balance" }),
+  ).toContainText("₹899.60");
+  await page.goto("/accounts");
+  await expect(accountCard().locator(":scope > strong")).toHaveText("₹899.60");
+  await page.goto("/dashboard");
+  await expect.poll(bankTotal).toBe(expectedTotal);
+  await noPageOverflow(page);
+});
+
 test("manual pending expenses require explicit confirmation and voided edits stay voided", async ({
   page,
 }) => {
