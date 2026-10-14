@@ -127,7 +127,7 @@ async function mockCloud(context: BrowserContext, restore = true) {
   await context.route("**/*", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    if (url.origin !== "http://127.0.0.1:3000") {
+    if (url.origin !== new URL(test.info().project.use.baseURL!).origin) {
       await route.abort();
       return;
     }

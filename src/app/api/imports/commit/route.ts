@@ -7,6 +7,7 @@ import {
 } from "@/lib/supabase/validation";
 import { privateProfileEnabled } from "@/lib/private-profile-store";
 import { privateImportPOST } from "@/lib/private-profile-http";
+import { cloudRequestAllowed } from "@/lib/cloud-request";
 
 const input = z.object({
   transactions: z.array(transactionSchema).min(1).max(1000),
@@ -15,10 +16,7 @@ const input = z.object({
 });
 export async function POST(request: NextRequest) {
   if (privateProfileEnabled()) return privateImportPOST(request);
-  if (
-    request.headers.get("origin") &&
-    request.headers.get("origin") !== request.nextUrl.origin
-  )
+  if (!cloudRequestAllowed(request, true))
     return NextResponse.json(
       { error: "Request origin is not allowed." },
       { status: 403 },

@@ -1,5 +1,7 @@
 # Money Nest update report review — 14 October 2026
 
+Follow-up: the owner subsequently requested implementation. See [fix verification](review-fixes-verification-2026-10-14.md) for the resolved behavior. The findings below describe the reviewed `b69fef4` revision.
+
 The owner requested: **review the supplied update report, test it, and use verified results as context for future changes**. This review does not authorize implementing the report's remaining requirements or changing authentication. Product source was left unchanged.
 
 ## Reviewed source and method

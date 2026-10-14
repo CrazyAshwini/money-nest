@@ -578,7 +578,7 @@ test("private profile setup, protected records, persistence, and demo isolation"
     await assertNoPrivateBrowserStorage(page);
   });
 
-  await test.step("fictional demo and shipped browser scripts contain no private profile", async () => {
+  await test.step("browser demo flags cannot bypass private sign-in and shipped scripts contain no private profile", async () => {
     const demo = await browser.newContext({ baseURL });
     try {
       const demoPage = await demo.newPage();
@@ -586,12 +586,19 @@ test("private profile setup, protected records, persistence, and demo isolation"
         sessionStorage.setItem("finance-os:mode", "demo"),
       );
       await demoPage.goto("/dashboard");
-      await expect(demoPage.locator(".demo-strip")).toContainText(
-        "Fictional data",
-      );
-      await expect(demoPage.locator(".user-card")).not.toContainText(
-        profileName,
-      );
+      await expect(
+        demoPage.getByRole("heading", { name: "Welcome back", exact: true }),
+      ).toBeVisible();
+      await expect(demoPage.locator(".demo-strip")).toHaveCount(0);
+      await expect(
+        demoPage.getByRole("button", { name: "Try the fictional demo" }),
+      ).toHaveCount(0);
+      await expect(demoPage.locator(".user-card")).toHaveCount(0);
+      expect(
+        await demoPage.evaluate(() =>
+          sessionStorage.getItem("finance-os:mode"),
+        ),
+      ).toBeNull();
       await assertNoPrivateBrowserStorage(demoPage);
       const unauthenticated = await demo.request.get("/api/workspace");
       expect(unauthenticated.status()).toBe(401);

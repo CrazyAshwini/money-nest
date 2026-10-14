@@ -2,12 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { fromDatabase } from "@/lib/supabase/validation";
+import { cloudRequestAllowed } from "@/lib/cloud-request";
 
 export const runtime = "nodejs";
 const allowed = new Set(["application/pdf","text/csv","image/png","image/jpeg","image/webp"]);
 
 export async function POST(request: NextRequest) {
-  if (request.headers.get("origin") && request.headers.get("origin")!==request.nextUrl.origin) return NextResponse.json({error:"Request origin is not allowed."},{status:403});
+  if (!cloudRequestAllowed(request, true)) return NextResponse.json({error:"Request origin is not allowed."},{status:403});
   const supabase = await createSupabaseServerClient();
   if (!supabase) return NextResponse.json({configured:false,error:"Private document storage is not configured."},{status:503});
   const {data:{user},error} = await supabase.auth.getUser();

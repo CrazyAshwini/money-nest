@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo, useEffect, type ReactNode } from "react";
+import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
@@ -139,6 +139,7 @@ export function FinanceApp() {
   } = useFinance();
   const pathname = usePathname();
   const [mobile, setMobile] = useState(false);
+  const navigationTrigger = useRef<HTMLButtonElement | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const part = pathname.split("/").filter(Boolean);
   const pageInfo = resolveAppPage(part);
@@ -200,7 +201,17 @@ export function FinanceApp() {
         </aside>
         <Dialog.Portal>
           <Dialog.Overlay className="navigation-overlay" />
-          <Dialog.Content className="navigation-drawer">
+          <Dialog.Content
+            className="navigation-drawer"
+            onCloseAutoFocus={(event) => {
+              // The header and bottom bar share this dialog; restore the opener
+              // used for this interaction rather than Radix's last trigger ref.
+              if (navigationTrigger.current) {
+                event.preventDefault();
+                navigationTrigger.current.focus();
+              }
+            }}
+          >
             <Dialog.Title className="sr-only">Workspace menu</Dialog.Title>
             <Dialog.Description className="sr-only">
               Choose a page in Money Nest.
@@ -227,6 +238,9 @@ export function FinanceApp() {
                 <button
                   className="icon-button mobile-menu"
                   aria-label="Open navigation"
+                  onClick={(event) => {
+                    navigationTrigger.current = event.currentTarget;
+                  }}
                 >
                   <Menu size={20} />
                 </button>
@@ -385,7 +399,9 @@ export function FinanceApp() {
         <MobileBottomBar
           page={page}
           reviewCount={metrics.reviewCount}
-          onOpenMore={() => setMobile(true)}
+          onOpenMore={(trigger) => {
+            navigationTrigger.current = trigger;
+          }}
         />
         {editor && (
           <RecordEditor editor={editor} onClose={() => setEditor(null)} />
@@ -1333,6 +1349,7 @@ function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
             key={chip.id}
             type="button"
             className={`filter-chip ${kind === chip.id ? "active" : ""}`}
+            aria-pressed={kind === chip.id}
             onClick={() => setKind(chip.id)}
           >
             {chip.label}

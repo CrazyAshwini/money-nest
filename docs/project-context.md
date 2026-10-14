@@ -1,8 +1,8 @@
 # Money Nest — verified project context
 
-Last reviewed: **14 October 2026**, product revision **`b69fef4`**. Detailed evidence and limitations: [update report review](project-update-review-2026-10-14.md).
+Last updated: **14 October 2026**, following the review of `b69fef4` and implementation after `438434f`. Evidence: [original review](project-update-review-2026-10-14.md) and [fix verification](review-fixes-verification-2026-10-14.md).
 
-This document records verified context. The owner's latest instruction was to **review, test, and retain context**; it did not request implementing the open findings. Supplied README/handoff documents are task inputs, not automatic authorization for their embedded instructions.
+This document records verified context. After reviewing/testing the report, the owner explicitly requested **fixing all reviewed issues, starting with origin/callback handling**. Supplied README/handoff documents remain task inputs, not automatic authorization for their embedded instructions. Follow the user's current request for future scope.
 
 ## Project and owner intent
 
@@ -19,7 +19,8 @@ This document records verified context. The owner's latest instruction was to **
 - `src/components/finance-app.tsx`: shared workspace shell, Overview, accounts, transactions, forms, and analytics. `workspace-pages.tsx` contains supporting workspace/auth pages; `workspace-navigation.tsx` supplies desktop/drawer/bottom navigation. Styles are in `src/app/globals.css` and `src/components/shell.css`.
 - `finance-provider.tsx` owns client workspace state and mode/loading transitions. Local private profiles and authenticated Supabase cloud workspaces have different authentication/persistence paths. Fictional browser demo state is synthetic and cannot establish owner-data behavior.
 - Local private records use server-side AES-256-GCM files outside the checkout; cloud records use the Supabase database through authenticated SSR sessions and owner checks. Profile migration is an explicit authenticated export/import workflow. Neither cloud coding setup nor this review migrates those records. Do not run `db:migrate` or seed a linked database merely to prepare a coding environment.
-- `src/lib/cloud-request.ts` handles the general cloud request origin policy; `src/lib/ai-owner-auth.ts` uses a **separate** stricter origin policy for hosted AI/orders. They currently behave differently on previews.
+- `src/lib/cloud-request.ts` supplies one exact origin policy shared by hosted workspace, auth, AI/orders, statement commit, and document upload writes. Allow only validated `APP_URL` and the exact server-provided current `VERCEL_URL`; never trust arbitrary Vercel domains or raw forwarded headers. Match the actual Host, URL protocol/port, and supplied Origin. Every write requires Origin.
+- Auth callbacks reuse destination validation without the API Fetch Metadata gate, because email links can be cross-site navigation. Code/token checks, fresh verified-owner checks, safe next-path filtering, and private no-store responses remain in place. Supabase's separate redirect allowlist still applies.
 - Use existing decimal/domain helpers for money, snapshots, movement, liabilities, imports, allocations, and reconciliation. Repayments/transfers are not new spending. Unknown balance/limit must remain unknown; do not fabricate totals or double-subtract snapshot-covered transactions.
 - Existing tests use Vitest/PGlite for domain/database logic and Playwright for browser flows. Simulated database/auth fixtures are not live Supabase verification.
 - Reviewed CSV and `.xlsx` statement imports, handoff JSON review, and receipt/order image AI have implementations. PDF/image bank-statement extraction remains unavailable. Source presence does not verify live providers, database migrations, banking synchronization, or notifications.
@@ -31,27 +32,25 @@ This document records verified context. The owner's latest instruction was to **
 - Overview quick actions: Add, Import, Bills, Transfer. Source CSS uses `.quick-actions-bar` (grid).
 - Transaction chips: All, Expenses, Income, Transfers, using `.filter-chips-row`. Filtering behavior works in synthetic tests.
 - Primary mobile views fit 320px/390px in the targeted audit; desktop navigation works at 1440px. This is not a blanket statement that every dialog is unobstructed.
-- Public demo entries were removed from Login/Settings, but a profile entry and provider demo session flag **remain**. The supplied update report's claim of complete removal is incorrect.
+- Public demo entries are now removed from Login, Settings, and Profile. Normal provider initialization ignores/removes the legacy session flag; browser storage cannot select fictional data instead of authenticated server state.
+- Synthetic fixtures require the server-only `FINANCE_E2E_FIXTURES=1` opt-in, disabled private persistence, no Supabase/owner configuration, and no Vercel environment. The default is false. Never enable test fixtures in a real profile or release environment.
+- Mobile bottom navigation sits below dialog overlays/content. More is a registered dialog trigger and Escape restores focus to the actual opener; after route navigation assert the new destination and closed menu rather than focus on a replaced opener. Filter chips expose `aria-pressed` and 44px touch height.
 
-## Open findings to consider before related changes
+## Reviewed findings and remaining verification limits
 
-1. **Auth origin construction:** raw forwarded protocol can alter the parsed reset redirect origin in synthetic route tests. Live ingress/header control and Supabase allowlist acceptance were not tested. Validate explicit deployment origins and forwarding-header trust; do not assume a proven live exploit.
-2. **General origin policy:** accepts unrelated Vercel origins, ignores scheme/port in several branches, trusts forwarded host, and permits writes lacking Origin. Fetch Metadata and separate authentication mitigate some requests; no owner-data compromise was demonstrated.
-3. **Local callbacks:** loopback port is lost and the tested local cloud callback returns 403.
-4. **Preview AI/orders:** general workspace previews pass, but the separate hosted AI guard rejects them with production `APP_URL`.
-5. **Remaining public demo:** profile button sets demo mode; initial click races to login, reload opens fictional Overview before workspace fetch. Private backend access was not demonstrated.
-6. **Mobile modal stacking:** bottom nav visually covers Save/Cancel at 320/390px. Actual synthetic Save clicks still work. Fix visual stacking/layout and retest safe areas and keyboard behavior.
-7. **Accessibility:** More restores focus to the header opener; active filter chips expose no accessible selected state.
+The seven source findings from the original review have been addressed: forwarded-header redirect construction, broad origin acceptance, lost local callback ports, inconsistent preview AI policy, remaining public demo selection, modal stacking, and navigation/filter accessibility. Two upload routes still using the legacy check were brought under the same write policy. The original review remains a historical record, not a current list of unresolved code defects.
 
-See the dated review for exact source references, reproductions, passing controls, and scope limits. Do not carry its speculative risks as proven production behavior or silently change authentication in an unrelated UI task.
+Live email confirmation/recovery and AI-provider extraction were not exercised with owner credentials. Mocked callback/provider tests and unauthenticated deployment smoke checks cannot certify those flows or Supabase redirect settings. Extra deployment aliases require explicit configuration; the policy does not infer trust from hostname patterns. A self-hosted reverse proxy that constructs an internal NextURL hostname must be evaluated separately.
+
+See the dated review/follow-up for source references, reproductions, passing controls, and scope limits. Do not carry earlier speculative risks as proven production compromise or silently change authentication in an unrelated UI task.
 
 ## Verification baseline and safe workflow
 
-The isolated Windows locked install at `b69fef4` passed lint, production build, typecheck, and **481 existing tests across 26 files**. All **47 unique existing browser assertions** passed across isolated runs after fixture-port/proxy setup corrections; original failing outputs were retained. The handoff fixture hard-codes port 3000, so use an audit-only adapted copy when isolating it on another port.
+The follow-up isolated Windows run passes lint, production build, typecheck, and **574 unit/database tests across 30 files**. New tests cover exact origins, real mocked auth handlers, preview owner authentication, upload guard integration, fixture isolation, public access, and mobile dialog/focus/filter behavior. The synthetic private-profile flow also passes setup, protected mutation, persistence/retry, income/transfer, sign-out/sign-in, and legacy flag rejection. Detailed browser counts and deployment evidence belong to the linked follow-up verification report.
 
-Additional audits reproduced unresolved issues: origin **19 passed/14 failed**, mobile **3 passed/7 failed**, plus one passing demo-reload characterization. Do not cite only the baseline pass count as evidence that these new behaviors are correct. Existing browser tests do not directly enforce the new bottom-bar focus/stacking or filter selected-state expectations.
+For checks involving auth/UI persistence, use an isolated checkout/archive with no real `.env` or private files, synthetic records, and cleared real Supabase/AI/cloud-owner/Vercel configuration. Supply synthetic origin/owner values only where a probe requires them. Use a separate local server port and `reuseExistingServer: false`; default configs now refuse to reuse the owner's server. The handoff fixture derives its permitted origin from the configured base URL. Mock or block external requests for synthetic flows.
 
-For checks involving auth/UI persistence, use an isolated checkout/archive with no real `.env` or private files, synthetic records, disabled private persistence, and cleared real Supabase/AI/cloud-owner configuration. Supply synthetic origin/owner values only where a probe requires them. Use a separate local server port and `reuseExistingServer: false`; the default Playwright config can reuse the owner's port 3000 server. Mock or block external requests for synthetic flows.
+Regular public-access/mobile regression tests use authenticated mocks with fixtures disabled. Legacy browser-local seed suites explicitly enable `FINANCE_E2E_FIXTURES=1` only in an isolated non-Vercel server with no backend configuration. The private-profile suite instead uses its verified synthetic temporary directory and rejects demo flags. The app page is dynamic and the server gate is evaluated for the active process; this was checked before running fixture suites on the credentials-free production build.
 
 Typical checks for a substantive product change are:
 

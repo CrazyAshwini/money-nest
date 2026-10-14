@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import * as Dialog from "@radix-ui/react-dialog";
 import {
   LayoutDashboard,
   Landmark,
@@ -145,7 +146,7 @@ export function MobileBottomBar({
 }: {
   page: string;
   reviewCount: number;
-  onOpenMore: () => void;
+  onOpenMore: (trigger: HTMLButtonElement) => void;
 }) {
   const items = [
     { href: "/dashboard", id: "dashboard", title: "Home", icon: LayoutDashboard },
@@ -177,18 +178,20 @@ export function MobileBottomBar({
           </Link>
         );
       })}
-      <button
-        type="button"
-        className={`bottom-bar-item ${isMoreActive ? "active" : ""}`}
-        aria-label="More navigation options"
-        onClick={onOpenMore}
-      >
-        <span className="bottom-bar-icon-wrap">
-          <MoreHorizontal size={20} aria-hidden="true" />
-          {reviewCount > 0 && <span className="bottom-bar-badge" aria-label={`${reviewCount} pending items`} />}
-        </span>
-        <span>More</span>
-      </button>
+      <Dialog.Trigger asChild>
+        <button
+          type="button"
+          className={`bottom-bar-item ${isMoreActive ? "active" : ""}`}
+          aria-label="More navigation options"
+          onClick={(event) => onOpenMore(event.currentTarget)}
+        >
+          <span className="bottom-bar-icon-wrap">
+            <MoreHorizontal size={20} aria-hidden="true" />
+            {reviewCount > 0 && <span className="bottom-bar-badge" aria-label={`${reviewCount} pending items`} />}
+          </span>
+          <span>More</span>
+        </button>
+      </Dialog.Trigger>
     </nav>
   );
 }

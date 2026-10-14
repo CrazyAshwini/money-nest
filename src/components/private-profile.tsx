@@ -17,7 +17,6 @@ export function PrivateProfilePage() {
     emailRequired,
     data,
     refresh,
-    enterDemo,
     toast,
   } = useFinance();
   const router = useRouter();
@@ -400,18 +399,6 @@ export function PrivateProfilePage() {
             <ArrowRight size={16} />
           </button>
         </form>
-        <button
-          className="text-link"
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            sessionStorage.setItem("finance-os:mode", "demo");
-            enterDemo();
-            router.push("/dashboard");
-          }}
-        >
-          Try the fictional demo
-        </button>
       </div>
     </main>
   );

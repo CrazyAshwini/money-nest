@@ -39,7 +39,6 @@ type ContextValue = {
   ) => Promise<void>;
   refresh: () => Promise<void>;
   resetDemo: () => void;
-  enterDemo: () => void;
   commitImport: (
     transactions: WorkspaceData["transactions"],
     inputHash: string,
@@ -54,7 +53,13 @@ const localDate = () =>
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-export function FinanceProvider({ children }: { children: React.ReactNode }) {
+export function FinanceProvider({
+  children,
+  allowTestFixtures = false,
+}: {
+  children: React.ReactNode;
+  allowTestFixtures?: boolean;
+}) {
   const [data, setData] = useState<WorkspaceData>(cloneDemoData);
   const currentData = useRef(data);
   const [mode, setMode] = useState<Mode>("loading");
@@ -96,6 +101,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     setMessage("");
   }, []);
   const enterDemo = useCallback(() => {
+    if (!allowTestFixtures) return;
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       const parsed = stored ? JSON.parse(stored) : null;
@@ -116,15 +122,22 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     }
     setMode("demo");
     setProfile(null);
-  }, [replaceData]);
+  }, [allowTestFixtures, replaceData]);
   const refresh = useCallback(async () => {
-    if (
-      sessionStorage.getItem("finance-os:mode") === "demo" &&
-      !window.location.pathname.startsWith("/profile") &&
-      window.location.pathname !== "/login"
-    ) {
-      enterDemo();
-      return;
+    // Browser storage cannot choose an authenticated workspace. Only an explicitly
+    // isolated server permits this legacy flag for synthetic UI regression tests.
+    try {
+      if (!allowTestFixtures) sessionStorage.removeItem("finance-os:mode");
+      else if (
+        sessionStorage.getItem("finance-os:mode") === "demo" &&
+        !window.location.pathname.startsWith("/profile") &&
+        window.location.pathname !== "/login"
+      ) {
+        enterDemo();
+        return;
+      }
+    } catch {
+      // Unavailable browser storage must still fall through to server authentication.
     }
     try {
       const res = await fetch("/api/workspace", { cache: "no-store" });
@@ -176,8 +189,8 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         "error",
       );
     }
-  }, [enterDemo, toast, replaceData]);
-  // Hydration synchronizes external session/browser storage after SSR; it must also support the immediate demo branch.
+  }, [allowTestFixtures, enterDemo, toast, replaceData]);
+  // Hydration loads authenticated server state, or explicitly isolated test fixtures.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
@@ -353,7 +366,6 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         save,
         refresh,
         resetDemo,
-        enterDemo,
         commitImport,
       }}
     >

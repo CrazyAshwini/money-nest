@@ -5,6 +5,7 @@ import {
   privateProfileEnabled,
 } from "./private-profile-store";
 import { privateRequestAllowed } from "./private-request";
+import { cloudRequestAllowed } from "./cloud-request";
 import { createSupabaseServerClient } from "./supabase/server";
 import { cloudOwnerConfigured, isCloudOwner } from "./cloud-owner";
 import { MAX_HOSTED_RECEIPT_BYTES, MAX_RECEIPT_BYTES } from "./receipt-scan";
@@ -20,36 +21,9 @@ export class AIOwnerAuthenticationError extends Error {
   }
 }
 
-/** A hosted scanner trusts only the deployment's explicit canonical origin. */
+/** Hosted AI and workspace APIs share the same exact deployment origin policy. */
 export function cloudAIRequestAllowed(request: NextRequest, write = false) {
-  try {
-    const configured = process.env.APP_URL?.trim();
-    if (!configured) return false;
-    const app = new URL(configured);
-    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(app.hostname);
-    if (
-      (app.protocol !== "https:" && !(loopback && app.protocol === "http:")) ||
-      app.username ||
-      app.password ||
-      app.pathname !== "/" ||
-      app.search ||
-      app.hash ||
-      app.port === "0" ||
-      request.headers.get("host")?.toLowerCase() !== app.host ||
-      request.nextUrl.protocol !== app.protocol ||
-      request.nextUrl.port !== app.port ||
-      (!loopback && request.nextUrl.hostname !== app.hostname)
-    )
-      return false;
-    const origin = request.headers.get("origin");
-    const site = request.headers.get("sec-fetch-site");
-    return (
-      (!site || site === "same-origin" || site === "none") &&
-      (write ? origin === app.origin : origin === null || origin === app.origin)
-    );
-  } catch {
-    return false;
-  }
+  return cloudRequestAllowed(request, write);
 }
 
 /** Authenticate before reading uploads, configuration, or spending AI credits. */

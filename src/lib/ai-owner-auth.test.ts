@@ -69,6 +69,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("FINANCE_PRIVATE_ENABLED", "false");
   vi.stubEnv("APP_URL", "https://money-nest.example");
+  vi.stubEnv("VERCEL_URL", "");
   vi.stubEnv("FINANCE_CLOUD_OWNER_ID", OWNER);
   mocks.client.mockResolvedValue({ auth: { getUser: mocks.getUser } });
   mocks.getUser.mockResolvedValue({
@@ -215,6 +216,18 @@ describe("hosted owner-only receipt AI", () => {
         true,
       ),
     ).toBe(false);
+  });
+
+  it("authenticates the owner on the exact current preview and rejects other Vercel domains before upload", async () => {
+    const origin = "https://money-nest-current.vercel.app";
+    vi.stubEnv("VERCEL_URL", new URL(origin).host);
+    const preview = request("body", { host: new URL(origin).host, origin }, `${origin}/api/ai/receipt`);
+    await expect(authenticateAIOwnerRequest(preview)).resolves.toEqual({ ownerId: OWNER, cloud: true });
+    mocks.client.mockClear();
+    const denied = request("not read", { host: new URL(origin).host, origin: "https://other.vercel.app" }, `${origin}/api/ai/receipt`);
+    expect((await receiptPOST(denied)).status).toBe(403);
+    expect(denied.bodyUsed).toBe(false);
+    expect(mocks.client).not.toHaveBeenCalled();
   });
 
   it("permits same-host settings GET without Origin but never a write without it", async () => {

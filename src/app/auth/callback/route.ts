@@ -45,12 +45,8 @@ function destination(value: string | null) {
 
 export async function GET(request: NextRequest) {
   const origin = cloudApplicationOrigin(request);
-  const host = request.headers.get("host");
-  if (
-    !origin ||
-    request.nextUrl.origin !== origin ||
-    (host && host.toLowerCase() !== new URL(origin).host.toLowerCase())
-  ) {
+  // Email links may be cross-site navigation; validate the destination, not Fetch Metadata.
+  if (!origin) {
     return NextResponse.json(
       { error: "Authentication callback origin is not allowed." },
       {
