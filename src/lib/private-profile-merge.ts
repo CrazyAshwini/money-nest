@@ -18,6 +18,19 @@ const accountKey = (account: WorkspaceData["accounts"][number]) =>
 
 const normalize = (value: string | null | undefined) =>
   (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+
+function transactionReferenceKey(
+  row: WorkspaceData["transactions"][number],
+  accountIds?: Map<string, string>,
+) {
+  const reference = normalize(row.externalReference);
+  if (!reference) return null;
+  return JSON.stringify([
+    reference, row.kind, row.status, row.currency, new Decimal(row.amount).toFixed(2), row.occurredOn,
+    row.fromAccountId ? accountIds?.get(row.fromAccountId) ?? row.fromAccountId : null,
+    row.toAccountId ? accountIds?.get(row.toAccountId) ?? row.toAccountId : null,
+  ]);
+}
 const orderSourceKeys = (row: CommerceData["orders"][number]) => new Set([
   ...(row.sourceFingerprint ? [sourceKey(row.sourceFingerprint, row.candidateId)!] : []),
   ...row.sources.map((source) => sourceKey(source.fingerprint, source.candidateId)!),
@@ -142,6 +155,21 @@ export function preparePrivateProfileMerge(
     const key = sourceKey(identity.sourceSystem, identity.sourceObjectId);
     if (key) existingTransactionsBySource.set(key, identity.recordId);
   }
+  const existingTransactionsByReference = new Map<string, string[]>();
+  for (const row of current.transactions) {
+    const key = transactionReferenceKey(row);
+    if (key) existingTransactionsByReference.set(key, [...(existingTransactionsByReference.get(key) ?? []), row.id]);
+  }
+  const matchTransaction = (row: WorkspaceData["transactions"][number]) => {
+    const key = sourceKey(row.sourceSystem, row.sourceObjectId);
+    const stableId = existingTransactionsById.get(row.id)?.id ??
+      (key ? existingTransactionsBySource.get(key) : undefined);
+    if (stableId) return stableId;
+    const referenceKey = transactionReferenceKey(row, accountIds);
+    const candidates = referenceKey ? existingTransactionsByReference.get(referenceKey) ?? [] : [];
+    if (candidates.length > 1) throw new Error("A payment reference matches multiple cloud transactions. Review these records before merging.");
+    return candidates[0];
+  };
   const orderPaymentAliases = new Map<string, string>();
   const orderIds = new Map<string, string>();
   if (commerce) {
@@ -153,9 +181,7 @@ export function preparePrivateProfileMerge(
       for (const payment of order.payments) {
         const local = localTransactions.get(payment.transactionId);
         if (!local) throw new Error("An order payment is missing from the transfer.");
-        const key = sourceKey(local.sourceSystem, local.sourceObjectId);
-        const existingId = existingTransactionsById.get(local.id)?.id ??
-          (key ? existingTransactionsBySource.get(key) : undefined);
+        const existingId = matchTransaction(local);
         if (existingId && cloudOrder.payments.some((row) => row.transactionId === existingId)) continue;
         const candidates = cloudOrder.payments.flatMap((cloudPayment) => {
           const cloud = existingTransactionsById.get(cloudPayment.transactionId);
@@ -179,8 +205,7 @@ export function preparePrivateProfileMerge(
     if (key && seenIncomingSources.has(key))
       throw new Error("The transfer contains duplicate transaction sources.");
     if (key) seenIncomingSources.add(key);
-    const matchedId = existingTransactionsById.get(row.id)?.id ??
-      (key ? existingTransactionsBySource.get(key) : undefined) ?? orderPaymentAliases.get(row.id);
+    const matchedId = matchTransaction(row) ?? orderPaymentAliases.get(row.id);
     if (matchedId) transactionIds.set(row.id, matchedId);
     else transactionIds.set(row.id, row.id);
   }

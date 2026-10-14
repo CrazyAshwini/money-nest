@@ -137,6 +137,124 @@ describe("private profile merge", () => {
     expect(result.full.transactions).toHaveLength(2);
   });
 
+  it("maps identical referenced transactions across different IDs and source systems while preserving cloud descriptions", () => {
+    const cloud = workspace();
+    cloud.accounts.push(account(id("1")));
+    cloud.transactions.push(transaction(id("2"), id("1"), {
+      externalReference: "BANK-REFERENCE-ONE", sourceSystem: "statement", sourceObjectId: "cloud-row",
+      description: "Cloud purchase description",
+    }));
+    const local = workspace();
+    local.accounts.push(account(id("9")));
+    local.transactions.push(transaction(id("8"), id("9"), {
+      amount: "12.0", externalReference: "BANK-REFERENCE-ONE", sourceSystem: "notion", sourceObjectId: "local-row",
+      description: "Cloud purchase description · Enriched seller",
+    }));
+    const before = structuredClone(cloud);
+
+    const prepared = preparePrivateProfileMerge(cloud, local, owner);
+
+    expect(prepared.delta.transactions).toEqual([]);
+    expect(prepared.transactionIds.get(id("8"))).toBe(id("2"));
+    expect(prepared.full.transactions).toEqual(cloud.transactions);
+    expect(cloud).toEqual(before);
+  });
+
+  it("keeps same-day same-amount purchases with different external references distinct", () => {
+    const cloud = workspace();
+    cloud.accounts.push(account(id("1")));
+    cloud.transactions.push(transaction(id("2"), id("1"), { externalReference: "BANK-REFERENCE-ONE" }));
+    const local = workspace();
+    local.accounts.push(account(id("1")));
+    local.transactions.push(transaction(id("8"), id("1"), { externalReference: "BANK-REFERENCE-TWO" }));
+
+    const prepared = preparePrivateProfileMerge(cloud, local, owner);
+
+    expect(prepared.delta.transactions.map((row) => row.id)).toEqual([id("8")]);
+    expect(prepared.transactionIds.get(id("8"))).toBe(id("8"));
+    expect(prepared.full.transactions).toHaveLength(2);
+  });
+
+  it.each([
+    ["amount", { amount: "13.00" }],
+    ["date", { occurredOn: "2026-10-02" }],
+    ["paying account", { fromAccountId: id("3") }],
+    ["currency", { currency: "USD" }],
+    ["kind", { kind: "income", fromAccountId: null, toAccountId: id("1") }],
+    ["status", { status: "pending_review" }],
+  ] satisfies [string, Partial<Transaction>][])("keeps transactions with the same external reference but different %s distinct", (_field, change) => {
+    const cloud = workspace();
+    cloud.accounts.push(account(id("1")), account(id("3"), "Other account"));
+    cloud.transactions.push(transaction(id("2"), id("1"), { externalReference: "BANK-REFERENCE-ONE" }));
+    const local = workspace();
+    local.accounts.push(...cloud.accounts);
+    local.transactions.push(transaction(id("8"), id("1"), {
+      externalReference: "BANK-REFERENCE-ONE", ...change,
+    }));
+
+    const prepared = preparePrivateProfileMerge(cloud, local, owner);
+
+    expect(prepared.delta.transactions.map((row) => row.id)).toEqual([id("8")]);
+    expect(prepared.transactionIds.get(id("8"))).toBe(id("8"));
+  });
+
+  it("requires review when one referenced transaction matches multiple cloud financial records", () => {
+    const cloud = workspace();
+    cloud.accounts.push(account(id("1")));
+    cloud.transactions.push(
+      transaction(id("2"), id("1"), {
+        externalReference: "BANK-REFERENCE-ONE", sourceSystem: "statement", sourceObjectId: "cloud-one",
+      }),
+      transaction(id("3"), id("1"), {
+        externalReference: "BANK-REFERENCE-ONE", sourceSystem: "statement", sourceObjectId: "cloud-two",
+      }),
+    );
+    const local = workspace();
+    local.accounts.push(account(id("9")));
+    local.transactions.push(transaction(id("8"), id("9"), {
+      externalReference: "BANK-REFERENCE-ONE", sourceSystem: "notion", sourceObjectId: "local-row",
+    }));
+    const before = structuredClone(cloud);
+
+    expect(() => preparePrivateProfileMerge(cloud, local, owner)).toThrow(/review|ambiguous|multiple/i);
+    expect(cloud).toEqual(before);
+  });
+
+  it.each([null, ""])("keeps unreferenced identical financial records distinct (%s)", (externalReference) => {
+    const cloud = workspace();
+    cloud.accounts.push(account(id("1")));
+    cloud.transactions.push(transaction(id("2"), id("1"), { externalReference }));
+    const local = workspace();
+    local.accounts.push(account(id("1")));
+    local.transactions.push(transaction(id("8"), id("1"), { externalReference }));
+
+    const prepared = preparePrivateProfileMerge(cloud, local, owner);
+
+    expect(prepared.delta.transactions.map((row) => row.id)).toEqual([id("8")]);
+  });
+
+  it("remaps a refund's original purchase when that purchase matches by reference and financial fields", () => {
+    const cloud = workspace();
+    cloud.accounts.push(account(id("1")));
+    cloud.transactions.push(transaction(id("2"), id("1"), { externalReference: "BANK-REFERENCE-ONE" }));
+    const local = workspace();
+    local.accounts.push(account(id("9")));
+    local.transactions.push(
+      transaction(id("8"), id("9"), { externalReference: "BANK-REFERENCE-ONE" }),
+      transaction(id("10"), id("9"), {
+        amount: "5.00", kind: "refund", fromAccountId: null, toAccountId: id("9"),
+        occurredOn: "2026-10-02", refundOfTransactionId: id("8"),
+      }),
+    );
+
+    const prepared = preparePrivateProfileMerge(cloud, local, owner);
+
+    expect(prepared.delta.transactions).toHaveLength(1);
+    expect(prepared.delta.transactions[0]).toMatchObject({
+      id: id("10"), refundOfTransactionId: id("2"), toAccountId: id("1"),
+    });
+  });
+
   it("matches the same account by its complete identity and remaps dependent links", () => {
     const cloud = workspace();
     cloud.accounts.push(account(id("1")));
