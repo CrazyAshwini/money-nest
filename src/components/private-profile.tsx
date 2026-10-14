@@ -8,8 +8,6 @@ import {
   Bell,
   Building2,
   ChevronRight,
-  Cloud,
-  Laptop,
   LockKeyhole,
   LogOut,
   Settings,
@@ -26,7 +24,6 @@ export function PrivateProfilePage() {
     profile,
     needsSetup,
     emailRequired,
-    data,
     refresh,
     toast,
   } = useFinance();
@@ -35,11 +32,6 @@ export function PrivateProfilePage() {
   const [busy, setBusy] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState("");
-  const [transferFile, setTransferFile] = useState<File | null>(null);
-  const [transferInfo, setTransferInfo] = useState<{
-    email: string;
-    counts: Record<string, number>;
-  } | null>(null);
   const [transferBusy, setTransferBusy] = useState(false);
 
   useEffect(() => {
@@ -166,70 +158,6 @@ export function PrivateProfilePage() {
     }
   }
 
-  async function importToCloud() {
-    if (!transferFile || transferBusy) return;
-    setTransferBusy(true);
-    setError("");
-    try {
-      const response = await fetch("/api/profile/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: await transferFile.text(),
-      });
-      const result = await response.json();
-      if (!response.ok)
-        throw new Error(result.error || "Your transfer could not be imported.");
-      setTransferFile(null);
-      setTransferInfo(null);
-      await refresh();
-      toast(
-        result.totalAdded > 0
-          ? `Merged ${result.totalAdded} missing records. Existing cloud records were kept.`
-          : "No missing records. Your cloud data already includes this transfer.",
-      );
-    } catch (issue) {
-      setError(issue instanceof Error ? issue.message : "Please try again.");
-    } finally {
-      setTransferBusy(false);
-    }
-  }
-
-  function selectTransferFile(file: File | undefined) {
-    setTransferFile(null);
-    setTransferInfo(null);
-    setError("");
-    if (!file) return;
-    if (file.size > 4_000_000) {
-      setError("Transfer file must be smaller than 4 MB.");
-      return;
-    }
-    void file.text().then((text) => {
-      try {
-        const bundle = JSON.parse(text);
-        if (
-          bundle?.format !== "money-nest-private-export" ||
-          bundle?.version !== 1 ||
-          typeof bundle?.profile?.email !== "string"
-        )
-          throw new Error();
-        if (
-          !profile?.email ||
-          bundle.profile.email.trim().toLowerCase() !== profile.email.trim().toLowerCase()
-        ) {
-          setError("Choose a transfer file for the signed-in cloud email.");
-          return;
-        }
-        const counts: Record<string, number> = {};
-        for (const [key, rows] of Object.entries(bundle.workspace ?? {}))
-          if (Array.isArray(rows)) counts[key] = rows.length;
-        setTransferFile(file);
-        setTransferInfo({ email: bundle.profile.email, counts });
-      } catch {
-        setError("Choose a valid Money Nest transfer file.");
-      }
-    });
-  }
-
   if ((mode === "private" || mode === "cloud") && profile) {
     return (
       <Section title="Your profile" className="profile-panel profile-theme">
@@ -246,23 +174,6 @@ export function PrivateProfilePage() {
             )}
           </div>
           <Badge tone="green">Signed in</Badge>
-        </div>
-        <div className="profile-workspace-card">
-          <span className="profile-workspace-icon" aria-hidden="true">
-            {mode === "cloud" ? <Cloud size={23} /> : <Laptop size={23} />}
-          </span>
-          <div>
-            <span>Your workspace</span>
-            <strong>
-              {mode === "cloud"
-                ? "Connected across devices"
-                : "Private on this computer"}
-            </strong>
-            <p>
-              {data.accounts.filter((a) => a.active).length} accounts ·{" "}
-              {data.transactions.length} transactions
-            </p>
-          </div>
         </div>
         <nav className="profile-shortcuts" aria-label="Profile settings">
           <Link href="/accounts">
@@ -314,48 +225,6 @@ export function PrivateProfilePage() {
               </button>
             </div>
           )}
-          {mode === "cloud" && (
-              <div className="info-banner profile-transfer">
-                <div>
-                  <strong>Merge records from this computer</strong>
-                  <p>
-                    Add records missing from this cloud profile. Existing cloud
-                    records stay unchanged, and your local copy stays on this computer.
-                  </p>
-                </div>
-                <Field label="Money Nest transfer file">
-                  <input
-                    type="file"
-                    accept="application/json,.json"
-                    onChange={(event) =>
-                      selectTransferFile(event.currentTarget.files?.[0])
-                    }
-                  />
-                </Field>
-                {transferInfo && (
-                  <>
-                    <p>
-                      Ready to compare the transfer for <strong>{transferInfo.email}</strong>
-                      {transferInfo.counts.transactions !== undefined && (
-                        <> · {transferInfo.counts.transactions} transactions</>
-                      )}
-                      {transferInfo.counts.accounts !== undefined && (
-                        <> · {transferInfo.counts.accounts} accounts</>
-                      )}.
-                      The app will add only missing records.
-                    </p>
-                    <button
-                      className="button primary"
-                      type="button"
-                      onClick={importToCloud}
-                      disabled={transferBusy}
-                    >
-                      {transferBusy ? "Merging…" : "Merge missing records"}
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
           {error && (
             <p className="error" role="alert">
               {error}
