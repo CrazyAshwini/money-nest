@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { Badge, Field, PasswordField, Section } from "./ui";
-import { HandoffImportPanel } from "./handoff-import-panel";
 import "./profile-theme.css";
 
 export function PrivateProfilePage() {
@@ -355,7 +354,6 @@ export function PrivateProfilePage() {
             </button>
           </div>
         </form>
-        {mode === "cloud" && <HandoffImportPanel />}
       </Section>
     );
   }
