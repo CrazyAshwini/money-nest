@@ -1,8 +1,8 @@
 "use client";
 import { formatMoney } from "@/lib/finance";
 import {
-  AreaChart,
-  Area,
+  BarChart,
+  Bar,
   ResponsiveContainer,
   XAxis,
   YAxis,
@@ -22,7 +22,7 @@ function SpendingTooltip() {
       contentStyle={{
         background: "var(--raised)",
         border: "1px solid var(--border)",
-        borderRadius: 6,
+        borderRadius: 12,
         color: "var(--text)",
         whiteSpace: "normal",
         overflowWrap: "anywhere",
@@ -62,13 +62,14 @@ export default function SpendingChart({
         minWidth={1}
         initialDimension={{ width: 400, height: 185 }}
       >
-        <AreaChart
+        <BarChart
           data={points}
           accessibilityLayer
           aria-label={`Spending by day: ${points.map((p) => `${p.label} ${formatMoney(p.amountText ?? p.amount)}`).join(", ")}`}
-          margin={{ top: 15, right: 8, left: 4, bottom: 0 }}
+          margin={{ top: 18, right: 6, left: 0, bottom: 0 }}
+          barCategoryGap="24%"
         >
-          <CartesianGrid vertical={false} stroke="var(--border)" />
+          <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 5" />
           <XAxis
             dataKey="label"
             tickLine={false}
@@ -85,16 +86,14 @@ export default function SpendingChart({
             tickFormatter={(v) => `₹${v >= 1000 ? `${v / 1000}k` : v}`}
           />
           <SpendingTooltip />
-          <Area
+          <Bar
             dataKey="amount"
-            type="monotone"
-            stroke="var(--blue)"
-            strokeWidth={2}
-            fill="var(--blue)"
-            fillOpacity={0.12}
+            fill="var(--lime)"
+            radius={[5, 5, 0, 0]}
+            maxBarSize={28}
             isAnimationActive={false}
           />
-        </AreaChart>
+        </BarChart>
       </ResponsiveContainer>
       <table className="sr-only">
         <caption>Spending by day</caption>

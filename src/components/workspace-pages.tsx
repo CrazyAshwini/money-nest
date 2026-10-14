@@ -29,6 +29,7 @@ import {
 import { type EditorState } from "./editors";
 import { exportTransactionsCsv } from "@/lib/imports";
 import { formatMoney, formatDate, groupSummary, sumMoney } from "@/lib/finance";
+import "./profile-theme.css";
 
 export { ImportsPage } from "./statement-import";
 export function GroupsPage({
@@ -690,9 +691,8 @@ function LoginStory() {
           One thoughtful space to see it all.
         </p>
         <div className="login-orbit">
-          <div className="orbit-circle" />
           <span className="orbit-card">
-            <ShieldCheck size={25} />
+            <ShieldCheck size={25} aria-hidden="true" />
             <strong>Personal by design.</strong>
             <small>Private to your account.</small>
           </span>
@@ -700,6 +700,21 @@ function LoginStory() {
       </div>
       <small>Built around your finances. And your peace of mind.</small>
     </div>
+  );
+}
+
+function MobileAccessBrand() {
+  return (
+    <Link
+      href="/dashboard"
+      className="brand access-mobile-brand"
+      aria-label="Money Nest home"
+    >
+      <span className="brand-icon" aria-hidden="true">
+        M
+      </span>
+      Money Nest
+    </Link>
   );
 }
 
@@ -772,10 +787,11 @@ export function LoginPage() {
     }
   }
   return (
-    <main className="login">
+    <main className="login access-theme">
       <LoginStory />
       <div className="login-form">
-        <span className="login-icon">
+        <MobileAccessBrand />
+        <span className="login-icon" aria-hidden="true">
           <LockKeyhole size={24} />
         </span>
         <h1>
@@ -935,10 +951,11 @@ export function PasswordRecoveryPage() {
     }
   }
   return (
-    <main className="login">
+    <main className="login access-theme">
       <LoginStory />
       <div className="login-form">
-        <span className="login-icon">
+        <MobileAccessBrand />
+        <span className="login-icon" aria-hidden="true">
           <LockKeyhole size={24} />
         </span>
         <h1>Choose a new cloud password</h1>

@@ -142,7 +142,7 @@ test("dashboard navigation, dated provenance, and responsive KPI layout", async 
   await expect(page.locator(".account-breakdown")).toHaveCount(3);
   await expect(page.locator(".account-breakdown[open]")).toHaveCount(0);
   await expect(page.locator(".dashboard-bills .bill-row")).toHaveCount(3);
-  await expect(page.locator(".recent-activity-row")).toHaveCount(3);
+  await expect(page.locator(".recent-activity-row")).toHaveCount(4);
   await settleDashboard(page);
   await noPageOverflow(page);
   if (isMobile) {
@@ -157,10 +157,16 @@ test("dashboard navigation, dated provenance, and responsive KPI layout", async 
         return { x: rect.x, y: rect.y, width: rect.width };
       }),
     );
-    expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(2);
-    expect(boxes[1].x).toBeGreaterThan(boxes[0].x);
-    expect(boxes[2].y).toBeGreaterThan(boxes[0].y);
+    expect(Math.abs(boxes[0].x - boxes[1].x)).toBeLessThan(2);
+    expect(Math.abs(boxes[0].width - boxes[1].width)).toBeLessThan(2);
+    expect(boxes[1].y).toBeGreaterThan(boxes[0].y);
+    expect(boxes[2].y).toBeGreaterThan(boxes[1].y);
     expect(Math.abs(boxes[2].y - boxes[3].y)).toBeLessThan(2);
+    expect(boxes[3].x).toBeGreaterThan(boxes[2].x);
+    const quickActions = await page.locator(".quick-actions-bar").boundingBox();
+    expect(quickActions).not.toBeNull();
+    expect(quickActions!.y).toBeGreaterThan(boxes[0].y);
+    expect(quickActions!.y).toBeLessThan(boxes[1].y);
     await noPageOverflow(page);
   }
   await page.screenshot({

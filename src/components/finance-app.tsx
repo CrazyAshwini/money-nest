@@ -8,6 +8,7 @@ import { NAV_ITEMS, WorkspaceNavigation, MobileBottomBar } from "./workspace-nav
 import { resolveAppPage } from "@/lib/page-metadata";
 import { LoadingSkeleton } from "./loading-skeleton";
 import "./shell.css";
+import "./fintech-screens.css";
 import Decimal from "decimal.js";
 import {
   Landmark,
@@ -35,6 +36,17 @@ import {
   X,
   Info,
   CircleAlert,
+  Utensils,
+  ShoppingBasket,
+  ShoppingBag,
+  NotebookPen,
+  Car,
+  GraduationCap,
+  House,
+  Zap,
+  HeartPulse,
+  Plane,
+  Clapperboard,
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { PrivateProfilePage } from "./private-profile";
@@ -89,12 +101,12 @@ const SpendingChart = dynamic(() => import("./charts"), {
 
 const kindLabel = (s: string) => s.replaceAll("_", " ");
 const tones = [
-  "#a7b7ee",
-  "#b4d9b5",
-  "#d5b4e5",
-  "#edc298",
-  "#8bc6cf",
-  "#cfb58a",
+  "#e47957",
+  "#159874",
+  "#8d67cc",
+  "#d8a125",
+  "#399bb7",
+  "#6474c5",
 ];
 const categoryColorIndex: Readonly<Record<string, number>> = {
   food: 0,
@@ -124,6 +136,53 @@ const categoryColor = (category: string) => {
     ) % tones.length;
   return tones[index];
 };
+const categoryIcons = {
+  food: Utensils,
+  groceries: ShoppingBasket,
+  shopping: ShoppingBag,
+  stationery: NotebookPen,
+  transport: Car,
+  education: GraduationCap,
+  housing: House,
+  utilities: Zap,
+  subscriptions: CalendarDays,
+  health: HeartPulse,
+  travel: Plane,
+  entertainment: Clapperboard,
+};
+function CategoryIcon({ category, size = 18 }: { category: string; size?: number }) {
+  const key = category.trim().toLowerCase();
+  const Icon = Object.hasOwn(categoryIcons, key)
+    ? categoryIcons[key as keyof typeof categoryIcons]
+    : Wallet;
+  return <Icon size={size} aria-hidden="true" />;
+}
+function TransactionIcon({ transaction }: { transaction: Transaction }) {
+  const direction = transactionDirection(transaction);
+  return direction === "incoming" ? (
+    <ArrowDownLeft size={18} aria-hidden="true" />
+  ) : direction === "between_accounts" ||
+    transaction.kind === "transfer" ||
+    transaction.kind === "bill_payment" ? (
+    <ArrowLeftRight size={18} aria-hidden="true" />
+  ) : direction === "unknown" ? (
+    <Info size={18} aria-hidden="true" />
+  ) : (
+    <CategoryIcon category={transaction.category || "Other"} />
+  );
+}
+function transactionIconColor(transaction: Transaction) {
+  const direction = transactionDirection(transaction);
+  return direction === "incoming"
+    ? "#087f62"
+    : direction === "between_accounts" ||
+        transaction.kind === "transfer" ||
+        transaction.kind === "bill_payment"
+      ? "#6474c5"
+      : direction === "unknown"
+        ? "#697a73"
+        : categoryColor(transaction.category || "Other");
+}
 export function FinanceApp() {
   const {
     mode,
@@ -295,6 +354,11 @@ export function FinanceApp() {
           >
             <div className="page-heading">
               <div>
+                {page === "dashboard" && (
+                  <p className="home-greeting">
+                    Welcome back{profile?.displayName ? `, ${profile.displayName}` : ""}
+                  </p>
+                )}
                 {page !== "dashboard" && (
                   <div className="eyebrow">YOUR MONEY, IN PERSPECTIVE</div>
                 )}
@@ -433,13 +497,51 @@ export function FinanceApp() {
   );
 }
 type Open = (editor: EditorState) => void;
-function Kpis() {
+function QuickActions({ open }: { open: Open }) {
+  return (
+    <div className="quick-actions-bar" aria-label="Quick actions">
+      <button
+        type="button"
+        className="quick-action-btn"
+        onClick={() => open({ type: "transaction", kind: "expense" })}
+      >
+        <span className="quick-action-icon">
+          <Plus size={18} aria-hidden="true" />
+        </span>
+        <span>Add</span>
+      </button>
+      <Link href="/imports" className="quick-action-btn">
+        <span className="quick-action-icon">
+          <Upload size={18} aria-hidden="true" />
+        </span>
+        <span>Import</span>
+      </Link>
+      <Link href="/bills" className="quick-action-btn">
+        <span className="quick-action-icon">
+          <CreditCard size={18} aria-hidden="true" />
+        </span>
+        <span>Bills</span>
+      </Link>
+      <button
+        type="button"
+        className="quick-action-btn"
+        onClick={() => open({ type: "transaction", kind: "transfer" })}
+      >
+        <span className="quick-action-icon">
+          <ArrowLeftRight size={18} aria-hidden="true" />
+        </span>
+        <span>Transfer</span>
+      </button>
+    </div>
+  );
+}
+function Kpis({ open }: { open: Open }) {
   const { data, month, today } = useFinance();
   const m = dashboardMetrics(data, month, today);
   const credit = usageSummary(data, "credit_card", today);
   const payLater = usageSummary(data, "pay_later", today);
   return (
-    <div className="stats-grid">
+    <div className="stats-grid home-kpis">
       <Stat
         title="Total bank balance"
         value={
@@ -451,17 +553,19 @@ function Kpis() {
             : `${m.knownBankCount < m.totalBankCount ? `${m.knownBankCount}/${m.totalBankCount} reported` : "Reported"} · ${m.bankAsOf ? formatDate(m.bankAsOf) : "No snapshots"}`
         }
         icon={Landmark}
-        tone="stat-highlight"
+        tone="stat-highlight balance-hero"
       >
         <AccountBreakdown count={m.totalBankCount} label="account">
           <BankAccountSummary data={data} today={today} />
         </AccountBreakdown>
       </Stat>
+      <QuickActions open={open} />
       <Stat
         title="This month's spending"
         value={formatMoney(m.monthSpending)}
         caption={`${m.expenseCount} posted expenses · ${monthLabel(month)}`}
         icon={ArrowUpRight}
+        tone="spending-kpi"
       />
       <Stat
         title="Credit card usage"
@@ -472,6 +576,7 @@ function Kpis() {
         }
         caption={`${credit.complete ? "Known usage" : "Partial usage"} · ${credit.knownUsageCount}/${credit.count} cards`}
         icon={CreditCard}
+        tone="usage-kpi"
       >
         <CreditUsageSummary summary={credit} kind="credit_card" />
       </Stat>
@@ -484,6 +589,7 @@ function Kpis() {
         }
         caption={`${payLater.complete ? "Known usage" : "Known exposure · partial coverage"} · ${payLater.knownUsageCount}/${payLater.count} providers`}
         icon={Wallet}
+        tone="usage-kpi"
       >
         <CreditUsageSummary summary={payLater} kind="pay_later" />
       </Stat>
@@ -498,44 +604,10 @@ function Dashboard({ open }: { open: Open }) {
   const recent = data.transactions
     .filter((t) => t.occurredOn?.startsWith(month) && t.status !== "voided")
     .sort((a, b) => (b.occurredOn || "").localeCompare(a.occurredOn || ""))
-    .slice(0, 3);
+    .slice(0, 4);
   return (
     <>
-      <Kpis />
-      <div className="quick-actions-bar" aria-label="Quick actions">
-        <button
-          type="button"
-          className="quick-action-btn"
-          onClick={() => open({ type: "transaction", kind: "expense" })}
-        >
-          <span className="quick-action-icon">
-            <Plus size={18} aria-hidden="true" />
-          </span>
-          <span>Add</span>
-        </button>
-        <Link href="/imports" className="quick-action-btn">
-          <span className="quick-action-icon">
-            <Upload size={18} aria-hidden="true" />
-          </span>
-          <span>Import</span>
-        </Link>
-        <Link href="/bills" className="quick-action-btn">
-          <span className="quick-action-icon">
-            <CreditCard size={18} aria-hidden="true" />
-          </span>
-          <span>Bills</span>
-        </Link>
-        <button
-          type="button"
-          className="quick-action-btn"
-          onClick={() => open({ type: "transaction", kind: "transfer" })}
-        >
-          <span className="quick-action-icon">
-            <ArrowLeftRight size={18} aria-hidden="true" />
-          </span>
-          <span>Transfer</span>
-        </button>
-      </div>
+      <Kpis open={open} />
       <div className="dashboard-essential-grid">
         <Section title="Bills to pay" href="/bills" className="dashboard-bills">
           <div className="upcoming-list">
@@ -590,26 +662,24 @@ function RecentActivity({
   const direction = transactionDirection(transaction);
   const incoming = direction === "incoming";
   const outgoing = direction === "outgoing";
-  const Icon = incoming
-    ? ArrowDownLeft
-    : outgoing
-      ? ArrowUpRight
-      : direction === "between_accounts"
-        ? ArrowLeftRight
-        : Info;
   return (
     <button
       className="recent-activity-row"
       aria-label={`Edit ${transaction.description}`}
       onClick={() => open({ type: "transaction", record: transaction })}
     >
-      <span className={`activity-icon ${incoming ? "green-text" : ""}`}>
-        <Icon size={15} />
+      <span
+        className="activity-icon category-icon"
+        style={{ "--category-color": transactionIconColor(transaction) } as React.CSSProperties}
+      >
+        <TransactionIcon transaction={transaction} />
       </span>
       <span className="activity-copy">
         <b title={transaction.description}>{transaction.description}</b>
         <small>
-          {kindLabel(transaction.kind)} ·{" "}
+          {transaction.kind === "expense" && transaction.category
+            ? transaction.category
+            : kindLabel(transaction.kind)} ·{" "}
           {transaction.occurredOn
             ? formatDate(transaction.occurredOn)
             : "Date unconfirmed"}
@@ -824,7 +894,8 @@ function SpendingPanel() {
   return (
     <Section
       title="Monthly spending"
-      subtitle="Small moments. The bigger picture."
+      subtitle="Your posted expenses, day by day."
+      className="analytics-spending-panel"
       action={
         <select
           aria-label="Spending display"
@@ -868,6 +939,7 @@ function CategoryPanel() {
       title="Spending breakdown"
       subtitle="Where your money went."
       href="/analytics"
+      className="analytics-breakdown-panel"
     >
       <div className="category-chart">
         <div
@@ -877,7 +949,7 @@ function CategoryPanel() {
           style={{
             background: categories.length
               ? `conic-gradient(${gradient})`
-              : "#303035",
+              : "var(--border)",
           }}
         >
           <div>
@@ -912,7 +984,7 @@ export function TransactionTable({
     data.accounts.map((account) => [account.id, account]),
   );
   return transactions.length ? (
-    <div className="table-wrap">
+    <div className="table-wrap fintech-ledger">
       <table className="transaction-table">
         <thead>
           <tr>
@@ -963,18 +1035,11 @@ export function TransactionTable({
               <tr key={t.id}>
                 <td>
                   <div className="transaction-description">
-                    <span className={`txn-icon ${incoming ? "green" : ""}`}>
-                      {incoming ? (
-                        <ArrowDownLeft size={17} />
-                      ) : paired ||
-                        t.kind === "transfer" ||
-                        t.kind === "bill_payment" ? (
-                        <ArrowLeftRight size={17} />
-                      ) : direction === "unknown" ? (
-                        <Info size={17} />
-                      ) : (
-                        <ArrowUpRight size={17} />
-                      )}
+                    <span
+                      className="txn-icon category-icon"
+                      style={{ "--category-color": transactionIconColor(t) } as React.CSSProperties}
+                    >
+                      <TransactionIcon transaction={t} />
                     </span>
                     <span>
                       <button className="row-link" onClick={() => onEdit?.(t)}>
@@ -1936,7 +2001,7 @@ function AnalyticsPage() {
   const m = monthlySummary(data, month);
   return (
     <>
-      <div className="three-stats">
+      <div className="three-stats analytics-summary">
         <Stat
           title="Gross expenses"
           value={formatMoney(m.gross)}
@@ -1967,17 +2032,19 @@ function AnalyticsPage() {
           preserved in the ledger.
         </div>
       )}
-      <Section title="Category detail">
-        <div className="record-list">
+      <Section title="Category detail" className="analytics-category-detail">
+        <div className="record-list category-detail-list">
           {spendingByCategory(data, month).map((c) => (
             <div className="record-row" key={c.category}>
               <span
-                className="category-dot"
-                style={{ background: categoryColor(c.category) }}
-              />
-              <strong className="grow">{c.category}</strong>
-              <span className="muted">
-                {c.count} expenses · {c.percentage.toFixed(1)}%
+                className="category-icon"
+                style={{ "--category-color": categoryColor(c.category) } as React.CSSProperties}
+              >
+                <CategoryIcon category={c.category} />
+              </span>
+              <span className="category-detail-copy grow">
+                <strong>{c.category}</strong>
+                <small>{c.count} expenses · {c.percentage.toFixed(1)}%</small>
               </span>
               <strong>{formatMoney(c.amount)}</strong>
             </div>

@@ -1,0 +1,433 @@
+/* Profile and access screens share the workspace's light, emerald palette. */
+.profile-panel.profile-theme {
+  max-width: 760px;
+  padding: 28px;
+  border-radius: 24px;
+}
+
+.profile-theme .profile-identity {
+  flex-wrap: nowrap;
+  gap: 16px;
+  margin: 8px 0 24px;
+}
+
+.profile-theme .profile-identity > div {
+  flex: 1;
+}
+
+.profile-theme .profile-avatar {
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border: 4px solid #e6f4ed;
+  border-radius: 50%;
+  background: #ccebdc;
+  color: #086047;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.profile-theme .profile-identity h2 {
+  color: #182c25;
+  font-size: 21px;
+  line-height: 1.3;
+}
+
+.profile-theme .profile-email {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 5px;
+  color: #65776e;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.profile-theme .profile-email:hover {
+  color: #086047;
+  text-decoration: underline;
+}
+
+.profile-workspace-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 20px;
+  background: linear-gradient(120deg, #07513f, #07835c);
+  color: #fff;
+}
+
+.profile-workspace-card > div {
+  min-width: 0;
+}
+
+.profile-workspace-card span:not(.profile-workspace-icon) {
+  color: #cfecdf;
+  font-size: 12px;
+}
+
+.profile-workspace-card strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+.profile-workspace-card p {
+  margin-top: 8px;
+  color: #d8f1e6;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.profile-workspace-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid #ffffff30;
+  border-radius: 15px;
+  background: #ffffff12;
+}
+
+.profile-shortcuts {
+  margin: 18px 0 24px;
+}
+
+.profile-shortcuts a {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 58px;
+  padding: 14px 4px;
+  border-bottom: 1px solid #e8eeea;
+  color: #30483d;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.profile-shortcuts a > span {
+  flex: 1;
+}
+
+.profile-shortcuts a > svg:first-child {
+  color: #218668;
+}
+
+.profile-shortcuts a > svg:last-child {
+  color: #84978d;
+}
+
+.profile-shortcuts a:hover {
+  color: #08704f;
+  background: #f2f9f5;
+}
+
+.profile-theme .profile-form {
+  max-width: none;
+}
+
+.profile-theme .profile-form h3 {
+  margin-bottom: 18px;
+  color: #20372c;
+  font-size: 15px;
+}
+
+.profile-theme .profile-details {
+  color: #65776e;
+  font-size: 12px;
+  margin-top: 14px;
+}
+
+.profile-theme .info-banner.profile-transfer {
+  margin-top: 22px;
+  border-color: #d9e9df;
+  background: #f2f8f4;
+  color: #315645;
+  border-radius: 16px;
+}
+
+.profile-theme .info-banner.profile-transfer p {
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.profile-theme .profile-actions {
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.profile-theme .profile-actions .button {
+  min-height: 46px;
+  border-radius: 14px;
+  font-size: 13px;
+}
+
+.profile-theme .profile-actions .button:not(.primary) {
+  color: #0b7554;
+  background: #eaf6ef;
+  border-color: #d3e9dd;
+}
+
+.access-theme.login {
+  background: #f8fbf9;
+}
+
+.access-theme .login-story {
+  background: linear-gradient(145deg, #e6f3ed 0%, #d7eee2 65%, #cbe8de 100%);
+  color: #19372a;
+}
+
+.access-theme .login-story > div {
+  margin: 65px 0 30px;
+}
+
+.access-theme .login-story .eyebrow {
+  color: #517b66;
+  font-size: 11px;
+  letter-spacing: 2px;
+}
+
+.access-theme .login-story h2 {
+  color: #143e2d;
+  font-size: clamp(34px, 3.5vw, 52px);
+  line-height: 1.17;
+}
+
+.access-theme .login-story h2 > span {
+  color: #15855c;
+}
+
+.access-theme .login-story p,
+.access-theme .login-story > small {
+  color: #577966;
+}
+
+.access-theme .login-story p {
+  font-size: 15px;
+}
+
+.access-theme .orbit-card {
+  width: min(310px, 100%);
+  padding: 25px;
+  background: #fff9;
+  border: 1px solid #b7d9c8;
+  border-radius: 22px;
+  color: #168061;
+}
+
+.access-theme .orbit-card strong {
+  color: #234b36;
+  font-size: 18px;
+}
+
+.access-theme .orbit-card small {
+  color: #5b7e69;
+  font-size: 12px;
+}
+
+.access-theme .login-form {
+  width: min(500px, 100%);
+  padding: 60px 40px;
+  gap: 22px;
+}
+
+.access-theme .login-icon {
+  width: 54px;
+  height: 54px;
+  border: 0;
+  border-radius: 18px;
+  color: #0c7755;
+  background: #e6f3eb;
+}
+
+.access-theme .login-form h1 {
+  color: #193b2b;
+  font-size: 29px;
+  letter-spacing: -0.8px;
+}
+
+.access-theme .login-form > p {
+  color: #6a7e72;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.access-theme .login-form .field > span,
+.access-theme .private-access-card .field > span {
+  color: #415b4c;
+  font-size: 13px;
+}
+
+.access-theme input {
+  min-height: 50px;
+  border: 1px solid #d4e1d8;
+  border-radius: 14px;
+  background: #fff;
+  color: #233e2e;
+  font-size: 14px;
+}
+
+.access-theme .button.primary {
+  min-height: 50px;
+  padding: 13px 18px;
+  border: 1px solid #077451;
+  border-radius: 16px;
+  color: #fff;
+  background: #087b56;
+  font-size: 14px;
+}
+
+.access-theme .button.primary:hover:not(:disabled) {
+  background: #065f43;
+}
+
+.access-theme .login-form > .text-link {
+  min-height: 44px;
+  margin-top: -12px;
+  font-size: 13px;
+  color: #09704e;
+}
+
+.access-theme .login-form .login-note {
+  text-align: left;
+  color: #617a6a;
+  font-size: 11px;
+}
+
+.access-theme .login-help {
+  font-size: 11px;
+  text-align: left;
+}
+
+.access-theme .access-mobile-brand {
+  display: none;
+}
+
+.private-access.access-theme {
+  background: linear-gradient(155deg, #f3faf6, #e3f3eb);
+  color: #20382a;
+}
+
+.access-theme .private-access-card {
+  max-width: 440px;
+  padding: 32px;
+  border-color: #d9e8dd;
+  border-radius: 26px;
+  background: #fff;
+  box-shadow: 0 16px 48px #0c63400a;
+}
+
+.access-theme .private-access-card h1 {
+  color: #193b2b;
+  font-size: 27px;
+  letter-spacing: -0.7px;
+}
+
+.access-theme .private-access-card > p {
+  color: #6a7e72;
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .profile-panel.profile-theme {
+    padding: 20px;
+    border-radius: 22px;
+  }
+
+  .profile-theme .profile-identity {
+    gap: 12px;
+    margin-top: 0;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .profile-theme .profile-identity > div {
+    flex: 1 1 140px;
+  }
+
+  .profile-theme .profile-identity .badge {
+    margin-left: 76px;
+    margin-top: -6px;
+  }
+
+  .profile-theme .profile-identity h2 {
+    font-size: 20px;
+  }
+
+  .profile-workspace-card {
+    padding: 18px;
+    gap: 12px;
+  }
+
+  .profile-workspace-card strong {
+    font-size: 17px;
+  }
+
+  .profile-theme .profile-actions .button {
+    flex: 1 1 120px;
+  }
+
+  .access-theme .login-form {
+    padding: 28px 24px 36px;
+    width: min(480px, 100%);
+    margin-top: 0;
+    gap: 20px;
+  }
+
+  .access-theme .access-mobile-brand {
+    display: inline-flex;
+    margin-bottom: 22px;
+    padding: 0;
+    font-size: 23px;
+  }
+
+  .access-theme .login-form h1 {
+    font-size: 28px;
+  }
+
+  .access-theme .private-access-card {
+    padding: 26px 22px;
+  }
+}
+
+@media (max-width: 359px) {
+  .profile-panel.profile-theme {
+    padding: 16px;
+  }
+
+  .profile-theme .profile-avatar {
+    width: 54px;
+    height: 54px;
+    font-size: 23px;
+  }
+
+  .profile-theme .profile-identity > div {
+    flex-basis: 128px;
+  }
+
+  .profile-theme .profile-identity .badge {
+    margin-left: 66px;
+  }
+
+  .profile-workspace-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+  }
+
+  .profile-workspace-card {
+    padding: 16px;
+  }
+
+  .profile-workspace-card strong {
+    font-size: 16px;
+  }
+
+  .access-theme .login-form {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
+}

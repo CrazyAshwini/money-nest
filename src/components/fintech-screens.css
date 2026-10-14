@@ -1,0 +1,509 @@
+/* The existing workspace, presented with the light emerald reference hierarchy. */
+.home-content .page-heading .home-greeting {
+  margin: 0 0 7px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.home-content .stats-grid.home-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+.home-content .home-kpis .stat {
+  padding: 20px;
+  border-radius: 22px;
+}
+.home-content .home-kpis .balance-hero {
+  position: relative;
+  isolation: isolate;
+  grid-column: span 2;
+  grid-row: 1 / 3;
+  justify-content: flex-start;
+  overflow: hidden;
+  background: linear-gradient(125deg, #075b49, #008565);
+  border: 1px solid #08785d;
+  color: #fff;
+  box-shadow: 0 12px 30px #065f4614;
+}
+.home-content .balance-hero::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -80px -75px auto auto;
+  width: 265px;
+  height: 265px;
+  border: 40px solid #ffffff06;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.home-content .home-kpis .balance-hero .stat-top,
+.home-content .home-kpis .balance-hero .stat-top svg {
+  color: #d8f1e7;
+  font-size: 14px;
+}
+.home-content .home-kpis .balance-hero > strong {
+  margin: 25px 0 15px;
+  color: #fff;
+  font-size: clamp(30px, 3.1vw, 42px);
+  font-weight: 650;
+  letter-spacing: -1.4px;
+}
+.home-content .balance-hero .stat-bottom {
+  color: #d2ece2;
+  font-size: 12px;
+  line-height: 1.6;
+  max-width: 420px;
+}
+.home-content .balance-hero .account-breakdown {
+  border-color: #ffffff2b;
+  margin-top: 28px;
+}
+.home-content .balance-hero .account-breakdown > summary,
+.home-content .balance-hero .stat-account-identity > span,
+.home-content .balance-hero .stat-account-balance b,
+.home-content .balance-hero .stat-account-empty {
+  color: #fff;
+}
+.home-content .balance-hero .stat-account-row {
+  border-color: #ffffff20;
+}
+.home-content .balance-hero .stat-account-identity small,
+.home-content .balance-hero .stat-account-balance small {
+  color: #d2ece2;
+}
+.home-content .home-kpis .spending-kpi {
+  grid-column: 3 / 5;
+  grid-row: 1;
+  background: #eaf6ef;
+  border-color: #d9ebe0;
+}
+.home-content .home-kpis .usage-kpi {
+  grid-row: 2;
+}
+.home-content .home-kpis .usage-kpi:nth-child(4) {
+  grid-column: 3;
+}
+.home-content .home-kpis .usage-kpi:nth-child(5) {
+  grid-column: 4;
+}
+.home-content .home-kpis .quick-actions-bar {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  margin: 2px 0;
+}
+.home-content .home-kpis .spending-kpi > strong {
+  margin: 12px 0 8px;
+  color: #08684f;
+}
+.home-content .home-kpis .usage-kpi > strong {
+  font-size: 23px;
+  line-height: 1.3;
+  margin: 12px 0 8px;
+}
+.home-content .home-kpis .stat-top {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.home-content .home-kpis .stat-bottom,
+.home-content .home-kpis .usage-level,
+.home-content .home-kpis .stat-limit-total {
+  font-size: 11px;
+  line-height: 1.5;
+}
+.home-kpis .stat-top svg {
+  color: #568b76;
+}
+.home-kpis .account-breakdown > summary {
+  min-height: 44px;
+  font-size: 12px;
+}
+.home-kpis .stat-account-identity > span,
+.home-kpis .stat-account-balance b,
+.home-kpis .stat-account-amount b,
+.home-kpis .stat-limit-total b {
+  font-size: 12px;
+}
+.home-kpis .stat-account-identity small,
+.home-kpis .stat-account-balance small,
+.home-kpis .stat-account-source,
+.home-kpis .stat-account-amount > span {
+  font-size: 11px;
+}
+.home-kpis .usage-status {
+  font-size: 10px;
+  border-radius: 6px;
+}
+.home-kpis .usage-meter {
+  height: 6px;
+  border-radius: 8px;
+}
+.home-content .dashboard-essential-grid {
+  gap: 20px;
+}
+.home-content .dashboard-essential-grid .panel {
+  padding: 22px;
+  border-radius: 22px;
+}
+.home-content .dashboard-essential-grid .section-heading {
+  margin-bottom: 12px;
+}
+.category-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 14px;
+  color: var(--category-color, #087f62);
+  background: color-mix(in srgb, var(--category-color, #087f62), white 89%);
+}
+.activity-icon.category-icon,
+.txn-icon.category-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  color: var(--category-color, #087f62);
+  background: color-mix(in srgb, var(--category-color, #087f62), white 89%);
+}
+.home-content .recent-activity-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) minmax(0, auto);
+  gap: 12px;
+  padding: 15px 0;
+  border-color: var(--border);
+}
+.home-content .activity-copy b {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.home-content .activity-copy small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.home-content .activity-amount {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 650;
+  text-align: right;
+  max-width: 130px;
+}
+.home-content .activity-amount.green-text {
+  color: #087f62;
+}
+.fintech-ledger .transaction-description {
+  align-items: center;
+  gap: 12px;
+}
+.fintech-ledger .transaction-description > span:last-child {
+  min-width: 0;
+}
+.fintech-ledger .row-link {
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.analytics-summary .stat {
+  border-radius: 20px;
+  padding: 20px;
+}
+.analytics-summary .stat:last-child {
+  background: #eaf6ef;
+  border-color: #d9ebe0;
+}
+.analytics-spending-panel .chart-summary strong {
+  font-size: 32px;
+  font-weight: 650;
+  letter-spacing: -1px;
+}
+.analytics-spending-panel .chart-legend i {
+  background: var(--lime);
+}
+.analytics-spending-panel .spending-chart {
+  height: 230px;
+}
+.analytics-breakdown-panel .donut > div {
+  background: var(--panel);
+}
+.category-detail-list .record-row {
+  gap: 14px;
+  padding: 15px 0;
+  align-items: center;
+}
+.category-detail-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.category-detail-copy > strong {
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.category-detail-copy > small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.category-detail-list .record-row > strong {
+  font-size: 14px;
+  max-width: 40%;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+@media (min-width: 761px) {
+  .home-content .quick-actions-bar {
+    display: grid;
+    max-width: 620px;
+  }
+}
+@media (max-width: 1100px) and (min-width: 761px) {
+  .home-content .stats-grid.home-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .home-content .home-kpis .balance-hero,
+  .home-content .home-kpis .spending-kpi {
+    grid-column: span 1;
+    grid-row: 1;
+  }
+  .home-content .home-kpis .usage-kpi:nth-child(4) {
+    grid-column: 1;
+  }
+  .home-content .home-kpis .usage-kpi:nth-child(5) {
+    grid-column: 2;
+  }
+}
+@media (max-width: 760px) {
+  .home-content .stats-grid.home-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .home-content .home-kpis .stat {
+    padding: 16px;
+    border-radius: 20px;
+  }
+  .home-content .home-kpis .balance-hero {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    min-height: 185px;
+    padding: 21px;
+  }
+  .home-content .home-kpis .balance-hero > strong {
+    font-size: 34px;
+    margin: 16px 0 11px;
+  }
+  .home-content .balance-hero .stat-bottom {
+    font-size: 11px;
+  }
+  .home-content .balance-hero .account-breakdown {
+    margin-top: 14px;
+  }
+  .home-content .home-kpis .spending-kpi {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+  .home-content .home-kpis .usage-kpi {
+    grid-row: 4;
+  }
+  .home-content .home-kpis .usage-kpi:nth-child(4) {
+    grid-column: 1;
+  }
+  .home-content .home-kpis .usage-kpi:nth-child(5) {
+    grid-column: 2;
+  }
+  .home-content .home-kpis .quick-actions-bar {
+    grid-row: 2;
+    margin: 0;
+  }
+  .home-content .home-kpis .spending-kpi > strong {
+    font-size: 28px;
+    margin: 8px 0 5px;
+  }
+  .home-content .home-kpis .usage-kpi > strong {
+    font-size: 21px;
+    letter-spacing: -0.5px;
+  }
+  .home-content .home-kpis .stat-top {
+    font-size: 12px;
+    align-items: start;
+  }
+  .home-content .home-kpis .stat-top svg {
+    width: 16px;
+    flex-shrink: 0;
+  }
+  .home-content .home-kpis .stat-bottom {
+    font-size: 11px;
+  }
+  .home-content .dashboard-essential-grid .panel {
+    padding: 18px;
+  }
+  .home-content .dashboard-activity {
+    order: -1;
+  }
+  .home-content .recent-activity-row {
+    gap: 10px;
+  }
+  .home-content .activity-copy b,
+  .home-content .activity-amount {
+    font-size: 13px;
+  }
+  .home-content .activity-amount {
+    max-width: 100px;
+  }
+  .fintech-ledger {
+    overflow: visible;
+    margin: 0;
+    width: 100%;
+  }
+  .fintech-ledger .transaction-table,
+  .fintech-ledger .transaction-table tbody {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  .fintech-ledger .transaction-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .fintech-ledger .transaction-table tbody tr {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) minmax(54px, 90px) 44px;
+    gap: 5px 7px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: start;
+  }
+  .fintech-ledger .transaction-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .fintech-ledger .transaction-table td {
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .fintech-ledger .transaction-table td:first-child {
+    grid-column: 1 / 3;
+    grid-row: 1;
+  }
+  .fintech-ledger .transaction-description {
+    gap: 7px;
+    align-items: start;
+  }
+  .fintech-ledger .transaction-table .row-link {
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  .fintech-ledger .transaction-table td small {
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .fintech-ledger .transaction-table td:nth-child(2) {
+    grid-column: 2;
+    grid-row: 3;
+  }
+  .fintech-ledger .category-pill {
+    padding: 0;
+    color: var(--muted);
+    background: transparent;
+    font-size: 11px;
+  }
+  .fintech-ledger .transaction-table td:nth-child(3) {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+  .fintech-ledger .transaction-table td:nth-child(4) {
+    grid-column: 3 / -1;
+    grid-row: 3;
+    text-align: right;
+  }
+  .fintech-ledger .transaction-table td:nth-child(5) {
+    grid-column: 3;
+    grid-row: 1;
+    font-size: 13px;
+    font-weight: 650;
+    color: var(--text);
+  }
+  .fintech-ledger .transaction-table td:nth-child(5).green-text {
+    color: #087f62;
+  }
+  .fintech-ledger .transaction-table td:nth-child(6) {
+    grid-column: 4;
+    grid-row: 1;
+  }
+  .fintech-ledger .transaction-table td:nth-child(6) .icon-button {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+  .analytics-summary.three-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .analytics-summary .stat:last-child {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+  .analytics-summary .stat {
+    padding: 17px 18px;
+  }
+  .analytics-summary .stat > strong {
+    margin: 9px 0;
+    font-size: 24px;
+  }
+  .analytics-summary .stat:last-child > strong {
+    font-size: 30px;
+  }
+  .analytics-spending-panel .chart-summary strong {
+    font-size: 30px;
+  }
+  .analytics-spending-panel .spending-chart {
+    height: 220px;
+  }
+  .category-detail-list .record-row {
+    flex-wrap: nowrap;
+    gap: 11px;
+  }
+  .category-detail-list .record-row > strong {
+    font-size: 13px;
+  }
+}
+@media (max-width: 359px) {
+  .home-content .home-kpis .stat {
+    padding: 13px;
+  }
+  .home-content .home-kpis .balance-hero {
+    padding: 18px;
+  }
+  .home-content .home-kpis .usage-kpi > strong {
+    font-size: 19px;
+  }
+  .fintech-ledger .transaction-table tbody tr {
+    grid-template-columns: 36px minmax(0, 1fr) minmax(50px, 75px) 44px;
+    gap: 5px;
+  }
+  .fintech-ledger .txn-icon.category-icon {
+    width: 36px;
+    height: 38px;
+    flex-basis: 36px;
+  }
+}

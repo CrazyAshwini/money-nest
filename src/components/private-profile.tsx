@@ -3,10 +3,22 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, LockKeyhole, LogOut, UserRound } from "lucide-react";
+import {
+  ArrowRight,
+  Bell,
+  Building2,
+  ChevronRight,
+  Cloud,
+  Laptop,
+  LockKeyhole,
+  LogOut,
+  Settings,
+  UserRound,
+} from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { Badge, Field, PasswordField, Section } from "./ui";
 import { HandoffImportPanel } from "./handoff-import-panel";
+import "./profile-theme.css";
 
 export function PrivateProfilePage() {
   const {
@@ -204,22 +216,57 @@ export function PrivateProfilePage() {
 
   if ((mode === "private" || mode === "cloud") && profile) {
     return (
-      <Section title="Your profile" className="profile-panel">
+      <Section title="Your profile" className="profile-panel profile-theme">
         <div className="profile-identity">
-          <span className="profile-avatar">
+          <span className="profile-avatar" aria-hidden="true">
             {profile.displayName.slice(0, 1).toUpperCase()}
           </span>
           <div>
             <h2>{profile.displayName}</h2>
-            <p>
-              {mode === "cloud"
-                ? "Cloud profile · available on your devices"
-                : "Private profile · saved on this computer"}
-            </p>
+            {profile.email && (
+              <a className="profile-email" href={`mailto:${profile.email}`}>
+                {profile.email}
+              </a>
+            )}
           </div>
           <Badge tone="green">Signed in</Badge>
         </div>
+        <div className="profile-workspace-card">
+          <span className="profile-workspace-icon" aria-hidden="true">
+            {mode === "cloud" ? <Cloud size={23} /> : <Laptop size={23} />}
+          </span>
+          <div>
+            <span>Your workspace</span>
+            <strong>
+              {mode === "cloud"
+                ? "Connected across devices"
+                : "Private on this computer"}
+            </strong>
+            <p>
+              {data.accounts.filter((a) => a.active).length} accounts ·{" "}
+              {data.transactions.length} transactions
+            </p>
+          </div>
+        </div>
+        <nav className="profile-shortcuts" aria-label="Profile settings">
+          <Link href="/accounts">
+            <Building2 size={19} aria-hidden="true" />
+            <span>Linked accounts</span>
+            <ChevronRight size={17} aria-hidden="true" />
+          </Link>
+          <Link href="/notifications">
+            <Bell size={19} aria-hidden="true" />
+            <span>Reminders</span>
+            <ChevronRight size={17} aria-hidden="true" />
+          </Link>
+          <Link href="/settings">
+            <Settings size={19} aria-hidden="true" />
+            <span>Workspace settings</span>
+            <ChevronRight size={17} aria-hidden="true" />
+          </Link>
+        </nav>
         <form onSubmit={submit} className="profile-form">
+          <h3>Personal information</h3>
           <Field label="Profile name">
             <input
               name="displayName"
@@ -229,17 +276,8 @@ export function PrivateProfilePage() {
               required
             />
           </Field>
-          {profile.email && (
-            <div className="field">
-              <span>Email</span>
-              <a className="text-link" href={`mailto:${profile.email}`}>
-                {profile.email}
-              </a>
-            </div>
-          )}
           <p className="profile-details">
-            INR · Asia/Kolkata · {data.accounts.filter((a) => a.active).length}{" "}
-            accounts · {data.transactions.length} transactions
+            Indian rupee (INR) · Asia/Kolkata
           </p>
           {mode === "private" && (
             <div className="info-banner profile-transfer">
@@ -323,7 +361,7 @@ export function PrivateProfilePage() {
   }
 
   return (
-    <main className="private-access">
+    <main className="private-access access-theme">
       <Link href="/dashboard" className="brand" aria-label="Money Nest home">
         <span className="brand-icon" aria-hidden="true">
           M
@@ -331,7 +369,7 @@ export function PrivateProfilePage() {
         Money Nest
       </Link>
       <div className="private-access-card">
-        <span className="login-icon">
+        <span className="login-icon" aria-hidden="true">
           {needsSetup ? <UserRound size={24} /> : <LockKeyhole size={24} />}
         </span>
         <h1>{needsSetup ? "Create your profile" : "Welcome back"}</h1>

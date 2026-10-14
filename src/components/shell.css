@@ -5,7 +5,7 @@
   z-index: 160;
   padding: 12px 18px;
   border-radius: 10px;
-  color: #213b28;
+  color: #ffffff;
   background: var(--lime);
   transform: translateY(-200%);
 }
@@ -55,8 +55,8 @@ a[href^="mailto:"] {
 }
 .toast.error {
   border-color: var(--red);
-  color: #f2c6c3;
-  background: #3a2424;
+  color: var(--red);
+  background: #fdf0ee;
 }
 .toast .icon-button {
   flex-shrink: 0;
@@ -116,8 +116,7 @@ a[href^="mailto:"] {
 @media (min-width: 761px) {
   .navigation-overlay,
   .navigation-drawer,
-  .mobile-bottom-bar,
-  .quick-actions-bar {
+  .mobile-bottom-bar {
     display: none !important;
   }
 }
@@ -151,13 +150,13 @@ a[href^="mailto:"] {
   right: 0;
   height: calc(58px + env(safe-area-inset-bottom, 0px));
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  background: var(--sidebar, #151517);
-  border-top: 1px solid var(--border, #ffffff18);
+  background: var(--sidebar);
+  border-top: 1px solid var(--border);
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   align-items: center;
   z-index: 90;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 -4px 20px #143b2410;
 }
 
 .bottom-bar-item {
@@ -167,7 +166,7 @@ a[href^="mailto:"] {
   justify-content: center;
   gap: 3px;
   height: 54px;
-  color: var(--muted, #a1a1aa);
+  color: var(--muted);
   text-decoration: none;
   font-size: 11px;
   font-weight: 500;
@@ -182,11 +181,11 @@ a[href^="mailto:"] {
 
 .bottom-bar-item:hover,
 .bottom-bar-item:focus-visible {
-  color: var(--text, #f0f0f2);
+  color: var(--text);
 }
 
 .bottom-bar-item.active {
-  color: #34d399;
+  color: var(--lime);
   font-weight: 600;
 }
 
@@ -195,6 +194,12 @@ a[href^="mailto:"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 38px;
+  height: 26px;
+  border-radius: 10px;
+}
+.bottom-bar-item.active .bottom-bar-icon-wrap {
+  background: var(--brand-soft);
 }
 
 .bottom-bar-badge {
@@ -204,7 +209,7 @@ a[href^="mailto:"] {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--amber, #e8c18b);
+  background: var(--amber);
 }
 
 .quick-actions-bar {
@@ -221,11 +226,11 @@ a[href^="mailto:"] {
   justify-content: center;
   gap: 6px;
   padding: 12px 6px;
-  background: var(--panel, #1b1b1f);
-  border: 1px solid var(--border, #ffffff18);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 14px;
-  color: var(--text, #f0f0f2);
-  font-size: 11px;
+  color: var(--text);
+  font-size: 12px;
   font-weight: 500;
   text-decoration: none;
   cursor: pointer;
@@ -234,8 +239,8 @@ a[href^="mailto:"] {
 }
 
 .quick-action-btn:hover {
-  background: var(--raised, #222226);
-  border-color: #ffffff28;
+  background: var(--raised);
+  border-color: var(--border);
   transform: translateY(-1px);
 }
 
@@ -243,18 +248,18 @@ a[href^="mailto:"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(8, 123, 96, 0.22);
-  color: #34d399;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--brand-soft);
+  color: var(--lime);
 }
 
 .filter-chips-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 12px 0 10px 0;
-  overflow-x: auto;
   padding-bottom: 2px;
   -webkit-overflow-scrolling: touch;
 }
@@ -264,9 +269,9 @@ a[href^="mailto:"] {
   border-radius: 20px;
   font-size: 12px;
   font-weight: 500;
-  background: var(--panel, #1b1b1f);
-  border: 1px solid var(--border, #ffffff18);
-  color: var(--muted, #a1a1aa);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--muted);
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s ease;
@@ -276,14 +281,14 @@ a[href^="mailto:"] {
 }
 
 .filter-chip:hover {
-  color: var(--text, #f0f0f2);
-  border-color: #ffffff28;
+  color: var(--text);
+  border-color: var(--control-border);
 }
 
 .filter-chip.active {
-  background: rgba(8, 123, 96, 0.25);
-  color: #34d399;
-  border-color: #087b60;
+  background: var(--lime);
+  color: #ffffff;
+  border-color: var(--lime);
   font-weight: 600;
 }
 
