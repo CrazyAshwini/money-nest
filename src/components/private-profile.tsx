@@ -36,7 +36,10 @@ export function PrivateProfilePage() {
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState("");
   const [transferFile, setTransferFile] = useState<File | null>(null);
-  const [transferInfo, setTransferInfo] = useState("");
+  const [transferInfo, setTransferInfo] = useState<{
+    email: string;
+    counts: Record<string, number>;
+  } | null>(null);
   const [transferBusy, setTransferBusy] = useState(false);
 
   useEffect(() => {
@@ -177,9 +180,13 @@ export function PrivateProfilePage() {
       if (!response.ok)
         throw new Error(result.error || "Your transfer could not be imported.");
       setTransferFile(null);
-      setTransferInfo("");
+      setTransferInfo(null);
       await refresh();
-      toast("Your profile is now available in the cloud.");
+      toast(
+        result.totalAdded > 0
+          ? `Merged ${result.totalAdded} missing records. Existing cloud records were kept.`
+          : "No missing records. Your cloud data already includes this transfer.",
+      );
     } catch (issue) {
       setError(issue instanceof Error ? issue.message : "Please try again.");
     } finally {
@@ -189,7 +196,7 @@ export function PrivateProfilePage() {
 
   function selectTransferFile(file: File | undefined) {
     setTransferFile(null);
-    setTransferInfo("");
+    setTransferInfo(null);
     setError("");
     if (!file) return;
     if (file.size > 4_000_000) {
@@ -205,8 +212,18 @@ export function PrivateProfilePage() {
           typeof bundle?.profile?.email !== "string"
         )
           throw new Error();
+        if (
+          !profile?.email ||
+          bundle.profile.email.trim().toLowerCase() !== profile.email.trim().toLowerCase()
+        ) {
+          setError("Choose a transfer file for the signed-in cloud email.");
+          return;
+        }
+        const counts: Record<string, number> = {};
+        for (const [key, rows] of Object.entries(bundle.workspace ?? {}))
+          if (Array.isArray(rows)) counts[key] = rows.length;
         setTransferFile(file);
-        setTransferInfo(bundle.profile.email);
+        setTransferInfo({ email: bundle.profile.email, counts });
       } catch {
         setError("Choose a valid Money Nest transfer file.");
       }
@@ -297,15 +314,13 @@ export function PrivateProfilePage() {
               </button>
             </div>
           )}
-          {mode === "cloud" &&
-            Object.values(data).every((rows) => rows.length === 0) && (
+          {mode === "cloud" && (
               <div className="info-banner profile-transfer">
                 <div>
-                  <strong>Bring your existing records to the cloud</strong>
+                  <strong>Merge records from this computer</strong>
                   <p>
-                    Choose the transfer file from your computer. It must use the
-                    same email as this account; your local copy stays on that
-                    computer.
+                    Add records missing from this cloud profile. Existing cloud
+                    records stay unchanged, and your local copy stays on this computer.
                   </p>
                 </div>
                 <Field label="Money Nest transfer file">
@@ -320,8 +335,14 @@ export function PrivateProfilePage() {
                 {transferInfo && (
                   <>
                     <p>
-                      Ready to import the local profile for{" "}
-                      <strong>{transferInfo}</strong>.
+                      Ready to compare the transfer for <strong>{transferInfo.email}</strong>
+                      {transferInfo.counts.transactions !== undefined && (
+                        <> · {transferInfo.counts.transactions} transactions</>
+                      )}
+                      {transferInfo.counts.accounts !== undefined && (
+                        <> · {transferInfo.counts.accounts} accounts</>
+                      )}.
+                      The app will add only missing records.
                     </p>
                     <button
                       className="button primary"
@@ -329,7 +350,7 @@ export function PrivateProfilePage() {
                       onClick={importToCloud}
                       disabled={transferBusy}
                     >
-                      {transferBusy ? "Importing…" : "Import records to cloud"}
+                      {transferBusy ? "Merging…" : "Merge missing records"}
                     </button>
                   </>
                 )}

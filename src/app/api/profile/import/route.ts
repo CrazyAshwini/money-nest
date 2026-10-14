@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { commerceDataSchema } from "@/lib/commerce";
@@ -6,6 +5,10 @@ import { cloudUserAllowed } from "@/lib/cloud-owner";
 import { cloudRequestAllowed } from "@/lib/cloud-request";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { readCloudFinanceState } from "@/lib/supabase/commerce-store";
+import {
+  mergePrivateProfileCommerce,
+  preparePrivateProfileMerge,
+} from "@/lib/private-profile-merge";
 import type { WorkspaceData } from "@/lib/types";
 import { validateWorkspaceRecord, workspaceRecordSchemas } from "@/lib/validation";
 
@@ -89,27 +92,44 @@ export async function POST(request: NextRequest) {
   } catch {
     return response({ error: "Your cloud workspace could not be checked. Please retry." }, 503);
   }
-  if (
-    Object.values(current.workspace).some((rows) => rows.length > 0) ||
-    current.commerce.orders.length > 0 ||
-    current.commerce.refunds.length > 0 ||
-    current.commerce.operations.length > 0
-  )
-    return response({ error: "Cloud profile already has data. Import is available only to an empty profile." }, 409);
+  const sourceRows = await supabase
+    .from("finance_source_observations")
+    .select("record_id,source_system,source_object_id")
+    .eq("user_id", user.id)
+    .eq("collection", "transactions");
+  if (sourceRows.error)
+    return response({ error: "Your cloud records could not be compared. Please retry." }, 503);
 
-  const importKey = createHash("sha256").update(JSON.stringify(bundle)).digest("hex");
-  const imported = await supabase.rpc("bootstrap_finance_cloud", {
-    p_workspace: workspace,
-    p_commerce: commerce,
-    p_import_key: importKey,
-  });
-  if (imported.error)
-    return response({ error: "Your transfer could not be saved. Check the file and retry." }, 400);
-  const savedProfile = await supabase.from("profiles").upsert(
-    { user_id: user.id, display_name: bundle.profile.displayName, currency: "INR", timezone: "Asia/Kolkata" },
-    { onConflict: "user_id" },
+  let prepared;
+  try {
+    prepared = preparePrivateProfileMerge(current.workspace, workspace, user.id, (sourceRows.data ?? []).map((row) => ({
+      recordId: row.record_id,
+      sourceSystem: row.source_system,
+      sourceObjectId: row.source_object_id,
+    })));
+    for (const collection of Object.keys(workspaceRecordSchemas) as (keyof WorkspaceData)[])
+      for (const row of prepared.delta[collection])
+        validateWorkspaceRecord(prepared.full, collection, row, user.id);
+  } catch {
+    return response({ error: "The transfer contains duplicate sources or invalid links." }, 400);
+  }
+  const mergedCommerce = mergePrivateProfileCommerce(
+    current.commerce,
+    commerce,
+    user.id,
+    prepared.transactionIds,
   );
-  if (savedProfile.error)
-    return response({ error: "Records were imported. Reload and save your profile name to finish." }, 503);
-  return response({ ok: true, imported: true, counts: Object.fromEntries(Object.entries(workspace).map(([key, rows]) => [key, rows.length])) });
+  const imported = await supabase.rpc("merge_private_profile_cloud", {
+    p_workspace: prepared.delta,
+    p_commerce: mergedCommerce.commerce,
+    p_expected_revision: current.revision,
+  });
+  if (imported.error?.code === "40001")
+    return response({ error: "Your cloud profile changed on another device. Reload and retry the merge." }, 409);
+  if (imported.error)
+    return response({ error: "Your transfer could not be merged. Check the file and retry." }, 400);
+  const result = imported.data as { counts?: Record<string, number>; totalAdded?: number } | null;
+  const counts = { ...(result?.counts ?? {}), ...mergedCommerce.added };
+  const totalAdded = Object.values(counts).reduce((total, count) => total + count, 0);
+  return response({ ok: true, merged: true, counts, totalAdded });
 }

@@ -467,6 +467,61 @@ describe("executed cloud order and profile database", () => {
     ).rejects.toThrow(/cannot be removed/);
   });
 
+  it("merges only missing profile records atomically and never overwrites existing cloud rows", async () => {
+    const owner = await user();
+    const cloud = workspace(owner);
+    const cloudAccount = cloud.accounts[0];
+    const original = {
+      id: crypto.randomUUID(),
+      userId: owner,
+      amount: "20.00",
+      currency: "INR",
+      kind: "expense" as const,
+      status: "posted" as const,
+      occurredOn: "2026-10-01",
+      description: "Cloud transaction",
+      fromAccountId: cloudAccount.id,
+      toAccountId: null,
+    };
+    cloud.transactions.push(original);
+    await bootstrap(cloud);
+
+    const local = workspace(owner);
+    local.accounts = [{ ...cloudAccount, name: "Local edit must not replace cloud" }];
+    local.transactions.push(
+      { ...original, description: "Local edit must not replace cloud" },
+      {
+        ...original,
+        id: crypto.randomUUID(),
+        amount: "5.25",
+        description: "Missing local purchase",
+        sourceSystem: "local-transfer",
+        sourceObjectId: "missing-1",
+      },
+    );
+    const before = await read();
+    const merge = async (revision: string) =>
+      (await db.query<{ result: { counts: Record<string, number>; totalAdded: number } }>(
+        "select merge_private_profile_cloud($1::jsonb,$2::jsonb,$3::bigint) as result",
+        [JSON.stringify(local), JSON.stringify(emptyCommerce()), revision],
+      )).rows[0].result;
+
+    const first = await merge(before.revision);
+    expect(first.counts.accounts).toBe(0);
+    expect(first.counts.transactions).toBe(1);
+    expect(first.totalAdded).toBe(1);
+    const after = await read();
+    expect(after.workspace.accounts[0].name).toBe(cloudAccount.name);
+    expect(after.workspace.transactions.find((row) => row.id === original.id)?.description)
+      .toBe("Cloud transaction");
+    expect(after.workspace.transactions).toHaveLength(2);
+
+    const repeated = await merge(after.revision);
+    expect(repeated.totalAdded).toBe(0);
+    await expect(merge(before.revision)).rejects.toMatchObject({ code: "40001" });
+    expect((await read()).workspace.transactions).toHaveLength(2);
+  });
+
   it("isolates cloud state and prohibits foreign-owner bootstrap or commerce writes", async () => {
     const first = await user();
     const data = workspace(first);
