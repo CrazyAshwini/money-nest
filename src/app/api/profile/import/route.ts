@@ -101,24 +101,26 @@ export async function POST(request: NextRequest) {
     return response({ error: "Your cloud records could not be compared. Please retry." }, 503);
 
   let prepared;
+  let mergedCommerce;
   try {
     prepared = preparePrivateProfileMerge(current.workspace, workspace, user.id, (sourceRows.data ?? []).map((row) => ({
       recordId: row.record_id,
       sourceSystem: row.source_system,
       sourceObjectId: row.source_object_id,
-    })));
+    })), { current: current.commerce, incoming: commerce });
     for (const collection of Object.keys(workspaceRecordSchemas) as (keyof WorkspaceData)[])
       for (const row of prepared.delta[collection])
         validateWorkspaceRecord(prepared.full, collection, row, user.id);
+    mergedCommerce = mergePrivateProfileCommerce(
+      current.commerce,
+      commerce,
+      user.id,
+      prepared.transactionIds,
+      prepared.accountIds,
+    );
   } catch {
-    return response({ error: "The transfer contains duplicate sources or invalid links." }, 400);
+    return response({ error: "The transfer contains duplicate sources, invalid links, or conflicting order payments. Review these records before merging." }, 400);
   }
-  const mergedCommerce = mergePrivateProfileCommerce(
-    current.commerce,
-    commerce,
-    user.id,
-    prepared.transactionIds,
-  );
   const imported = await supabase.rpc("merge_private_profile_cloud", {
     p_workspace: prepared.delta,
     p_commerce: mergedCommerce.commerce,

@@ -1,4 +1,5 @@
 import type { CommerceData } from "./commerce";
+import Decimal from "decimal.js";
 import type { WorkspaceData } from "./types";
 
 type SourceIdentity = {
@@ -14,6 +15,67 @@ const accountKey = (account: WorkspaceData["accounts"][number]) =>
   [account.kind, account.institution, account.maskedSuffix, account.name]
     .map((value) => value.trim().toLocaleLowerCase())
     .join("\u0000");
+
+const normalize = (value: string | null | undefined) =>
+  (value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+const orderSourceKeys = (row: CommerceData["orders"][number]) => new Set([
+  ...(row.sourceFingerprint ? [sourceKey(row.sourceFingerprint, row.candidateId)!] : []),
+  ...row.sources.map((source) => sourceKey(source.fingerprint, source.candidateId)!),
+]);
+
+function matchingOrder(
+  known: CommerceData["orders"],
+  incoming: CommerceData["orders"][number],
+) {
+  const exact = known.find((order) => order.id === incoming.id);
+  if (exact) return exact;
+  const keys = orderSourceKeys(incoming);
+  const matches = known.filter((order) =>
+    (incoming.sourceType === "manual" && order.sourceType === "manual" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(incoming.candidateId) &&
+      order.candidateId === incoming.candidateId) ||
+    (incoming.orderReferenceHash && incoming.orderReferenceHash === order.orderReferenceHash &&
+      normalize(incoming.platform) === normalize(order.platform)) ||
+    [...orderSourceKeys(order)].some((key) => keys.has(key)),
+  );
+  if (matches.length > 1) throw new Error("An order matches multiple cloud records. Review its payments before merging.");
+  return matches[0];
+}
+
+function sameRefund(
+  existing: CommerceData["refunds"][number],
+  incoming: CommerceData["refunds"][number],
+) {
+  return existing.orderId === incoming.orderId &&
+    existing.originalTransactionId === incoming.originalTransactionId &&
+    normalize(existing.itemTitle) === normalize(incoming.itemTitle) &&
+    normalize(existing.description) === normalize(incoming.description) &&
+    new Decimal(existing.expectedAmount).eq(incoming.expectedAmount) &&
+    existing.expectedBy === incoming.expectedBy && existing.cancelledOn === incoming.cancelledOn &&
+    existing.route === incoming.route && existing.destinationAccountId === incoming.destinationAccountId;
+}
+
+function remapRefund(
+  source: CommerceData["refunds"][number],
+  ownerId: string,
+  transactionIds: Map<string, string>,
+  accountIds: Map<string, string>,
+  orderIds: Map<string, string>,
+) {
+  return {
+    ...source,
+    userId: ownerId,
+    orderId: source.orderId ? orderIds.get(source.orderId) ?? source.orderId : null,
+    destinationAccountId: source.destinationAccountId
+      ? accountIds.get(source.destinationAccountId) ?? source.destinationAccountId : null,
+    originalTransactionId: source.originalTransactionId
+      ? transactionIds.get(source.originalTransactionId) ?? source.originalTransactionId : null,
+    creditMatches: source.creditMatches.map((match) => ({
+      ...match,
+      transactionId: transactionIds.get(match.transactionId) ?? match.transactionId,
+    })),
+  };
+}
 
 function remap<T extends Record<string, unknown>>(
   record: T,
@@ -34,6 +96,7 @@ export function preparePrivateProfileMerge(
   incoming: WorkspaceData,
   ownerId: string,
   sourceIdentities: SourceIdentity[] = [],
+  commerce?: { current: CommerceData; incoming: CommerceData },
 ) {
   const full = structuredClone(current);
   const delta = Object.fromEntries(
@@ -79,15 +142,78 @@ export function preparePrivateProfileMerge(
     const key = sourceKey(identity.sourceSystem, identity.sourceObjectId);
     if (key) existingTransactionsBySource.set(key, identity.recordId);
   }
+  const orderPaymentAliases = new Map<string, string>();
+  const orderIds = new Map<string, string>();
+  if (commerce) {
+    const localTransactions = new Map(incoming.transactions.map((row) => [row.id, row]));
+    for (const order of commerce.incoming.orders) {
+      const cloudOrder = matchingOrder(commerce.current.orders, order);
+      orderIds.set(order.id, cloudOrder?.id ?? order.id);
+      if (!cloudOrder) continue;
+      for (const payment of order.payments) {
+        const local = localTransactions.get(payment.transactionId);
+        if (!local) throw new Error("An order payment is missing from the transfer.");
+        const key = sourceKey(local.sourceSystem, local.sourceObjectId);
+        const existingId = existingTransactionsById.get(local.id)?.id ??
+          (key ? existingTransactionsBySource.get(key) : undefined);
+        if (existingId && cloudOrder.payments.some((row) => row.transactionId === existingId)) continue;
+        const candidates = cloudOrder.payments.flatMap((cloudPayment) => {
+          const cloud = existingTransactionsById.get(cloudPayment.transactionId);
+          return cloud && new Decimal(payment.amount).eq(cloudPayment.amount) &&
+            new Decimal(local.amount).eq(cloud.amount) &&
+            local.currency === cloud.currency && local.kind === cloud.kind &&
+            local.status === cloud.status && local.occurredOn === cloud.occurredOn &&
+            (local.fromAccountId ? accountIds.get(local.fromAccountId) ?? local.fromAccountId : null) === cloud.fromAccountId &&
+            (local.toAccountId ? accountIds.get(local.toAccountId) ?? local.toAccountId : null) === cloud.toAccountId
+            ? [cloud.id] : [];
+        });
+        if (candidates.length !== 1 || (existingId && existingId !== candidates[0]))
+          throw new Error("An existing order has different payment records. Review it before merging.");
+        orderPaymentAliases.set(local.id, candidates[0]);
+      }
+    }
+  }
   const seenIncomingSources = new Set<string>();
   for (const row of incoming.transactions) {
     const key = sourceKey(row.sourceSystem, row.sourceObjectId);
     if (key && seenIncomingSources.has(key))
       throw new Error("The transfer contains duplicate transaction sources.");
     if (key) seenIncomingSources.add(key);
-    const matchedId = existingTransactionsById.get(row.id)?.id ?? (key ? existingTransactionsBySource.get(key) : undefined);
+    const matchedId = existingTransactionsById.get(row.id)?.id ??
+      (key ? existingTransactionsBySource.get(key) : undefined) ?? orderPaymentAliases.get(row.id);
     if (matchedId) transactionIds.set(row.id, matchedId);
     else transactionIds.set(row.id, row.id);
+  }
+  if (commerce) {
+    const localTransactions = new Map(incoming.transactions.map((row) => [row.id, row]));
+    for (const source of commerce.incoming.refunds) {
+      const mapped = remapRefund(source, ownerId, transactionIds, accountIds, orderIds);
+      const exact = commerce.current.refunds.find((row) => row.id === mapped.id);
+      const candidates = exact ? [exact] : commerce.current.refunds.filter((row) => sameRefund(row, mapped));
+      if (candidates.length > 1) throw new Error("A refund matches multiple cloud records. Review its credits before merging.");
+      const cloudRefund = candidates[0];
+      if (!cloudRefund) continue;
+      for (const credit of source.creditMatches) {
+        const local = localTransactions.get(credit.transactionId);
+        if (!local) throw new Error("A refund credit is missing from the transfer.");
+        const existingId = transactionIds.get(local.id);
+        if (cloudRefund.creditMatches.some((row) => row.transactionId === existingId)) continue;
+        const matches = cloudRefund.creditMatches.flatMap((cloudMatch) => {
+          const cloud = existingTransactionsById.get(cloudMatch.transactionId);
+          return cloud && new Decimal(credit.amount).eq(cloudMatch.amount) &&
+            new Decimal(local.amount).eq(cloud.amount) &&
+            local.currency === cloud.currency && local.kind === cloud.kind &&
+            local.status === cloud.status && local.occurredOn === cloud.occurredOn &&
+            (local.fromAccountId ? accountIds.get(local.fromAccountId) ?? local.fromAccountId : null) === cloud.fromAccountId &&
+            (local.toAccountId ? accountIds.get(local.toAccountId) ?? local.toAccountId : null) === cloud.toAccountId &&
+            (local.refundOfTransactionId ? transactionIds.get(local.refundOfTransactionId) ?? local.refundOfTransactionId : null) === cloud.refundOfTransactionId
+            ? [cloud.id] : [];
+        });
+        if (matches.length !== 1 || (existingTransactionsById.has(existingId!) && existingId !== matches[0]))
+          throw new Error("An existing refund has different credit records. Review it before merging.");
+        transactionIds.set(local.id, matches[0]);
+      }
+    }
   }
 
   const appendRows = <K extends Exclude<keyof WorkspaceData, "accounts" | "transactions" | "auditEvents">>(
@@ -180,11 +306,15 @@ export function mergePrivateProfileCommerce(
   incoming: CommerceData,
   ownerId: string,
   transactionIds: Map<string, string>,
+  accountIds: Map<string, string> = new Map(),
 ) {
-  const currentOrderIds = new Set(current.orders.map((row) => row.id));
-  const currentOrderFingerprints = new Set(current.orders.flatMap((row) => row.sourceFingerprint ? [row.sourceFingerprint] : []));
+  const orderIds = new Map<string, string>();
+  const knownOrders = [...current.orders];
   const orders = [] as CommerceData["orders"];
   for (const source of incoming.orders) {
+    const matched = matchingOrder(knownOrders, source);
+    orderIds.set(source.id, matched?.id ?? source.id);
+    if (matched) continue;
     const row = {
       ...source,
       userId: ownerId,
@@ -193,26 +323,14 @@ export function mergePrivateProfileCommerce(
         transactionId: transactionIds.get(payment.transactionId) ?? payment.transactionId,
       })),
     };
-    if (currentOrderIds.has(row.id) || (row.sourceFingerprint && currentOrderFingerprints.has(row.sourceFingerprint))) continue;
     orders.push(row);
-    currentOrderIds.add(row.id);
-    if (row.sourceFingerprint) currentOrderFingerprints.add(row.sourceFingerprint);
+    knownOrders.push(row);
   }
   const currentRefundIds = new Set(current.refunds.map((row) => row.id));
   const refunds = [] as CommerceData["refunds"];
   for (const source of incoming.refunds) {
-    const row = {
-      ...source,
-      userId: ownerId,
-      originalTransactionId: source.originalTransactionId
-        ? transactionIds.get(source.originalTransactionId) ?? source.originalTransactionId
-        : null,
-      creditMatches: source.creditMatches.map((match) => ({
-        ...match,
-        transactionId: transactionIds.get(match.transactionId) ?? match.transactionId,
-      })),
-    };
-    if (currentRefundIds.has(row.id)) continue;
+    const row = remapRefund(source, ownerId, transactionIds, accountIds, orderIds);
+    if (currentRefundIds.has(row.id) || [...current.refunds, ...refunds].some((existing) => sameRefund(existing, row))) continue;
     currentRefundIds.add(row.id);
     refunds.push(row);
   }
