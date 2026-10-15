@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Smiling panda hugging a green money bag">
+  <title>MoneyNest panda mascot</title>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 85c-8-8-9-16-7-24M10 68c-6-5-8-10-6-17M13 70c9-4 12-11 13-19" stroke="#78A94E" stroke-width="5"/>
+    <path d="M11 83c-9-1-13-6-12-12 8 0 13 4 12 12ZM8 66c-9-3-11-8-9-14 8 2 12 7 9 14ZM21 58c-2-8 1-13 7-17 3 8 1 13-7 17Z" fill="#7DAF59" stroke="none"/>
+    <ellipse cx="60" cy="113" rx="50" ry="7" fill="#E7E8D8" stroke="none" opacity=".65"/>
+    <ellipse cx="51" cy="86" rx="41" ry="33" fill="#263139" stroke="none"/>
+    <circle cx="32" cy="21" r="14" fill="#263139" stroke="none"/>
+    <circle cx="83" cy="17" r="14" fill="#263139" stroke="none"/>
+    <ellipse cx="54" cy="48" rx="45" ry="37" transform="rotate(-13 54 48)" fill="#263139" stroke="none"/>
+    <ellipse cx="56" cy="46" rx="41" ry="33" transform="rotate(-13 56 46)" fill="#FFFDF5" stroke="none"/>
+    <ellipse cx="35" cy="48" rx="13" ry="17" transform="rotate(23 35 48)" fill="#253039" stroke="none"/>
+    <ellipse cx="74" cy="38" rx="13" ry="17" transform="rotate(-18 74 38)" fill="#253039" stroke="none"/>
+    <path d="M29 47q5-7 11-1M68 37q6-7 11-1" stroke="#FFFFFF" stroke-width="3.1"/>
+    <path d="M49 55q5-5 10 0q-3 5-6 4Z" fill="#263139" stroke="none"/>
+    <path d="M53 59q-2 8-8 5M53 59q3 7 9 3" stroke="#263139" stroke-width="2.7"/>
+    <path d="M65 65l-5-10 17-4 10 13" fill="#97BB64" stroke="none"/>
+    <path d="M73 53q-7-9-4-17c6 4 9 10 7 17M76 53q6-11 14-9c-1 8-7 12-14 12M79 54q10-5 15 0-4 7-14 6" fill="#A5CB70" stroke="none"/>
+    <path d="M68 60c-19 8-24 39-10 50 10 8 39 9 49-2 10-13-2-42-20-49-7 5-13 5-19 1Z" fill="#A5CA76" stroke="#6A964B" stroke-width="1.7"/>
+    <path d="M63 66q16 3 29-1" stroke="#426D38" stroke-width="5.4"/>
+    <path d="M82 81c-10-2-14 2-13 8 1 4 6 5 13 5 6 0 9 4 6 8-3 3-10 4-18 1M80 76l-1 31" stroke="#326341" stroke-width="4.2"/>
+    <path d="M23 66c13 1 25 7 36 14l-3 19c-13-4-27-12-35-22-4-5-3-9 2-11Z" fill="#263139" stroke="none"/>
+    <ellipse cx="28" cy="106" rx="16" ry="13" transform="rotate(-18 28 106)" fill="#263139" stroke="none"/>
+    <ellipse cx="28" cy="108" rx="8" ry="7" fill="#9BA8A3" stroke="none"/>
+    <ellipse cx="23" cy="99" rx="2.2" ry="3.2" fill="#9BA8A3" stroke="none"/>
+    <ellipse cx="29" cy="97" rx="2.2" ry="3.2" fill="#9BA8A3" stroke="none"/>
+    <ellipse cx="35" cy="101" rx="2.2" ry="3.2" fill="#9BA8A3" stroke="none"/>
+    <ellipse cx="108" cy="106" rx="15" ry="12" transform="rotate(20 108 106)" fill="#263139" stroke="none"/>
+    <ellipse cx="109" cy="109" rx="7" ry="6" fill="#A4AEAA" stroke="none"/>
+    <ellipse cx="102" cy="102" rx="2" ry="2.8" fill="#A4AEAA" stroke="none"/>
+    <ellipse cx="109" cy="100" rx="2" ry="2.8" fill="#A4AEAA" stroke="none"/>
+    <ellipse cx="115" cy="103" rx="2" ry="2.8" fill="#A4AEAA" stroke="none"/>
+    <path d="M102 79q9 3 10 11" stroke="#263139" stroke-width="10"/>
+  </g>
+</svg>
