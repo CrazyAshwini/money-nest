@@ -51,9 +51,30 @@ async function noOverflow(page: Page, context: string) {
     client: document.documentElement.clientWidth,
     scroll: document.documentElement.scrollWidth,
   }));
-  expect(widths.scroll, `${context}: page overflow`).toBeLessThanOrEqual(
-    widths.client + 1,
-  );
+  const overflow =
+    widths.scroll > widths.client + 1
+      ? await page.locator("body *").evaluateAll((elements) =>
+          elements
+            .map((element) => ({
+              tag: element.tagName,
+              className: element.className.toString(),
+              parent: element.parentElement?.className.toString(),
+              visibility: getComputedStyle(element).visibility,
+              right: element.getBoundingClientRect().right,
+              width: element.getBoundingClientRect().width,
+            }))
+            .filter(
+              (element) =>
+                element.right > document.documentElement.clientWidth + 1,
+            )
+            .sort((a, b) => b.right - a.right)
+            .slice(0, 8),
+        )
+      : [];
+  expect(
+    widths.scroll,
+    `${context}: page overflow ${JSON.stringify(overflow)}`,
+  ).toBeLessThanOrEqual(widths.client + 1);
 }
 
 test.beforeEach(async ({ page }) => {
@@ -100,7 +121,7 @@ test("mobile menu traps focus, closes with Escape or navigation, and restores th
   page,
 }) => {
   await page.setViewportSize({ width: 360, height: 800 });
-  await page.goto("/dashboard");
+  await page.goto("/accounts");
   await ready(page);
   const trigger = page.locator("button.mobile-menu");
   await expect(
@@ -164,7 +185,7 @@ test("long profile names and email addresses fit the phone drawer and profile", 
       }),
     }),
   );
-  await page.goto("/dashboard");
+  await page.goto("/accounts");
   await ready(page);
   await page
     .getByRole("button", { name: "Open navigation", exact: true })

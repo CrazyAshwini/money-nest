@@ -95,7 +95,10 @@ test("session demo flag cannot override an authenticated server workspace", asyn
   });
   await page.goto("/dashboard");
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", {
+      name: /^Good (morning|afternoon|evening), Synthetic$/,
+      level: 1,
+    }),
   ).toBeVisible();
   await expect(page.locator(".user-card")).toContainText(
     "Synthetic authenticated profile",

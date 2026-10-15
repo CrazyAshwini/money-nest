@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { Badge, Field, PasswordField, Section } from "./ui";
+import { NAV_ITEMS } from "./workspace-navigation";
 import "./profile-theme.css";
 
 export function PrivateProfilePage() {
@@ -244,6 +245,22 @@ export function PrivateProfilePage() {
             </button>
           </div>
         </form>
+        <nav
+          className="profile-workspace-navigation"
+          aria-labelledby="profile-workspace-heading"
+        >
+          <h3 id="profile-workspace-heading">Explore Money Nest</h3>
+          <div className="profile-workspace-links">
+            {NAV_ITEMS.filter(
+              (item) => item.href !== "/orders" || mode === "private",
+            ).map((item) => (
+              <Link key={item.href} href={item.href}>
+                <item.icon size={17} aria-hidden="true" />
+                <span>{item.href === "/dashboard" ? "Home" : item.title}</span>
+              </Link>
+            ))}
+          </div>
+        </nav>
       </Section>
     );
   }

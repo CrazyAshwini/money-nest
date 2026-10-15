@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import * as Dialog from "@radix-ui/react-dialog";
+import { Fragment } from "react";
 import {
   LayoutDashboard,
   Landmark,
@@ -17,6 +17,8 @@ import {
   ShieldCheck,
   ArrowUpRight,
   MoreHorizontal,
+  Plus,
+  UserRound,
 } from "lucide-react";
 import type { UserProfile } from "@/lib/profile-types";
 
@@ -141,58 +143,70 @@ export function WorkspaceNavigation({
 
 export function MobileBottomBar({
   page,
-  reviewCount,
-  onOpenMore,
+  mode,
+  onAdd,
 }: {
   page: string;
-  reviewCount: number;
-  onOpenMore: (trigger: HTMLButtonElement) => void;
+  mode: string;
+  onAdd: () => void;
 }) {
+  const profileHref =
+    mode === "private" || mode === "cloud" ? "/profile" : "/settings";
   const items = [
-    { href: "/dashboard", id: "dashboard", title: "Home", icon: LayoutDashboard },
+    {
+      href: "/dashboard",
+      id: "dashboard",
+      title: "Home",
+      icon: LayoutDashboard,
+    },
     { href: "/accounts", id: "accounts", title: "Accounts", icon: Landmark },
-    { href: "/transactions", id: "transactions", title: "Transactions", icon: ArrowLeftRight },
-    { href: "/analytics", id: "analytics", title: "Analytics", icon: ChartNoAxesCombined },
+    {
+      href: "/analytics",
+      id: "analytics",
+      title: "Analytics",
+      icon: ChartNoAxesCombined,
+    },
+    {
+      href: profileHref,
+      id: profileHref.slice(1),
+      title: "Profile",
+      icon: UserRound,
+    },
   ];
-  const isMoreActive = ![
-    "dashboard",
-    "accounts",
-    "transactions",
-    "analytics",
-  ].includes(page);
 
   return (
     <nav className="mobile-bottom-bar" aria-label="Mobile navigation">
-      {items.map((item) => {
+      {items.map((item, index) => {
         const active = page === item.id;
         const Icon = item.icon;
         return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`bottom-bar-item ${active ? "active" : ""}`}
-            aria-current={active ? "page" : undefined}
-          >
-            <Icon size={20} aria-hidden="true" />
-            <span>{item.title}</span>
-          </Link>
+          <Fragment key={item.href}>
+            {index === 2 && (
+              <button
+                type="button"
+                className="bottom-bar-item bottom-bar-add"
+                aria-label="Add transaction"
+                onClick={onAdd}
+              >
+                <span className="bottom-bar-add-icon">
+                  <Plus size={26} aria-hidden="true" />
+                </span>
+                <span>Add</span>
+              </button>
+            )}
+            <Link
+              href={item.href}
+              className={`bottom-bar-item ${active ? "active" : ""}`}
+              aria-current={active ? "page" : undefined}
+            >
+              <span className="bottom-bar-icon-wrap">
+                <Icon size={20} aria-hidden="true" />
+              </span>
+              <span>{item.title}</span>
+            </Link>
+          </Fragment>
         );
       })}
-      <Dialog.Trigger asChild>
-        <button
-          type="button"
-          className={`bottom-bar-item ${isMoreActive ? "active" : ""}`}
-          aria-label="More navigation options"
-          onClick={(event) => onOpenMore(event.currentTarget)}
-        >
-          <span className="bottom-bar-icon-wrap">
-            <MoreHorizontal size={20} aria-hidden="true" />
-            {reviewCount > 0 && <span className="bottom-bar-badge" aria-label={`${reviewCount} pending items`} />}
-          </span>
-          <span>More</span>
-        </button>
-      </Dialog.Trigger>
     </nav>
   );
 }
-

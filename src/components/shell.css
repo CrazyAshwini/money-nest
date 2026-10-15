@@ -127,7 +127,7 @@ a[href^="mailto:"] {
   .app-main {
     width: 100%;
     min-width: 0;
-    padding-bottom: calc(64px + env(safe-area-inset-bottom, 16px));
+    padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
   }
   .page-footer {
     align-items: flex-start;
@@ -142,18 +142,24 @@ a[href^="mailto:"] {
     padding-top: env(safe-area-inset-top);
   }
 }
+@media (max-width: 360px) {
+  .topbar .breadcrumb > span {
+    display: none;
+  }
+}
 
 .mobile-bottom-bar {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  height: calc(58px + env(safe-area-inset-bottom, 0px));
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  height: calc(76px + env(safe-area-inset-bottom, 0px));
+  padding: 4px max(4px, env(safe-area-inset-right, 0px))
+    env(safe-area-inset-bottom, 0px) max(4px, env(safe-area-inset-left, 0px));
   background: var(--sidebar);
   border-top: 1px solid var(--border);
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   align-items: center;
   z-index: 90;
   box-shadow: 0 -4px 20px #143b2410;
@@ -165,7 +171,7 @@ a[href^="mailto:"] {
   align-items: center;
   justify-content: center;
   gap: 3px;
-  height: 54px;
+  height: 64px;
   color: var(--muted);
   text-decoration: none;
   font-size: 11px;
@@ -182,6 +188,11 @@ a[href^="mailto:"] {
 .bottom-bar-item:hover,
 .bottom-bar-item:focus-visible {
   color: var(--text);
+}
+
+.bottom-bar-item:focus-visible {
+  outline-offset: -2px;
+  border-radius: 12px;
 }
 
 .bottom-bar-item.active {
@@ -202,14 +213,75 @@ a[href^="mailto:"] {
   background: var(--brand-soft);
 }
 
-.bottom-bar-badge {
-  position: absolute;
-  top: -2px;
-  right: -5px;
-  width: 7px;
-  height: 7px;
+.bottom-bar-add {
+  gap: 2px;
+  padding: 0;
+  color: var(--lime);
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.bottom-bar-add-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
   border-radius: 50%;
-  background: var(--amber);
+  color: #ffffff;
+  background: var(--lime);
+  box-shadow: 0 3px 10px #143b2424;
+}
+
+.bottom-bar-add:hover .bottom-bar-add-icon,
+.bottom-bar-add:focus-visible .bottom-bar-add-icon {
+  filter: brightness(1.08);
+}
+
+.bottom-bar-add:active .bottom-bar-add-icon {
+  transform: scale(0.96);
+}
+
+.profile-workspace-navigation {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.profile-workspace-navigation h3 {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.profile-workspace-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+}
+
+.profile-workspace-links a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.profile-workspace-links a > svg {
+  flex-shrink: 0;
+  color: var(--lime);
+}
+
+.profile-workspace-links a:hover {
+  color: var(--lime);
+  background: var(--brand-soft);
 }
 
 .quick-actions-bar {
@@ -291,5 +363,3 @@ a[href^="mailto:"] {
   border-color: var(--lime);
   font-weight: 600;
 }
-
-

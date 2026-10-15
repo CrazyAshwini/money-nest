@@ -148,9 +148,19 @@ function accountFixture(): WorkspaceData {
 }
 
 const kpi = (page: Page, title: string) =>
-  page.locator(".stats-grid .stat").filter({ hasText: title });
-const accountRow = (card: Locator, name: string) =>
-  card.locator(".stat-account-row").filter({ hasText: name });
+  // Radix hides background cards from the accessibility tree while details are open.
+  page.getByRole("button", {
+    name: `${title} details`,
+    exact: true,
+    includeHidden: true,
+  });
+const accountRow = (dialog: Locator, name: string) =>
+  dialog.locator(".financial-details-record").filter({ hasText: name });
+const valueFor = (container: Locator, label: string) =>
+  container
+    .locator(".financial-details-values > div")
+    .filter({ has: container.page().getByText(label, { exact: true }) })
+    .locator("dd");
 
 async function settleDashboard(page: Page) {
   await page.evaluate(async () => {
@@ -161,21 +171,21 @@ async function settleDashboard(page: Page) {
   });
 }
 
-async function expandAccounts(card: Locator) {
-  const breakdown = card.locator(".account-breakdown");
-  await expect(breakdown).not.toHaveAttribute("open", "");
-  await breakdown.locator(":scope > summary").click();
-  await expect(breakdown).toHaveAttribute("open", "");
+async function openDetails(page: Page, title: string, dialogTitle: string) {
+  const card = kpi(page, title);
+  await expect(card).toHaveAttribute("aria-expanded", "false");
+  await card.click();
+  const dialog = page.getByRole("dialog", { name: dialogTitle, exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(card).toHaveAttribute("aria-expanded", "true");
+  return dialog;
 }
 
-async function expandAllAccounts(page: Page) {
-  for (const title of [
-    "Total bank balance",
-    "Credit card usage",
-    "Pay Later usage",
-  ]) {
-    await expandAccounts(kpi(page, title));
-  }
+async function closeDetails(page: Page, dialog: Locator, title: string) {
+  await dialog.getByRole("button", { name: "Close financial details" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(kpi(page, title)).toBeFocused();
+  await expect(kpi(page, title)).toHaveAttribute("aria-expanded", "false");
 }
 
 async function noPageOverflow(page: Page) {
@@ -209,7 +219,7 @@ test.beforeEach(async ({ page }) => {
   );
   await page.goto("/dashboard");
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", { name: "Financial overview", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".demo-strip")).toContainText("Fictional data");
 });
@@ -218,24 +228,20 @@ test.afterEach(async ({ page }) => {
   expect(browserErrors.get(page) ?? []).toEqual([]);
 });
 
-test("compact summary hides account details until expanded and retains every active account", async ({
+test("compact cards open details for every active account and retain account navigation", async ({
   page,
   isMobile,
 }) => {
   await settleDashboard(page);
-  await expect(page.locator(".stats-grid .stat")).toHaveCount(4);
-  await expect(page.locator(".account-breakdown")).toHaveCount(3);
-  await expect(page.locator(".account-breakdown[open]")).toHaveCount(0);
-  await expect(page.locator(".stat-account-row").first()).not.toBeVisible();
-  for (const title of ["Credit card usage", "Pay Later usage"]) {
-    const card = kpi(page, title);
-    await expect(card.locator(".stat-limit-total")).toBeVisible();
+  await expect(page.locator(".financial-summary-card")).toHaveCount(4);
+  await expect(page.locator(".account-breakdown")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".financial-details-record")).toHaveCount(0);
+  for (const title of ["Credit cards", "Pay Later"]) {
     await expect(
-      card.locator(".stat-credit-summary > .usage-level"),
+      kpi(page, title).locator(".financial-usage-label"),
     ).toBeVisible();
-    await expect(
-      card.locator(".stat-credit-summary > .usage-meter"),
-    ).toBeVisible();
+    await expect(kpi(page, title).locator(".usage-meter")).toBeVisible();
   }
   await expect(page.locator(".dashboard-bank-grid, .credit-grid")).toHaveCount(
     0,
@@ -248,42 +254,58 @@ test("compact summary hides account details until expanded and retains every act
   await noPageOverflow(page);
   const data = accountFixture();
   const sections = [
-    { card: kpi(page, "Total bank balance"), kind: "bank" },
-    { card: kpi(page, "Credit card usage"), kind: "credit_card" },
-    { card: kpi(page, "Pay Later usage"), kind: "pay_later" },
+    {
+      title: "Total bank balance",
+      heading: "Bank balance details",
+      kind: "bank",
+    },
+    {
+      title: "Credit cards",
+      heading: "Credit card details",
+      kind: "credit_card",
+    },
+    { title: "Pay Later", heading: "Pay Later details", kind: "pay_later" },
   ];
-  for (const { card, kind } of sections) {
-    await expandAccounts(card);
+  for (const { title, heading, kind } of sections) {
+    const dialog = await openDetails(page, title, heading);
     const accounts = data.accounts.filter(
       (account) => account.active && account.kind === kind,
     );
-    await expect(card.locator(".stat-account-row")).toHaveCount(
+    await expect(dialog.locator(".financial-details-record")).toHaveCount(
       accounts.length,
     );
     for (const account of accounts) {
-      const row = accountRow(card, account.name);
+      const row = accountRow(dialog, account.name);
       await expect(row).toBeVisible();
-      await expect(row).toContainText(account.maskedSuffix);
-      await expect(row).toHaveAttribute("href", `/accounts/${account.id}`);
+      await expect(row).toContainText(`••${account.maskedSuffix}`);
+      await expect(
+        row.getByRole("link", { name: "View account", exact: true }),
+      ).toHaveAttribute("href", `/accounts/${account.id}`);
     }
+    await expect(
+      dialog.getByText("QA Inactive Bank", { exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      dialog.getByText("QA Inactive Card", { exact: true }),
+    ).toHaveCount(0);
+    await closeDetails(page, dialog, title);
   }
-  await expect(page.getByText("QA Inactive Bank", { exact: true })).toHaveCount(
-    0,
-  );
-  await expect(page.getByText("QA Inactive Card", { exact: true })).toHaveCount(
-    0,
-  );
 
-  await accountRow(
-    kpi(page, "Total bank balance"),
-    "QA International Salary Account",
-  ).click();
+  const bank = await openDetails(
+    page,
+    "Total bank balance",
+    "Bank balance details",
+  );
+  await accountRow(bank, "QA International Salary Account")
+    .getByRole("link", { name: "View account", exact: true })
+    .click();
   await expect(
     page.getByRole("heading", {
       name: "QA International Salary Account",
       exact: true,
     }),
   ).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.goto("/accounts");
   await expect(
     page.getByRole("heading", { name: "Accounts", exact: true }),
@@ -295,11 +317,16 @@ test("compact summary hides account details until expanded and retains every act
   }
 });
 
-test("credit and Pay Later percentages use the correct bands and preserve unknown coverage", async ({
+test("credit and Pay Later percentages retain bands, capped meters and unknown coverage", async ({
   page,
 }) => {
-  await expandAllAccounts(page);
-  const credit = kpi(page, "Credit card usage");
+  const creditCard = kpi(page, "Credit cards");
+  await expect(creditCard.locator(".usage-meter")).toHaveAttribute(
+    "data-band",
+    "unknown",
+  );
+  await expect(creditCard).toContainText("Overall usage unknown");
+  const credit = await openDetails(page, "Credit cards", "Credit card details");
   const samples = [
     {
       name: "Aster Platinum",
@@ -328,85 +355,84 @@ test("credit and Pay Later percentages use the correct bands and preserve unknow
   ];
   for (const sample of samples) {
     const row = accountRow(credit, sample.name);
-    await expect(row).toContainText(sample.percentage);
-    await expect(row).toContainText(/₹10,000(?:\.00)?/);
-    await expect(row.locator(".usage-status")).toHaveAttribute(
-      "data-band",
-      sample.band,
-    );
-    await expect(row.locator(".usage-status")).toContainText(sample.label);
+    await expect(valueFor(row, "Utilization")).toHaveText(sample.percentage);
+    await expect(valueFor(row, "Credit limit")).toHaveText("₹10,000.00");
     await expect(row.locator(".usage-meter")).toHaveAttribute(
       "data-band",
       sample.band,
+    );
+    await expect(row.getByRole("meter")).toHaveAttribute(
+      "aria-valuetext",
+      new RegExp(sample.label),
     );
   }
   const actualColors = await Promise.all(
     samples.slice(0, 3).map((sample) =>
       accountRow(credit, sample.name)
-        .locator(".usage-status")
-        .evaluate((badge) => getComputedStyle(badge).color),
+        .locator(".usage-meter > span")
+        .evaluate((bar) => getComputedStyle(bar).backgroundColor),
     ),
   );
   expect(new Set(actualColors).size).toBe(3);
-  for (const sample of samples.slice(0, 3)) {
-    const row = accountRow(credit, sample.name);
-    const badgeColor = await row
-      .locator(".usage-status")
-      .evaluate((badge) => getComputedStyle(badge).color);
-    const barColor = await row
-      .locator(".usage-meter > span")
-      .evaluate((bar) => getComputedStyle(bar).backgroundColor);
-    expect(barColor).toBe(badgeColor);
-  }
-  const overLimitMeter = accountRow(credit, "QA Over Limit Card").locator(
-    ".usage-meter > span",
+  const overLimitMeter = accountRow(credit, "QA Over Limit Card").getByRole(
+    "meter",
   );
-  await expect(overLimitMeter).toHaveAttribute("style", /width:\s*100%/);
-  await expect(
-    accountRow(credit, "QA Over Limit Card").getByRole("meter"),
-  ).toHaveAttribute("aria-valuetext", /125% used/);
+  await expect(overLimitMeter.locator("span")).toHaveAttribute(
+    "style",
+    /width:\s*100%/,
+  );
+  await expect(overLimitMeter).toHaveAttribute("aria-valuenow", "100");
+  await expect(overLimitMeter).toHaveAttribute("aria-valuetext", /125% used/);
   for (const name of ["QA Missing Limit Card", "QA Unreported Card"]) {
     const row = accountRow(credit, name);
-    await expect(row.locator(".usage-status")).toHaveAttribute(
+    await expect(row.locator(".usage-meter")).toHaveAttribute(
       "data-band",
       "unknown",
     );
+    await expect(valueFor(row, "Utilization")).toHaveText("Unknown");
     await expect(row).not.toContainText(/\b0(?:\.0)?%/);
   }
-  await expect(accountRow(credit, "QA Missing Limit Card")).toContainText(
-    /limit (?:unknown|not set)/i,
+  await expect(
+    valueFor(accountRow(credit, "QA Missing Limit Card"), "Credit limit"),
+  ).toHaveText("Not set");
+  await expect(
+    valueFor(accountRow(credit, "QA Unreported Card"), "Credit limit"),
+  ).toHaveText("₹10,000.00");
+  await expect(valueFor(credit, "Overall utilization")).toHaveText("Unknown");
+  await expect(valueFor(credit, "Available limit from known usage")).toHaveText(
+    "Not available",
   );
-  await expect(accountRow(credit, "QA Unreported Card")).toContainText(
-    /₹10,000(?:\.00)?/,
-  );
-  await expect(credit.locator(".usage-status").first()).toHaveAttribute(
-    "data-band",
-    "unknown",
-  );
-  const payLaterCard = kpi(page, "Pay Later usage");
+  await closeDetails(page, credit, "Credit cards");
+
+  const payLaterCard = kpi(page, "Pay Later");
   await expect(payLaterCard.locator(":scope > strong")).toHaveText(
     "₹10,000.00",
   );
-  await expect(payLaterCard.locator(".stat-limit-total")).toContainText(
-    "₹20,000",
-  );
   await expect(
-    payLaterCard.locator(".stat-credit-summary > .usage-level"),
-  ).toContainText("50% used");
-  await expect(payLaterCard.locator(".usage-status").first()).toHaveAttribute(
+    payLaterCard.locator(".financial-usage-label > span").first(),
+  ).toHaveText("50% used");
+  await expect(payLaterCard.locator(".usage-meter")).toHaveAttribute(
     "data-band",
     "medium",
   );
-  const payLater = accountRow(payLaterCard, "QA Second Pay Later");
-  await expect(payLater).toContainText(/70(?:\.0)?%/);
-  await expect(payLater).toContainText(/₹10,000(?:\.00)?/);
-  await expect(payLater.locator(".usage-status")).toHaveAttribute(
+  const payLater = await openDetails(page, "Pay Later", "Pay Later details");
+  await expect(valueFor(payLater, "Total credit limit")).toContainText(
+    "₹20,000.00",
+  );
+  await expect(
+    valueFor(payLater, "Available limit from known usage"),
+  ).toHaveText("₹10,000.00");
+  const provider = accountRow(payLater, "QA Second Pay Later");
+  await expect(valueFor(provider, "Utilization")).toHaveText(/70(?:\.0)?%/);
+  await expect(valueFor(provider, "Credit limit")).toHaveText("₹10,000.00");
+  await expect(provider.locator(".usage-meter")).toHaveAttribute(
     "data-band",
     "high",
   );
+  await closeDetails(page, payLater, "Pay Later");
 });
 
-test("all account rows remain usable without page overflow on desktop and narrow mobile", async ({
+test("all detail rows scroll into view without horizontal overflow on desktop and narrow mobile", async ({
   page,
   isMobile,
 }, testInfo) => {
@@ -416,30 +442,46 @@ test("all account rows remain usable without page overflow on desktop and narrow
     path: testInfo.outputPath("dashboard-compact.png"),
     fullPage: true,
   });
-  await expandAllAccounts(page);
-  await noPageOverflow(page);
-  if (isMobile) {
-    for (const width of [393, 360]) {
-      await page.setViewportSize({ width, height: 851 });
-      await settleDashboard(page);
+  const widths = isMobile ? [393, 360] : [page.viewportSize()!.width];
+  const sections = [
+    {
+      title: "Total bank balance",
+      heading: "Bank balance details",
+      kind: "bank",
+    },
+    {
+      title: "Credit cards",
+      heading: "Credit card details",
+      kind: "credit_card",
+    },
+    { title: "Pay Later", heading: "Pay Later details", kind: "pay_later" },
+  ];
+  for (const width of widths) {
+    if (isMobile) await page.setViewportSize({ width, height: 851 });
+    await settleDashboard(page);
+    await noPageOverflow(page);
+    for (const { title, heading, kind } of sections) {
+      const dialog = await openDetails(page, title, heading);
+      for (const account of accountFixture().accounts.filter(
+        (account) => account.active && account.kind === kind,
+      )) {
+        const link = accountRow(dialog, account.name).getByRole("link", {
+          name: "View account",
+          exact: true,
+        });
+        await link.scrollIntoViewIfNeeded();
+        await expect(link).toBeInViewport();
+      }
+      const dimensions = await dialog.evaluate((node) => ({
+        client: node.clientWidth,
+        scroll: node.scrollWidth,
+      }));
+      expect(dimensions.scroll).toBeLessThanOrEqual(dimensions.client + 1);
+      await page.screenshot({
+        path: testInfo.outputPath(`${kind}-details-${width}.png`),
+      });
       await noPageOverflow(page);
-      await expect(
-        accountRow(
-          kpi(page, "Total bank balance"),
-          "QA International Salary Account",
-        ),
-      ).toBeVisible();
-      await expect(
-        accountRow(kpi(page, "Credit card usage"), "QA Unreported Card"),
-      ).toBeVisible();
-      await expect(
-        accountRow(kpi(page, "Pay Later usage"), "QA Second Pay Later"),
-      ).toBeVisible();
+      await closeDetails(page, dialog, title);
     }
   }
-  await page.screenshot({
-    path: testInfo.outputPath("account-summary-expanded.png"),
-    fullPage: true,
-  });
-  await noPageOverflow(page);
 });

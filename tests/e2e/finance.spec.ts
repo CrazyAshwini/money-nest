@@ -9,9 +9,10 @@ const BILL_ID = "00000000-0000-4000-8000-000000000201";
 const STORAGE_KEY = "finance-os:fictional-demo:v1";
 const browserErrors = new WeakMap<Page, string[]>();
 const spendingCard = (page: Page) =>
-  page
-    .locator(".stats-grid .stat")
-    .filter({ hasText: "This month's spending" });
+  page.getByRole("button", {
+    name: "This month's spending details",
+    exact: true,
+  });
 async function spending(page: Page): Promise<string> {
   const value = await spendingCard(page).locator(":scope > strong").innerText();
   return new Decimal(value.replace(/[^\d.-]/g, "")).toFixed(2);
@@ -79,10 +80,10 @@ async function addTransaction(
   if (transactionKind !== "expense") await page.goto(returnUrl);
 }
 async function navigate(page: Page, label: string, mobile: boolean) {
-  if (mobile)
-    await page.getByRole("button", { name: "Open navigation" }).click();
   await page
-    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("navigation", {
+      name: mobile ? "Mobile navigation" : "Main navigation",
+    })
     .getByRole("link", { name: label, exact: true })
     .click();
 }
@@ -119,7 +120,7 @@ test.beforeEach(async ({ page }) => {
   );
   await page.goto("/dashboard");
   await expect(
-    page.getByRole("heading", { name: "Overview", exact: true }),
+    page.getByRole("heading", { name: "Financial overview", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".demo-strip")).toContainText("Fictional data");
 });
@@ -134,13 +135,17 @@ test("dashboard navigation, dated provenance, and responsive KPI layout", async 
 }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await expect(page.locator(".stats-grid .stat")).toHaveCount(4);
+  await expect(page.locator(".financial-summary-card")).toHaveCount(4);
   await expect(spendingCard(page)).toContainText("posted expenses");
   await expect(
-    page.locator(".stats-grid .stat").filter({ hasText: "Total bank balance" }),
+    page.getByRole("button", {
+      name: "Total bank balance details",
+      exact: true,
+    }),
   ).toContainText("Reported");
-  await expect(page.locator(".account-breakdown")).toHaveCount(3);
-  await expect(page.locator(".account-breakdown[open]")).toHaveCount(0);
+  await expect(page.locator(".account-breakdown")).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator(".quick-actions-bar")).toHaveCount(0);
   await expect(page.locator(".dashboard-bills .bill-row")).toHaveCount(3);
   await expect(page.locator(".recent-activity-row")).toHaveCount(4);
   await settleDashboard(page);
@@ -163,10 +168,11 @@ test("dashboard navigation, dated provenance, and responsive KPI layout", async 
     expect(boxes[2].y).toBeGreaterThan(boxes[1].y);
     expect(Math.abs(boxes[2].y - boxes[3].y)).toBeLessThan(2);
     expect(boxes[3].x).toBeGreaterThan(boxes[2].x);
-    const quickActions = await page.locator(".quick-actions-bar").boundingBox();
-    expect(quickActions).not.toBeNull();
-    expect(quickActions!.y).toBeGreaterThan(boxes[0].y);
-    expect(quickActions!.y).toBeLessThan(boxes[1].y);
+    await expect(
+      page
+        .getByRole("navigation", { name: "Mobile navigation" })
+        .getByRole("button", { name: "Add transaction", exact: true }),
+    ).toBeVisible();
     await noPageOverflow(page);
   }
   await page.screenshot({
@@ -281,6 +287,27 @@ test("expense creation/edit persists and increases spending exactly once; transf
   await expect.poll(() => spending(page)).toBe(afterEdit);
   await page.reload();
   await expect.poll(() => spending(page)).toBe(afterEdit);
+  const cardTotal = await spendingCard(page)
+    .locator(":scope > strong")
+    .innerText();
+  await spendingCard(page).click();
+  const spendingDialog = page.getByRole("dialog", {
+    name: "Spending details",
+    exact: true,
+  });
+  await expect(
+    spendingDialog.locator(".financial-details-total > strong"),
+  ).toHaveText(cardTotal);
+  await expect(
+    spendingDialog.locator(".financial-details-transactions"),
+  ).toContainText(description);
+  await expect(
+    spendingDialog.locator(".financial-details-transactions"),
+  ).not.toContainText("E2E wallet funding");
+  await spendingDialog
+    .getByRole("button", { name: "Close financial details" })
+    .click();
+  await expect(spendingCard(page)).toBeFocused();
   await noPageOverflow(page);
 });
 
@@ -320,8 +347,7 @@ test("a posted expense after the reported date updates the bank card and dashboa
   );
   const bankTotal = async () => {
     const value = await page
-      .locator(".stats-grid .stat")
-      .filter({ hasText: "Total bank balance" })
+      .getByRole("button", { name: "Total bank balance details", exact: true })
       .locator(":scope > strong")
       .innerText();
     return new Decimal(value.replace(/[^\d.-]/g, "")).toFixed(2);
@@ -343,6 +369,28 @@ test("a posted expense after the reported date updates the bank card and dashboa
   await expect.poll(bankTotal).toBe(expectedTotal);
   await page.reload();
   await expect.poll(bankTotal).toBe(expectedTotal);
+  const bankSummary = page.getByRole("button", {
+    name: "Total bank balance details",
+    exact: true,
+  });
+  await bankSummary.click();
+  const bankDialog = page.getByRole("dialog", {
+    name: "Bank balance details",
+    exact: true,
+  });
+  const bankRow = bankDialog
+    .locator(".financial-details-record")
+    .filter({ hasText: BANK });
+  await expect(
+    bankRow.locator(".financial-details-record-heading > strong"),
+  ).toHaveText("₹899.60");
+  await expect(bankRow).toContainText("Calculated as of");
+  await expect(bankRow).toContainText("9 Oct 2026");
+  await expect(bankRow).toContainText("8 Oct 2026");
+  await bankDialog
+    .getByRole("button", { name: "Close financial details" })
+    .click();
+  await expect(bankSummary).toBeFocused();
   await page.goto("/accounts");
   await expect(accountCard().locator(":scope > strong")).toHaveText("₹899.60");
   await accountCard().click();

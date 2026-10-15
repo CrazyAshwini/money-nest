@@ -1,14 +1,21 @@
 "use client";
 import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import * as Dialog from "@radix-ui/react-dialog";
-import { NAV_ITEMS, WorkspaceNavigation, MobileBottomBar } from "./workspace-navigation";
+import {
+  NAV_ITEMS,
+  WorkspaceNavigation,
+  MobileBottomBar,
+} from "./workspace-navigation";
 import { resolveAppPage } from "@/lib/page-metadata";
 import { LoadingSkeleton } from "./loading-skeleton";
 import "./shell.css";
 import "./fintech-screens.css";
+import "./dashboard.css";
+import { DashboardWelcome } from "./dashboard-welcome";
+import { DashboardFinancialDetails } from "./dashboard-details";
 import Decimal from "decimal.js";
 import {
   Landmark,
@@ -53,9 +60,6 @@ import { PrivateProfilePage } from "./private-profile";
 import { OrdersPage } from "./orders-page";
 import { Section, Stat, Badge, Empty, downloadFile } from "./ui";
 import {
-  AccountBreakdown,
-  BankAccountSummary,
-  CreditUsageSummary,
   formatUsagePercentage,
   UsageMeter,
   UsageStatus,
@@ -150,7 +154,13 @@ const categoryIcons = {
   travel: Plane,
   entertainment: Clapperboard,
 };
-function CategoryIcon({ category, size = 18 }: { category: string; size?: number }) {
+function CategoryIcon({
+  category,
+  size = 18,
+}: {
+  category: string;
+  size?: number;
+}) {
   const key = category.trim().toLowerCase();
   const Icon = Object.hasOwn(categoryIcons, key)
     ? categoryIcons[key as keyof typeof categoryIcons]
@@ -290,26 +300,50 @@ export function FinanceApp() {
             />
           </Dialog.Content>
         </Dialog.Portal>
-        <div className="app-main">
-          <header className="topbar">
-            <div className="breadcrumb">
-              <Dialog.Trigger asChild>
-                <button
-                  className="icon-button mobile-menu"
-                  aria-label="Open navigation"
-                  onClick={(event) => {
-                    navigationTrigger.current = event.currentTarget;
-                  }}
+        <div
+          className={`app-main ${page === "dashboard" ? "dashboard-main" : ""}`}
+        >
+          <header
+            className={`topbar ${page === "dashboard" ? "dashboard-topbar" : ""}`}
+          >
+            {page === "dashboard" ? (
+              <>
+                <Link
+                  href="/dashboard"
+                  className="brand dashboard-mobile-brand"
+                  aria-label="Money Nest home"
                 >
-                  <Menu size={20} />
-                </button>
-              </Dialog.Trigger>
-              <span>Workspace</span>
-              <ChevronRight size={14} />
-              <strong>{active}</strong>
-            </div>
+                  <span className="brand-icon" aria-hidden="true">
+                    M
+                  </span>
+                  <span>Money Nest</span>
+                </Link>
+                <DashboardWelcome />
+              </>
+            ) : (
+              <div className="breadcrumb">
+                <Dialog.Trigger asChild>
+                  <button
+                    className="icon-button mobile-menu"
+                    aria-label="Open navigation"
+                    onClick={(event) => {
+                      navigationTrigger.current = event.currentTarget;
+                    }}
+                  >
+                    <Menu size={20} />
+                  </button>
+                </Dialog.Trigger>
+                <span>Workspace</span>
+                <ChevronRight size={14} />
+                <strong>{active}</strong>
+              </div>
+            )}
             <div className="topbar-right">
-              <Link href="/transactions" className="search-shortcut">
+              <Link
+                href="/transactions"
+                className="search-shortcut"
+                aria-label="Search transactions"
+              >
                 <Search size={16} />
                 <span>Search transactions</span>
               </Link>
@@ -322,18 +356,43 @@ export function FinanceApp() {
                 <Bell size={19} />
                 {metrics.reviewCount > 0 && <i />}
               </Link>
-              <Link
-                href={
-                  mode === "private" || mode === "cloud"
-                    ? "/profile"
-                    : "/settings"
-                }
-                className="avatar mini"
-                aria-label="Your profile"
-              >
-                {profile?.displayName.slice(0, 1).toUpperCase() || "P"}
-              </Link>
+              {page !== "dashboard" && (
+                <Link
+                  href={
+                    mode === "private" || mode === "cloud"
+                      ? "/profile"
+                      : "/settings"
+                  }
+                  className="avatar mini"
+                  aria-label="Your profile"
+                >
+                  {profile?.displayName.slice(0, 1).toUpperCase() || "P"}
+                </Link>
+              )}
+              {page === "dashboard" && (
+                <button
+                  type="button"
+                  className="button primary dashboard-header-add"
+                  onClick={() => open({ type: "transaction" })}
+                >
+                  <Plus size={16} aria-hidden="true" /> Add transaction
+                </button>
+              )}
             </div>
+            {page === "dashboard" && (
+              <div className="dashboard-overview-heading">
+                <h2 id="financial-overview-title">Financial overview</h2>
+                <div className="month-picker">
+                  <CalendarDays size={16} aria-hidden="true" />
+                  <input
+                    aria-label="Selected month"
+                    type="month"
+                    value={month}
+                    onChange={(event) => setMonth(event.target.value || month)}
+                  />
+                </div>
+              </div>
+            )}
           </header>
           {mode === "demo" && (
             <div className="demo-strip">
@@ -352,18 +411,11 @@ export function FinanceApp() {
             tabIndex={-1}
             className={`main-content ${page === "dashboard" ? "home-content" : ""}`}
           >
-            <div className="page-heading">
-              <div>
-                {page === "dashboard" && (
-                  <p className="home-greeting">
-                    Welcome back{profile?.displayName ? `, ${profile.displayName}` : ""}
-                  </p>
-                )}
-                {page !== "dashboard" && (
+            {page !== "dashboard" && (
+              <div className="page-heading">
+                <div>
                   <div className="eyebrow">YOUR MONEY, IN PERSPECTIVE</div>
-                )}
-                <h1>{title}</h1>
-                {page !== "dashboard" && (
+                  <h1>{title}</h1>
                   <p>
                     {page === "imports"
                       ? "Review every row. Keep your ledger clean."
@@ -371,33 +423,31 @@ export function FinanceApp() {
                         ? "Every movement, with the full story."
                         : "The details that keep your finances in balance."}
                   </p>
-                )}
-              </div>
-              <div className="page-actions">
-                <div className="month-picker">
-                  <CalendarDays size={16} aria-hidden="true" />
-                  <input
-                    aria-label="Selected month"
-                    type="month"
-                    value={month}
-                    onChange={(e) => setMonth(e.target.value || "2026-10")}
-                  />
                 </div>
-                {page !== "dashboard" && (
+                <div className="page-actions">
+                  <div className="month-picker">
+                    <CalendarDays size={16} aria-hidden="true" />
+                    <input
+                      aria-label="Selected month"
+                      type="month"
+                      value={month}
+                      onChange={(e) => setMonth(e.target.value || "2026-10")}
+                    />
+                  </div>
                   <Link href="/imports" className="button import-button">
                     <Upload size={15} />
                     Import
                   </Link>
-                )}
-                <button
-                  className="button primary"
-                  onClick={() => open({ type: "transaction" })}
-                >
-                  <Plus size={16} />
-                  <span>Add transaction</span>
-                </button>
+                  <button
+                    className="button primary"
+                    onClick={() => open({ type: "transaction" })}
+                  >
+                    <Plus size={16} />
+                    <span>Add transaction</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
             {page === "dashboard" ? (
               <Dashboard open={open} />
             ) : page === "accounts" ? (
@@ -462,10 +512,8 @@ export function FinanceApp() {
         </div>
         <MobileBottomBar
           page={page}
-          reviewCount={metrics.reviewCount}
-          onOpenMore={(trigger) => {
-            navigationTrigger.current = trigger;
-          }}
+          mode={mode}
+          onAdd={() => open({ type: "transaction" })}
         />
         {editor && (
           <RecordEditor editor={editor} onClose={() => setEditor(null)} />
@@ -497,103 +545,170 @@ export function FinanceApp() {
   );
 }
 type Open = (editor: EditorState) => void;
-function QuickActions({ open }: { open: Open }) {
+type FinancialSection = "bank" | "spending" | "credit" | "paylater";
+function FinancialCard({
+  section,
+  title,
+  value,
+  caption,
+  icon,
+  active,
+  onOpen,
+  children,
+}: {
+  section: FinancialSection;
+  title: string;
+  value: string;
+  caption: string;
+  icon: ReactNode;
+  active: boolean;
+  onOpen: (section: FinancialSection, trigger: HTMLButtonElement) => void;
+  children?: ReactNode;
+}) {
   return (
-    <div className="quick-actions-bar" aria-label="Quick actions">
-      <button
-        type="button"
-        className="quick-action-btn"
-        onClick={() => open({ type: "transaction", kind: "expense" })}
-      >
-        <span className="quick-action-icon">
-          <Plus size={18} aria-hidden="true" />
-        </span>
-        <span>Add</span>
-      </button>
-      <Link href="/imports" className="quick-action-btn">
-        <span className="quick-action-icon">
-          <Upload size={18} aria-hidden="true" />
-        </span>
-        <span>Import</span>
-      </Link>
-      <Link href="/bills" className="quick-action-btn">
-        <span className="quick-action-icon">
-          <CreditCard size={18} aria-hidden="true" />
-        </span>
-        <span>Bills</span>
-      </Link>
-      <button
-        type="button"
-        className="quick-action-btn"
-        onClick={() => open({ type: "transaction", kind: "transfer" })}
-      >
-        <span className="quick-action-icon">
-          <ArrowLeftRight size={18} aria-hidden="true" />
-        </span>
-        <span>Transfer</span>
-      </button>
-    </div>
+    <button
+      type="button"
+      className={"stat financial-summary-card dashboard-card-" + section}
+      aria-label={title + " details"}
+      aria-describedby={`financial-${section}-value financial-${section}-caption`}
+      aria-haspopup="dialog"
+      aria-expanded={active}
+      onClick={(event) => onOpen(section, event.currentTarget)}
+    >
+      <span className="stat-top">
+        <span>{title}</span>
+        {icon}
+      </span>
+      <strong id={`financial-${section}-value`}>{value}</strong>
+      <span id={`financial-${section}-caption`} className="stat-bottom">
+        {caption}
+      </span>
+      {children}
+      <span className="financial-card-cue">
+        <span>View details</span>
+        <ChevronRight size={17} aria-hidden="true" />
+      </span>
+    </button>
   );
 }
-function Kpis({ open }: { open: Open }) {
+function Kpis() {
   const { data, month, today } = useFinance();
-  const m = dashboardMetrics(data, month, today);
+  const [details, setDetails] = useState<{
+    section: FinancialSection;
+    trigger: HTMLButtonElement;
+  } | null>(null);
+  const metrics = dashboardMetrics(data, month, today);
   const credit = usageSummary(data, "credit_card", today);
   const payLater = usageSummary(data, "pay_later", today);
+  const show = (section: FinancialSection, trigger: HTMLButtonElement) =>
+    setDetails({ section, trigger });
+  const usageValue = (summary: typeof credit) =>
+    summary.knownUsageCount > 0
+      ? (summary.knownUsageCount < summary.count ||
+        summary.rows.some((row) => row.provenance === "partial")
+          ? "At least "
+          : "") + formatMoney(summary.usedTotal)
+      : "Not reported";
+  const bankCaption =
+    (metrics.knownBankCount < metrics.totalBankCount
+      ? `${metrics.knownBankCount}/${metrics.totalBankCount} balances known · Partial coverage`
+      : `${metrics.totalBankCount} account${metrics.totalBankCount === 1 ? "" : "s"}`) +
+    " · " +
+    (metrics.bankAsOf
+      ? metrics.updatedBankCount || metrics.openingBankCount
+        ? "Calculated through " + formatDate(today)
+        : "Reported from " + formatDate(metrics.bankAsOf)
+      : "No balance reports");
   return (
-    <div className="stats-grid home-kpis">
-      <Stat
-        title="Total bank balance"
-        value={
-          m.knownBankCount > 0 ? formatMoney(m.bankBalance) : "Not reported"
-        }
-        caption={
-          m.updatedBankCount > 0 || m.openingBankCount > 0
-            ? `${m.knownBankCount < m.totalBankCount ? `${m.knownBankCount}/${m.totalBankCount} known · ` : ""}Calculated · posted movements through ${formatDate(today)}`
-            : `${m.knownBankCount < m.totalBankCount ? `${m.knownBankCount}/${m.totalBankCount} reported` : "Reported"} · ${m.bankAsOf ? formatDate(m.bankAsOf) : "No snapshots"}`
-        }
-        icon={Landmark}
-        tone="stat-highlight balance-hero"
+    <>
+      <section
+        className="stats-grid home-kpis dashboard-financial-grid"
+        aria-labelledby="financial-overview-title"
       >
-        <AccountBreakdown count={m.totalBankCount} label="account">
-          <BankAccountSummary data={data} today={today} />
-        </AccountBreakdown>
-      </Stat>
-      <QuickActions open={open} />
-      <Stat
-        title="This month's spending"
-        value={formatMoney(m.monthSpending)}
-        caption={`${m.expenseCount} posted expenses · ${monthLabel(month)}`}
-        icon={ArrowUpRight}
-        tone="spending-kpi"
-      />
-      <Stat
-        title="Credit card usage"
-        value={
-          credit.knownUsageCount > 0
-            ? formatMoney(credit.usedTotal)
-            : "Not reported"
-        }
-        caption={`${credit.complete ? "Known usage" : "Partial usage"} · ${credit.knownUsageCount}/${credit.count} cards`}
-        icon={CreditCard}
-        tone="usage-kpi"
-      >
-        <CreditUsageSummary summary={credit} kind="credit_card" />
-      </Stat>
-      <Stat
-        title="Pay Later usage"
-        value={
-          payLater.knownUsageCount > 0
-            ? `${payLater.rows.some((row) => row.provenance === "partial") ? "At least " : ""}${formatMoney(payLater.usedTotal)}`
-            : "Not reported"
-        }
-        caption={`${payLater.complete ? "Known usage" : "Known exposure · partial coverage"} · ${payLater.knownUsageCount}/${payLater.count} providers`}
-        icon={Wallet}
-        tone="usage-kpi"
-      >
-        <CreditUsageSummary summary={payLater} kind="pay_later" />
-      </Stat>
-    </div>
+        <FinancialCard
+          section="bank"
+          title="Total bank balance"
+          value={
+            metrics.knownBankCount > 0
+              ? formatMoney(metrics.bankBalance)
+              : "Not reported"
+          }
+          caption={bankCaption}
+          icon={<Landmark size={20} aria-hidden="true" />}
+          active={details?.section === "bank"}
+          onOpen={show}
+        />
+        <FinancialCard
+          section="spending"
+          title="This month's spending"
+          value={formatMoney(metrics.monthSpending)}
+          caption={
+            metrics.expenseCount + " posted expenses · " + monthLabel(month)
+          }
+          icon={<ArrowUpRight size={20} aria-hidden="true" />}
+          active={details?.section === "spending"}
+          onOpen={show}
+        />
+        <FinancialCard
+          section="credit"
+          title="Credit cards"
+          value={usageValue(credit)}
+          caption={
+            credit.count +
+            " cards · " +
+            credit.knownUsageCount +
+            "/" +
+            credit.count +
+            " usage known"
+          }
+          icon={<CreditCard size={19} aria-hidden="true" />}
+          active={details?.section === "credit"}
+          onOpen={show}
+        >
+          <span className="financial-usage-label">
+            <span>
+              {credit.percentage === null
+                ? "Overall usage unknown"
+                : formatUsagePercentage(credit.percentage) + " used"}
+            </span>
+            {credit.percentage !== null && <UsageStatus band={credit.band} />}
+          </span>
+          <UsageMeter {...credit} label="Overall credit card usage" />
+        </FinancialCard>
+        <FinancialCard
+          section="paylater"
+          title="Pay Later"
+          value={usageValue(payLater)}
+          caption={
+            payLater.count +
+            " providers · " +
+            (payLater.complete ? "Known usage" : "Partial coverage")
+          }
+          icon={<Wallet size={19} aria-hidden="true" />}
+          active={details?.section === "paylater"}
+          onOpen={show}
+        >
+          <span className="financial-usage-label">
+            <span>
+              {payLater.percentage === null
+                ? "Overall usage unknown"
+                : formatUsagePercentage(payLater.percentage) + " used"}
+            </span>
+            {payLater.percentage !== null && (
+              <UsageStatus band={payLater.band} />
+            )}
+          </span>
+          <UsageMeter {...payLater} label="Overall Pay Later usage" />
+        </FinancialCard>
+      </section>
+      {details && (
+        <DashboardFinancialDetails
+          section={details.section}
+          trigger={details.trigger}
+          onClose={() => setDetails(null)}
+        />
+      )}
+    </>
   );
 }
 function Dashboard({ open }: { open: Open }) {
@@ -607,7 +722,7 @@ function Dashboard({ open }: { open: Open }) {
     .slice(0, 4);
   return (
     <>
-      <Kpis open={open} />
+      <Kpis />
       <div className="dashboard-essential-grid">
         <Section title="Bills to pay" href="/bills" className="dashboard-bills">
           <div className="upcoming-list">
@@ -623,7 +738,7 @@ function Dashboard({ open }: { open: Open }) {
           </div>
         </Section>
         <Section
-          title="Recent activity"
+          title="Recent transactions"
           href="/transactions"
           className="dashboard-activity"
         >
@@ -640,7 +755,6 @@ function Dashboard({ open }: { open: Open }) {
             <Empty
               title="No activity this month"
               description="Add a transaction to get started."
-              onAdd={() => open({ type: "transaction" })}
             />
           )}
         </Section>
@@ -659,6 +773,13 @@ function RecentActivity({
   transaction: Transaction;
   open: Open;
 }) {
+  const { data } = useFinance();
+  const from = data.accounts.find(
+    (account) => account.id === transaction.fromAccountId,
+  );
+  const to = data.accounts.find(
+    (account) => account.id === transaction.toAccountId,
+  );
   const direction = transactionDirection(transaction);
   const incoming = direction === "incoming";
   const outgoing = direction === "outgoing";
@@ -670,7 +791,11 @@ function RecentActivity({
     >
       <span
         className="activity-icon category-icon"
-        style={{ "--category-color": transactionIconColor(transaction) } as React.CSSProperties}
+        style={
+          {
+            "--category-color": transactionIconColor(transaction),
+          } as React.CSSProperties
+        }
       >
         <TransactionIcon transaction={transaction} />
       </span>
@@ -679,10 +804,13 @@ function RecentActivity({
         <small>
           {transaction.kind === "expense" && transaction.category
             ? transaction.category
-            : kindLabel(transaction.kind)} ·{" "}
+            : kindLabel(transaction.kind)}{" "}
+          ·{" "}
           {transaction.occurredOn
             ? formatDate(transaction.occurredOn)
             : "Date unconfirmed"}
+          {(from || to) && <> · {from?.name || to?.name}</>}
+          {transaction.status === "posted" && " · Posted"}
         </small>
         {transaction.status === "pending_review" && (
           <Badge tone="amber">Needs review</Badge>
@@ -1037,7 +1165,11 @@ export function TransactionTable({
                   <div className="transaction-description">
                     <span
                       className="txn-icon category-icon"
-                      style={{ "--category-color": transactionIconColor(t) } as React.CSSProperties}
+                      style={
+                        {
+                          "--category-color": transactionIconColor(t),
+                        } as React.CSSProperties
+                      }
                     >
                       <TransactionIcon transaction={t} />
                     </span>
@@ -1329,8 +1461,14 @@ function AccountsPage({
 }
 function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
   const { data, month, toast } = useFinance();
+  const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
-  const [kind, setKind] = useState("all");
+  const [kind, setKind] = useState(() => {
+    const requested = searchParams.get("kind");
+    return requested && TRANSACTION_KINDS.includes(requested as TransactionKind)
+      ? requested
+      : "all";
+  });
   const [account, setAccount] = useState("all");
   const [review, setReview] = useState(false);
   const [allMonths, setAllMonths] = useState(false);
@@ -2038,13 +2176,19 @@ function AnalyticsPage() {
             <div className="record-row" key={c.category}>
               <span
                 className="category-icon"
-                style={{ "--category-color": categoryColor(c.category) } as React.CSSProperties}
+                style={
+                  {
+                    "--category-color": categoryColor(c.category),
+                  } as React.CSSProperties
+                }
               >
                 <CategoryIcon category={c.category} />
               </span>
               <span className="category-detail-copy grow">
                 <strong>{c.category}</strong>
-                <small>{c.count} expenses · {c.percentage.toFixed(1)}%</small>
+                <small>
+                  {c.count} expenses · {c.percentage.toFixed(1)}%
+                </small>
               </span>
               <strong>{formatMoney(c.amount)}</strong>
             </div>
