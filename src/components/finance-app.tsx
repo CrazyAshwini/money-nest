@@ -57,6 +57,7 @@ import {
   Clapperboard,
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
+import { NestBot } from "./nestbot";
 import { PrivateProfilePage } from "./private-profile";
 import { OrdersPage } from "./orders-page";
 import { Section, Stat, Badge, Empty, downloadFile } from "./ui";
@@ -80,6 +81,7 @@ import {
   formatDate,
   monthLabel,
   accountBalance,
+  isDebtAccount,
   latestSnapshot,
   billSummary,
   emiSummary,
@@ -513,6 +515,7 @@ export function FinanceApp() {
           mode={mode}
           onAdd={() => open({ type: "transaction" })}
         />
+        <NestBot />
         {editor && (
           <RecordEditor editor={editor} onClose={() => setEditor(null)} />
         )}
@@ -936,14 +939,16 @@ function CreditCardItem({
                 ? "From available credit"
                 : usage.provenance === "reported"
                   ? "Reported"
+                  : usage.provenance === "calculated"
+                    ? "Report + payments"
                   : "Unconfirmed"}
           </b>
         </span>
         <span>
           Available{" "}
           <b>
-            {s?.reportedAvailable != null
-              ? formatMoney(s.reportedAvailable)
+            {usage.available != null
+              ? formatMoney(usage.available)
               : "Unconfirmed"}
           </b>
         </span>
@@ -1274,6 +1279,9 @@ function AccountsPage({
 }) {
   const { data, today } = useFinance();
   const [kind, setKind] = useState("all");
+  const [accountTxnTab, setAccountTxnTab] = useState<
+    "all" | "purchases" | "repayments" | "refunds" | "pending"
+  >("all");
   const a = data.accounts.find((a) => a.id === id);
   if (id && !a)
     return (
@@ -1289,8 +1297,25 @@ function AccountsPage({
     );
   if (a) {
     const balance = accountBalance(data, a.id, today);
+    const usage = isDebtAccount(a) ? accountUsage(data, a.id, today) : null;
     const snapshot = latestSnapshot(data, a.id, today);
     const fd = data.fixedDeposits.find((f) => f.backingAccountId === a.id);
+    const allAccountTxns = data.transactions.filter(
+      (t) => t.fromAccountId === a.id || t.toAccountId === a.id,
+    );
+    const filteredAccountTxns = allAccountTxns.filter((t) => {
+      if (accountTxnTab === "purchases") return t.fromAccountId === a.id && t.kind === "expense";
+      if (accountTxnTab === "repayments") return t.toAccountId === a.id && ["bill_payment", "transfer"].includes(t.kind);
+      if (accountTxnTab === "refunds") return t.toAccountId === a.id && t.kind === "refund";
+      if (accountTxnTab === "pending") return t.status === "pending_review";
+      return true;
+    });
+
+    const purchasesCount = allAccountTxns.filter((t) => t.fromAccountId === a.id && t.kind === "expense").length;
+    const repaymentsCount = allAccountTxns.filter((t) => t.toAccountId === a.id && ["bill_payment", "transfer"].includes(t.kind)).length;
+    const refundsCount = allAccountTxns.filter((t) => t.toAccountId === a.id && t.kind === "refund").length;
+    const pendingCount = allAccountTxns.filter((t) => t.status === "pending_review").length;
+
     return (
       <>
         <DetailHeading
@@ -1299,6 +1324,15 @@ function AccountsPage({
           back="/accounts"
           action={
             <>
+              {isDebtAccount(a) && (
+                <button
+                  className="button"
+                  onClick={() => open({ type: "transaction", kind: "bill_payment" })}
+                >
+                  <CreditCard size={15} />
+                  Record repayment
+                </button>
+              )}
               <button
                 className="button"
                 onClick={() => open({ type: "snapshot", record: a })}
@@ -1315,12 +1349,12 @@ function AccountsPage({
             </>
           }
         />
-        {(a.kind === "bank" || a.kind === "wallet") && (
+        {(
           <div className="info-banner">
             <Landmark size={17} aria-hidden="true" />
             <span>
               <strong>
-                Updated balance · {formatOptional(balance.current)}
+                {usage ? "Updated outstanding" : "Updated balance"} · {formatOptional(balance.current)}
               </strong>
               <br />
               {balance.currentSource === "snapshot"
@@ -1328,6 +1362,32 @@ function AccountsPage({
                 : balance.currentSource === "opening"
                   ? `Opening balance + dated posted movements through ${formatDate(today)}.`
                   : "Add a reported snapshot or a known opening balance to calculate this account's balance."}
+            </span>
+          </div>
+        )}
+        {usage && (
+          <div className="info-banner">
+            <CreditCard size={17} aria-hidden="true" />
+            <span>
+              <strong>Credit limit:</strong> {usage.totalCreditLimit ? formatMoney(usage.totalCreditLimit) : "Not set"} ·{" "}
+              <strong>Current outstanding:</strong> {usage.currentOutstanding ? formatMoney(usage.currentOutstanding) : "Not available"} ·{" "}
+              <strong>Available credit:</strong> {
+                usage.availableCredit !== null
+                  ? `${formatMoney(usage.availableCredit)} (${usage.availableCreditStatus === "verified" ? "Verified" : "Estimated"})`
+                  : usage.estimatedAvailableCredit !== null
+                    ? `Estimated ${formatMoney(usage.estimatedAvailableCredit)} (Unverified)`
+                    : "Unknown until verified"
+              } ·{" "}
+              <strong>Utilization:</strong> {formatUsagePercentage(usage.creditUtilization)} ·{" "}
+              <strong>Status:</strong> {
+                usage.balanceVerificationStatus === "verified"
+                  ? "Verified"
+                  : usage.balanceVerificationStatus === "estimated"
+                    ? "Report + payments (Estimated)"
+                    : usage.balanceVerificationStatus === "partial"
+                      ? "Partial exposure (Unverified bills only)"
+                      : "Unconfirmed"
+              }
             </span>
           </div>
         )}
@@ -1398,10 +1458,42 @@ function AccountsPage({
           )}
         </Section>
         <Section title="Account history">
-          <TransactionTable
-            transactions={data.transactions.filter(
-              (t) => t.fromAccountId === a.id || t.toAccountId === a.id,
+          <div className="tabs" style={{ marginBottom: "12px" }}>
+            <button
+              className={accountTxnTab === "all" ? "selected" : ""}
+              onClick={() => setAccountTxnTab("all")}
+            >
+              All ({allAccountTxns.length})
+            </button>
+            <button
+              className={accountTxnTab === "purchases" ? "selected" : ""}
+              onClick={() => setAccountTxnTab("purchases")}
+            >
+              Purchases ({purchasesCount})
+            </button>
+            <button
+              className={accountTxnTab === "repayments" ? "selected" : ""}
+              onClick={() => setAccountTxnTab("repayments")}
+            >
+              Repayments ({repaymentsCount})
+            </button>
+            <button
+              className={accountTxnTab === "refunds" ? "selected" : ""}
+              onClick={() => setAccountTxnTab("refunds")}
+            >
+              Refunds ({refundsCount})
+            </button>
+            {pendingCount > 0 && (
+              <button
+                className={accountTxnTab === "pending" ? "selected" : ""}
+                onClick={() => setAccountTxnTab("pending")}
+              >
+                Pending ({pendingCount})
+              </button>
             )}
+          </div>
+          <TransactionTable
+            transactions={filteredAccountTxns}
             onEdit={(t) => open({ type: "transaction", record: t })}
           />
         </Section>

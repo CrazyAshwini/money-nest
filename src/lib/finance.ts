@@ -129,7 +129,9 @@ export function latestSnapshot(
         s.userId === account?.userId &&
         localDateISO(s.asOf) <= localDateISO(asOf),
     )
-    .sort((a, b) => Date.parse(b.asOf) - Date.parse(a.asOf))[0];
+    .sort(
+      (a, b) => Date.parse(b.asOf) - Date.parse(a.asOf) || b.id.localeCompare(a.id),
+    )[0];
 }
 export const isDebtAccount = (account: Pick<Account, "kind">) =>
   account.kind === "credit_card" || account.kind === "pay_later";
@@ -149,6 +151,74 @@ export function latestBalanceSnapshot(
     accountId,
     asOf,
   );
+}
+/** Latest owned report relevant to same-day treatment for this account type. */
+export function latestAccountBalanceSnapshot(
+  data: WorkspaceData,
+  accountId: string,
+  asOf = todayISO(),
+): AccountSnapshot | undefined {
+  const account = data.accounts.find((row) => row.id === accountId);
+  if (!account) return undefined;
+  if (!isDebtAccount(account)) return latestBalanceSnapshot(data, accountId, asOf);
+  return latestSnapshot(
+    {
+      ...data,
+      snapshots: data.snapshots.filter((row) =>
+        [row.reportedOutstanding, row.reportedUtilized, row.reportedAvailable].some(
+          (value) => value != null,
+        ),
+      ),
+    },
+    accountId,
+    asOf,
+  );
+}
+
+/** Signed asset/liability change outside a known report; no baseline is invented. */
+export function accountMovementsSinceSnapshot(
+  data: WorkspaceData,
+  accountId: string,
+  snapshot: AccountSnapshot,
+  asOf = todayISO(),
+): { change: Money; count: number } {
+  const account = data.accounts.find((row) => row.id === accountId);
+  if (!account || snapshot.accountId !== accountId || snapshot.userId !== account.userId)
+    return { change: "0.00", count: 0 };
+  const snapshotDate = localDateISO(snapshot.asOf);
+  const cutoff = localDateISO(asOf);
+  const debt = isDebtAccount(account);
+  let change = ZERO;
+  let count = 0;
+  const includesSide = (transaction: Transaction, side: "from" | "to") => {
+    if (transaction[`${side}AccountId`] !== accountId) return false;
+    if (transaction.occurredOn! > snapshotDate) return true;
+    const anchorId = transaction[`${side}BalanceSnapshotId`];
+    if (anchorId === snapshot.id) return true;
+    if (!debt || !anchorId) return false;
+    const anchor = data.snapshots.find(
+      (row) => row.id === anchorId && row.userId === account.userId && row.accountId === accountId,
+    );
+    // A payment confirmed outside a later debt report is also outside an
+    // earlier report that day. A report after the anchor absorbs the movement.
+    return Boolean(anchor &&
+      [anchor.reportedOutstanding, anchor.reportedUtilized, anchor.reportedAvailable].some((value) => value != null) &&
+      localDateISO(anchor.asOf) === snapshotDate &&
+      Date.parse(anchor.asOf) >= Date.parse(snapshot.asOf));
+  };
+  for (const transaction of data.transactions) {
+    if (transaction.userId !== account.userId || transaction.status !== "posted" ||
+      !transaction.occurredOn || transaction.occurredOn < snapshotDate || transaction.occurredOn > cutoff)
+      continue;
+    const from = includesSide(transaction, "from");
+    const to = includesSide(transaction, "to");
+    if (!from && !to) continue;
+    const amount = dec(transaction.amount).times(debt ? 1 : -1);
+    if (from) change = change.plus(amount);
+    if (to) change = change.minus(amount);
+    count++;
+  }
+  return { change: change.toFixed(2), count };
 }
 export function ledgerBalance(
   data: WorkspaceData,
@@ -187,7 +257,7 @@ export interface AccountBalance {
   reported: Money | null;
   calculated: Money | null;
   difference: Money | null;
-  /** Asset balance from the last known baseline and subsequent posted movements. */
+  /** Asset balance or signed outstanding from a known baseline and posted movements. */
   current: Money | null;
   currentAsOf: string | null;
   currentBaselineAsOf: string | null;
@@ -216,32 +286,12 @@ export function accountBalance(
   let calculated = ledgerBalance(data, accountId, calculatedAsOf);
   if (
     account &&
-    !isDebtAccount(account) &&
-    snapshot?.reportedBalance != null &&
+    snapshot &&
+    reported !== null &&
     calculated !== null
   ) {
-    let atSnapshot = dec(calculated);
-    for (const transaction of data.transactions) {
-      if (
-        transaction.userId !== account.userId ||
-        transaction.status !== "posted" ||
-        transaction.occurredOn !== calculatedAsOf
-      )
-        continue;
-      // These confirmed movements occurred outside this exact report, although
-      // their date-only ledger entries share its calendar day.
-      if (
-        transaction.fromAccountId === accountId &&
-        transaction.fromBalanceSnapshotId === snapshot.id
-      )
-        atSnapshot = atSnapshot.plus(dec(transaction.amount));
-      if (
-        transaction.toAccountId === accountId &&
-        transaction.toBalanceSnapshotId === snapshot.id
-      )
-        atSnapshot = atSnapshot.minus(dec(transaction.amount));
-    }
-    calculated = atSnapshot.toFixed(2);
+    const outsideReport = accountMovementsSinceSnapshot(data, accountId, snapshot, calculatedAsOf);
+    calculated = subtractMoney(calculated, outsideReport.change);
   }
   const difference =
     reported !== null && calculated !== null
@@ -254,42 +304,22 @@ export function accountBalance(
   let currentSource: AccountBalance["currentSource"] =
     reported === null ? "unknown" : "snapshot";
   let movementsSinceSnapshot = 0;
-  if (account && !isDebtAccount(account)) {
-    // A newer report of another field must not erase a known cash baseline.
+  if (account) {
+    // A newer report of another field must not erase a known balance baseline.
     // Reconciliation above still uses the newest snapshot without substitution.
-    const balanceSnapshot = latestBalanceSnapshot(data, accountId, asOf);
-    if (balanceSnapshot?.reportedBalance != null) {
-      let updated = dec(balanceSnapshot.reportedBalance);
-      const snapshotDate = localDateISO(balanceSnapshot.asOf);
+    const debt = isDebtAccount(account);
+    const balanceSnapshot = debt ? latestSnapshot({
+      ...data,
+      snapshots: data.snapshots.filter((row) => row.reportedOutstanding != null),
+    }, accountId, asOf) : latestBalanceSnapshot(data, accountId, asOf);
+    const baseline = debt ? balanceSnapshot?.reportedOutstanding : balanceSnapshot?.reportedBalance;
+    if (balanceSnapshot && baseline != null) {
       currentSource = "snapshot";
       currentAsOf = balanceSnapshot.asOf;
       currentBaselineAsOf = balanceSnapshot.asOf;
-      for (const transaction of data.transactions) {
-        if (
-          transaction.userId !== account.userId ||
-          transaction.status !== "posted" ||
-          !transaction.occurredOn ||
-          transaction.occurredOn < snapshotDate ||
-          transaction.occurredOn > cutoff
-        )
-          continue;
-        // Same-day movements are covered unless explicitly confirmed outside
-        // this exact report. Entry timestamps never establish payment order.
-        const afterSnapshotDay = transaction.occurredOn > snapshotDate;
-        const fromMovement =
-          transaction.fromAccountId === accountId &&
-          (afterSnapshotDay ||
-            transaction.fromBalanceSnapshotId === balanceSnapshot.id);
-        const toMovement =
-          transaction.toAccountId === accountId &&
-          (afterSnapshotDay ||
-            transaction.toBalanceSnapshotId === balanceSnapshot.id);
-        if (!fromMovement && !toMovement) continue;
-        if (fromMovement) updated = updated.minus(dec(transaction.amount));
-        if (toMovement) updated = updated.plus(dec(transaction.amount));
-        movementsSinceSnapshot++;
-      }
-      current = updated.toFixed(2);
+      const movements = accountMovementsSinceSnapshot(data, accountId, balanceSnapshot, asOf);
+      movementsSinceSnapshot = movements.count;
+      current = addMoney(baseline, movements.change);
       if (movementsSinceSnapshot > 0) currentAsOf = cutoff;
     } else {
       current = ledgerBalance(data, accountId, cutoff);

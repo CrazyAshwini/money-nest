@@ -8,6 +8,7 @@ import { NextRequest } from "next/server";
 import { emptyCommerce, type ReviewedOrderDraft } from "./commerce";
 vi.mock("server-only", () => ({}));
 import { GET as ordersGET, POST as ordersPOST } from "../app/api/orders/route";
+import { POST as workspacePOST } from "../app/api/workspace/route";
 import {
   commitPrivateImport,
   commitPrivateCommerce,
@@ -696,6 +697,26 @@ describe("isolated private profile storage", () => {
       merchant: "Synthetic Biryani seller",
       description: "Synthetic Biryani seller",
     });
+  });
+
+  it("rejects receipt duplicate POSTs across IDs, including voided entries, while retrying the same ID safely", async () => {
+    const { sessionToken } = await established();
+    const receipt = transaction({ sourceSystem: "receipt_ai", sourceObjectId: "e".repeat(64), externalReference: "RRN987654321" });
+    const post = (record: Transaction) => workspacePOST(new NextRequest("http://127.0.0.1:3000/api/workspace", {
+      method: "POST",
+      headers: { host: "127.0.0.1:3000", origin: "http://127.0.0.1:3000", "content-type": "application/json", cookie: `finance-os-private-session=${sessionToken}` },
+      body: JSON.stringify({ collection: "transactions", record }),
+    }));
+    expect((await post(receipt)).status).toBe(200);
+    expect((await post(receipt)).status).toBe(200);
+    expect((await post({ ...receipt, status: "voided" })).status).toBe(200);
+    const repeatedImage = await post({ ...receipt, id: randomUUID(), externalReference: null });
+    expect(repeatedImage.status).toBe(400);
+    expect((await repeatedImage.json()).error).toContain("Review the existing transaction");
+    const repeatedReference = await post({ ...receipt, id: randomUUID(), sourceObjectId: "f".repeat(64), externalReference: " rrn 987654321 " });
+    expect(repeatedReference.status).toBe(400);
+    expect((await repeatedReference.json()).error).toContain("Review the existing transaction");
+    expect((await readPrivateProfile(sessionToken))!.workspace.transactions).toHaveLength(1);
   });
 
   it("validates initial ownership and links before creating a store", async () => {

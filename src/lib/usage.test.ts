@@ -203,12 +203,9 @@ describe("account usage", () => {
     expect(accountUsage(data, account.id, "2026-10-08").used).toBe("100.00");
   });
 
-  it("does not invent used credit from transactions or the opening balance", () => {
+  it("does not invent used or available credit from transactions without a baseline", () => {
     const data = fixture();
-    const account = addAccount(data, {
-      openingBalance: "700.00",
-      openingBalanceDate: "2026-10-01",
-    });
+    const account = addAccount(data);
     data.transactions.push({
       id: "expense",
       userId: OWNER,
@@ -227,6 +224,7 @@ describe("account usage", () => {
       band: "unknown",
       provenance: "unknown",
       asOf: null,
+      available: null,
     });
   });
 
@@ -249,6 +247,7 @@ describe("account usage", () => {
       progress: 0,
       band: "unknown",
       provenance: "partial",
+      available: null,
       asOf: "2026-10-05",
     });
     expect(usageSummary(data, "pay_later", AS_OF)).toMatchObject({

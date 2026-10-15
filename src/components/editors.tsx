@@ -6,6 +6,7 @@ import { Modal, Field } from "./ui";
 import {
   ACCOUNT_KINDS,
   CATEGORIES,
+  TRANSACTION_KINDS,
   type Account,
   type Transaction,
   type TransactionKind,
@@ -19,11 +20,13 @@ import {
   accountBalance,
   formatDate,
   formatMoney,
-  latestBalanceSnapshot,
+  latestAccountBalanceSnapshot,
+  isDebtAccount,
   localDateISO,
   validateBillAllocation,
   validateEmiAllocation,
 } from "@/lib/finance";
+import { accountUsage } from "@/lib/usage";
 import { ReceiptScanner, type AppliedReceipt } from "./receipt-scanner";
 import {
   getCategoryPlatformOptions,
@@ -182,7 +185,7 @@ export function RecordEditor({
   );
   const sameDayBalances = (["from", "to"] as const).flatMap((side) => {
     const accountId = transaction[`${side}AccountId`];
-    const snapshot = latestBalanceSnapshot(data, accountId, today);
+    const snapshot = latestAccountBalanceSnapshot(data, accountId, today);
     const account = data.accounts.find((item) => item.id === accountId);
     if (
       !snapshot ||
@@ -229,19 +232,11 @@ export function RecordEditor({
       merchant: draft.merchant || "",
       platform: draft.platform || "",
       externalReference: draft.externalReference || "",
-      kind: transaction.kind,
+      kind: draft.kind || transaction.kind,
       category: draft.category || "Other",
       status: "pending_review",
     });
-    setReceipt({
-      ...applied,
-      canConfirmPayment:
-        applied.canConfirmPayment &&
-        !(draft.kind && draft.kind !== transaction.kind),
-      requiresPendingReview:
-        applied.requiresPendingReview ||
-        Boolean(draft.kind && draft.kind !== transaction.kind),
-    });
+    setReceipt(applied);
     setOtherPlatform(false);
     setReceiptReviewed(false);
     setReceiptPaymentConfirmed(false);
@@ -442,13 +437,16 @@ export function RecordEditor({
           };
           const balances = data.accounts.filter(
             (account) =>
-              (account.kind === "bank" || account.kind === "wallet") &&
               (account.id === from || account.id === to),
           );
           successMessage =
             "Transaction saved." +
             balances
               .map((account) => {
+                if (isDebtAccount(account)) {
+                  const usage = accountUsage(updated, account.id, today);
+                  return ` ${account.name}: ${usage.used == null ? "usage unknown" : `${formatMoney(usage.used)} used`}${usage.available == null ? "" : `, ${formatMoney(usage.available)} available`}.`;
+                }
                 const balance = accountBalance(
                   updated,
                   account.id,
@@ -787,6 +785,20 @@ export function RecordEditor({
                   {transactionInput("amount", "number", true)}
                 </span>
               </Field>
+              {(receipt || editor.record?.sourceSystem === "receipt_ai") && (
+                <Field label="Transaction type" className="full">
+                  <select aria-label="Transaction type" value={transaction.kind}
+                    onChange={(event) => {
+                      updateTransaction("kind", event.target.value);
+                      setTransaction((current) => ({ ...current, kind: event.target.value,
+                        fromAccountId: "", toAccountId: "", externalPayer: "", externalRepayment: false,
+                        refundOfTransactionId: "" }));
+                      setBalanceChoices({});
+                    }}>
+                    {TRANSACTION_KINDS.map((kind) => <option key={kind} value={kind}>{human(kind)}</option>)}
+                  </select>
+                </Field>
+              )}
               <Field label="Category">
                 <select
                   name="category"
@@ -836,6 +848,7 @@ export function RecordEditor({
                   "To account",
                   !twoAccountTransaction,
                 )}
+              {receipt?.accountHint && <p className="form-note full">Payment method shown: {receipt.accountHint}. Select the matching account above.</p>}
               {transaction.kind === "expense" && !transaction.fromAccountId && (
                 <Field label="External payer" className="full">
                   {transactionInput("externalPayer")}
@@ -882,7 +895,7 @@ export function RecordEditor({
                     <option value="excluded">No — update balance</option>
                   </select>
                   <span className="form-note">
-                    Reported {formatMoney(snapshot.reportedBalance!)} on{" "}
+                    {isDebtAccount(account) ? "Credit report" : `Reported ${formatMoney(snapshot.reportedBalance!)}`} on{" "}
                     {formatDate(snapshot.asOf)}. Choose “No” only if this
                     payment is missing from that amount.
                   </span>
@@ -1319,13 +1332,7 @@ export function RecordEditor({
               Receipt details applied. Check the amount, date, category,
               platform and account before saving.
             </p>
-            {receipt.draft.kind && receipt.draft.kind !== transaction.kind && (
-              <p className="receipt-warning">
-                The receipt suggests {human(receipt.draft.kind)}. Your selected{" "}
-                {human(transaction.kind)} stays unchanged and will need review.
-                Choose another transaction type from Transactions if needed.
-              </p>
-            )}
+            {receipt.paymentStatus && ["pending", "failed"].includes(receipt.paymentStatus) && <p className="receipt-warning">The screenshot shows a {receipt.paymentStatus} payment. Confirm completion only after checking with your bank or provider.</p>}
             {receipt.requiresPendingReview &&
               !(receipt.canConfirmPayment && receiptPaymentConfirmed) && (
                 <p className="receipt-warning">

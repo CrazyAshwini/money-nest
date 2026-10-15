@@ -10,6 +10,7 @@ import {
   formatMoney,
   groupSummary,
   latestBalanceSnapshot,
+  latestAccountBalanceSnapshot,
   ledgerBalance,
   monthlySummary,
   sumMoney,
@@ -485,7 +486,7 @@ describe("updated bank and wallet balances", () => {
       accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current,
     ).toBe("900.10");
   });
-  it("applies same-day incoming cash to wallets without changing debt reports", () => {
+  it("applies confirmed same-day wallet and debt movements without changing reports", () => {
     const data = fixture();
     const wallet = report(data, DEMO_ACCOUNT_IDS.wallet, "20.10");
     txn(data, {
@@ -506,7 +507,8 @@ describe("updated bank and wallet balances", () => {
     });
     expect(
       accountBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY).current,
-    ).toBe("500.00");
+    ).toBe("600.00");
+    expect(debt.reportedOutstanding).toBe("500.00");
   });
   it("absorbs a same-day confirmation when a newer report replaces its exact baseline", () => {
     const data = fixture();
@@ -618,7 +620,7 @@ describe("updated bank and wallet balances", () => {
       },
     },
     {
-      name: "a debt report",
+      name: "a debt report without liability amounts",
       snapshot: { accountId: DEMO_ACCOUNT_IDS.platinum },
       transaction: { fromAccountId: DEMO_ACCOUNT_IDS.platinum },
     },
@@ -860,7 +862,77 @@ describe("updated bank and wallet balances", () => {
       accountBalance(data, DEMO_ACCOUNT_IDS.savings, DEMO_TODAY).current,
     ).toBeNull();
   });
-  it("keeps inactive accounts and wallets outside bank totals and leaves debt snapshots unchanged", () => {
+  it("updates both sides of later bank, card and Pay Later movements without new spending", () => {
+    const data = fixture();
+    const later = data.accounts.find((account) => account.kind === "pay_later")!;
+    report(data, DEMO_ACCOUNT_IDS.bank, "1000.00");
+    const cardReport = report(data, DEMO_ACCOUNT_IDS.platinum);
+    cardReport.reportedOutstanding = "200.00";
+    const laterReport = report(data, later.id);
+    laterReport.reportedOutstanding = "100.00";
+    const purchase = txn(data, { occurredOn: "2026-10-05", amount: "45.00", fromAccountId: DEMO_ACCOUNT_IDS.platinum });
+    txn(data, { occurredOn: "2026-10-06", amount: "25.00", kind: "bill_payment", toAccountId: DEMO_ACCOUNT_IDS.platinum });
+    txn(data, { occurredOn: "2026-10-07", amount: "10.00", kind: "refund", fromAccountId: null, toAccountId: DEMO_ACCOUNT_IDS.platinum, refundOfTransactionId: purchase.id });
+    txn(data, { occurredOn: "2026-10-08", amount: "15.00", kind: "transfer", fromAccountId: DEMO_ACCOUNT_IDS.platinum, toAccountId: DEMO_ACCOUNT_IDS.bank });
+    txn(data, { occurredOn: "2026-10-05", amount: "40.00", fromAccountId: later.id });
+    expect(accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current).toBe("990.00");
+    expect(accountBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY)).toMatchObject({ current: "225.00", reported: "200.00", movementsSinceSnapshot: 4 });
+    expect(accountBalance(data, later.id, DEMO_TODAY).current).toBe("140.00");
+    expect(monthlySummary(data, "2026-10")).toMatchObject({ gross: "85.00", refunds: "10.00", net: "75.00", expenseCount: 2 });
+    purchase.amount = "50.00";
+    expect(accountBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY).current).toBe("230.00");
+  });
+  it("uses a later same-day debt anchor for an older outstanding report until a newer baseline absorbs it", () => {
+    const data = fixture();
+    const bank = report(data, DEMO_ACCOUNT_IDS.bank, "1000.00");
+    const outstanding = report(data, DEMO_ACCOUNT_IDS.platinum, "0.00");
+    outstanding.reportedOutstanding = "200.00";
+    const utilization = report(data, DEMO_ACCOUNT_IDS.platinum, "0.00", "2026-10-04T09:00:00Z");
+    utilization.reportedUtilized = "300.00";
+    expect(latestAccountBalanceSnapshot(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY)).toEqual(utilization);
+    txn(data, { kind: "bill_payment", amount: "45.00", toAccountId: DEMO_ACCOUNT_IDS.platinum, fromBalanceSnapshotId: bank.id, toBalanceSnapshotId: utilization.id });
+    expect(accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current).toBe("955.00");
+    expect(accountBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY).current).toBe("155.00");
+    const replacement = report(data, DEMO_ACCOUNT_IDS.platinum, "0.00", "2026-10-04T10:00:00Z");
+    replacement.reportedOutstanding = "155.00";
+    expect(accountBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY)).toMatchObject({ current: "155.00", movementsSinceSnapshot: 0 });
+  });
+  it("reconciles both liability directions outside the exact report without changing the ledger", () => {
+    const data = fixture();
+    const snapshot = report(data, DEMO_ACCOUNT_IDS.platinum, "0.00");
+    snapshot.reportedOutstanding = "1000.00";
+    txn(data, { amount: "45.00", fromAccountId: DEMO_ACCOUNT_IDS.platinum, fromBalanceSnapshotId: snapshot.id });
+    expect(accountBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY)).toMatchObject({ current: "1045.00", calculated: "1000.00", difference: "0.00", reconciliation: "matched" });
+    txn(data, { amount: "25.00", kind: "bill_payment", toAccountId: DEMO_ACCOUNT_IDS.platinum, toBalanceSnapshotId: snapshot.id });
+    expect(accountBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY)).toMatchObject({ current: "1020.00", calculated: "1000.00", difference: "0.00" });
+    expect(ledgerBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY)).toBe("1020.00");
+  });
+  it("keeps debt unknown without a baseline and uses confirmed opening history when available", () => {
+    const data = fixture();
+    const card = data.accounts.find((account) => account.id === DEMO_ACCOUNT_IDS.platinum)!;
+    card.openingBalance = null;
+    card.openingBalanceDate = null;
+    txn(data, { amount: "45.00", fromAccountId: card.id });
+    expect(accountBalance(data, card.id, DEMO_TODAY)).toMatchObject({ current: null, currentSource: "unknown" });
+    card.openingBalance = "100.00";
+    card.openingBalanceDate = "2026-10-01";
+    expect(accountBalance(data, card.id, DEMO_TODAY)).toMatchObject({ current: "145.00", currentSource: "opening" });
+  });
+  it("filters unposted, future, historic and foreign liability movements even with a same-day anchor", () => {
+    const data = fixture();
+    const snapshot = report(data, DEMO_ACCOUNT_IDS.platinum, "0.00");
+    snapshot.reportedOutstanding = "200.00";
+    for (const values of [
+      { status: "pending_review" as const },
+      { status: "voided" as const },
+      { occurredOn: null },
+      { occurredOn: "2026-10-03" },
+      { occurredOn: "2026-10-10" },
+      { userId: "another-owner" },
+    ]) txn(data, { fromAccountId: DEMO_ACCOUNT_IDS.platinum, fromBalanceSnapshotId: snapshot.id, ...values });
+    expect(accountBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY)).toMatchObject({ current: "200.00", movementsSinceSnapshot: 0 });
+  });
+  it("keeps bank totals separate and debt reports unchanged while updating current outstanding", () => {
     const data = fixture();
     for (const account of data.accounts) account.openingBalance = null;
     report(data, DEMO_ACCOUNT_IDS.bank, "900.10");
@@ -892,7 +964,7 @@ describe("updated bank and wallet balances", () => {
     });
     expect(
       accountBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY).current,
-    ).toBe("50.00");
+    ).toBe("60.00");
   });
 });
 describe("statement allocations", () => {

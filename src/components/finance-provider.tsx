@@ -37,7 +37,7 @@ type ContextValue = {
     collection: K,
     record: WorkspaceData[K][number],
   ) => Promise<void>;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<boolean>;
   resetDemo: () => void;
   commitImport: (
     transactions: WorkspaceData["transactions"],
@@ -134,7 +134,7 @@ export function FinanceProvider({
         window.location.pathname !== "/login"
       ) {
         enterDemo();
-        return;
+        return true;
       }
     } catch {
       // Unavailable browser storage must still fall through to server authentication.
@@ -163,7 +163,7 @@ export function FinanceProvider({
         setProfile(null);
         setAuthUserId("");
         setMode("login");
-        return;
+        return false;
       }
       if (!res.ok && res.status !== 401)
         throw new Error(result.error || "Your workspace could not be loaded.");
@@ -172,7 +172,7 @@ export function FinanceProvider({
         setProfile(null);
         setAuthUserId("");
         setMode("login");
-        return;
+        return false;
       }
       if (!res.ok || !result.workspace)
         throw new Error(result.error || "Your workspace could not be loaded.");
@@ -180,6 +180,7 @@ export function FinanceProvider({
       setAuthUserId(result.userId);
       setProfile(result.profile ?? null);
       setMode(result.backend === "local" ? "private" : "cloud");
+      return true;
     } catch (error) {
       setMode("error");
       toast(
@@ -188,6 +189,7 @@ export function FinanceProvider({
           : "Unable to connect. Please retry.",
         "error",
       );
+      return false;
     }
   }, [allowTestFixtures, enterDemo, toast, replaceData]);
   // Hydration loads authenticated server state, or explicitly isolated test fixtures.
@@ -254,7 +256,8 @@ export function FinanceProvider({
       const result = await res.json();
       if (!res.ok)
         throw new Error(result.error || "Changes could not be saved.");
-      await refresh();
+      if (!(await refresh()))
+        throw new Error("Your change was saved, but balances could not be refreshed. Reload the workspace before trying again.");
       return;
     }
     const rows = current[collection] as OwnedRecord[];
@@ -304,7 +307,8 @@ export function FinanceProvider({
       const result = await res.json();
       if (!res.ok)
         throw new Error(result.error || "Import could not be saved.");
-      await refresh();
+      if (!(await refresh()))
+        throw new Error("Your import was saved, but balances could not be refreshed. Reload the workspace before trying again.");
       return result.count || 0;
     }
     const existing = new Set(

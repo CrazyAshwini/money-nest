@@ -394,6 +394,26 @@ export const workspaceRecordSchemas = {
   auditEvents: auditSchema,
 };
 
+export class ReceiptDuplicateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReceiptDuplicateError";
+  }
+}
+
+const receiptReference = (value: string | null | undefined) => {
+  const normalized = value?.replace(/\s/g, "").toLowerCase() || null;
+  return normalized &&
+    /[a-z0-9]/.test(normalized) &&
+    !["unknown", "unconfirmed", "notavailable", "notshown", "pending", "none", "n/a", "na"].includes(normalized)
+    ? normalized
+    : null;
+};
+const hasMovementReport = (account: Account, snapshot: AccountSnapshot) =>
+  isDebtAccount(account)
+    ? [snapshot.reportedUtilized, snapshot.reportedOutstanding, snapshot.reportedAvailable].some((value) => value != null)
+    : snapshot.reportedBalance != null;
+
 /** Shared client boundary validation, including links and reserved payment amounts. */
 export function validateWorkspaceRecord<K extends keyof WorkspaceData>(
   data: WorkspaceData,
@@ -442,6 +462,24 @@ export function validateWorkspaceRecord<K extends keyof WorkspaceData>(
     const previous = existing as Transaction | undefined;
     account(next.fromAccountId);
     account(next.toAccountId);
+    if (next.sourceSystem === "receipt_ai") {
+      const sameSource = previous?.sourceSystem === next.sourceSystem &&
+        previous?.sourceObjectId === next.sourceObjectId;
+      if (next.sourceObjectId && !sameSource && data.transactions.some((row) =>
+        row.id !== next.id && row.userId === userId &&
+        row.sourceSystem === "receipt_ai" && row.sourceObjectId === next.sourceObjectId,
+      )) throw new ReceiptDuplicateError("This screenshot transaction already exists, including records marked voided. Review the existing transaction instead of adding it again.");
+      const reference = receiptReference(next.externalReference);
+      const referenceAccount = next.fromAccountId ?? next.toAccountId;
+      const sameReference = previous?.sourceSystem === next.sourceSystem &&
+        receiptReference(previous.externalReference) === reference &&
+        (previous.fromAccountId ?? previous.toAccountId) === referenceAccount;
+      if (reference && referenceAccount && !sameReference && data.transactions.some((row) =>
+        row.id !== next.id && row.userId === userId && row.sourceSystem === "receipt_ai" &&
+        (row.fromAccountId ?? row.toAccountId) === referenceAccount &&
+        receiptReference(row.externalReference) === reference,
+      )) throw new ReceiptDuplicateError("This payment reference already exists for the selected account, including records marked voided. Review the existing transaction and confirm its payment links.");
+    }
     for (const [snapshotId, accountId] of [
       [next.fromBalanceSnapshotId, next.fromAccountId],
       [next.toBalanceSnapshotId, next.toAccountId],
@@ -453,15 +491,14 @@ export function validateWorkspaceRecord<K extends keyof WorkspaceData>(
       );
       if (
         !linkedAccount ||
-        isDebtAccount(linkedAccount) ||
         !snapshot ||
         snapshot.accountId !== linkedAccount.id ||
-        snapshot.reportedBalance == null ||
+        !hasMovementReport(linkedAccount, snapshot) ||
         !next.occurredOn ||
         localDateISO(snapshot.asOf) !== next.occurredOn
       )
         throw new Error(
-          "A balance snapshot confirmation must match an owned bank or wallet report on the transaction date.",
+          "A balance snapshot confirmation must match an owned account balance or credit report on the transaction date.",
         );
     }
     const allocated =
@@ -521,7 +558,13 @@ export function validateWorkspaceRecord<K extends keyof WorkspaceData>(
         "This purchase has linked refunds. Its amount, type and date cannot change while linked.",
       );
   } else if (collection === "snapshots") {
-    account((record as AccountSnapshot).accountId);
+    const next = record as AccountSnapshot;
+    const linkedAccount = account(next.accountId)!;
+    if (data.transactions.some((row) => row.userId === userId && (
+      (row.fromBalanceSnapshotId === next.id && (row.fromAccountId !== next.accountId || row.occurredOn !== localDateISO(next.asOf))) ||
+      (row.toBalanceSnapshotId === next.id && (row.toAccountId !== next.accountId || row.occurredOn !== localDateISO(next.asOf))) ||
+      ((row.fromBalanceSnapshotId === next.id || row.toBalanceSnapshotId === next.id) && !hasMovementReport(linkedAccount, next))
+    ))) throw new Error("Remove transaction balance confirmations before changing this report account, date, or reported amount type.");
   } else if (collection === "bills") {
     const next = record as Bill;
     if (!isDebtAccount(account(next.accountId)!))

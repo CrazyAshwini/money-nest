@@ -14,6 +14,7 @@ import {
   normalizeReceiptExtraction,
   receiptDraft,
   validateReceiptFile,
+  type ReceiptExtraction,
   type ReceiptAISettings,
   type ReceiptScanResult,
 } from "@/lib/receipt-scan";
@@ -25,6 +26,10 @@ export type AppliedReceipt = {
   fingerprint: string;
   requiresPendingReview: boolean;
   canConfirmPayment?: boolean;
+  paymentStatus?: ReceiptExtraction["paymentStatus"];
+  confidence?: ReceiptExtraction["confidence"];
+  documentType?: ReceiptExtraction["documentType"];
+  accountHint?: string | null;
 };
 
 export function ReceiptScanner({
@@ -395,20 +400,20 @@ export function ReceiptScanner({
     const receipts = indices.flatMap((index) => {
       const extraction = result.extractions?.[index] ?? result.extraction;
       if (extraction.currency && extraction.currency !== "INR") return [];
+      const requiresPendingReview =
+        extraction.confidence === "low" ||
+        extraction.documentType === "unknown" ||
+        extraction.paymentStatus !== "successful";
       return [
         {
           draft: receiptDraft(extraction),
           fingerprint: result.fingerprints?.[index] ?? result.fingerprint,
-          requiresPendingReview:
-            extraction.confidence === "low" ||
-            extraction.documentType === "unknown" ||
-            extraction.paymentStatus === "pending" ||
-            extraction.paymentStatus === "failed" ||
-            extraction.paymentStatus === "unknown",
-          canConfirmPayment:
-            extraction.paymentStatus === "unknown" &&
-            extraction.documentType !== "unknown" &&
-            extraction.confidence !== "low",
+          requiresPendingReview,
+          canConfirmPayment: requiresPendingReview,
+          paymentStatus: extraction.paymentStatus,
+          confidence: extraction.confidence,
+          documentType: extraction.documentType,
+          accountHint: extraction.accountHint,
         },
       ];
     });

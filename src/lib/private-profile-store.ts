@@ -13,7 +13,7 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import type { OwnedRecord, Transaction, WorkspaceData } from "./types";
-import { validateWorkspaceRecord, workspaceRecordSchemas } from "./validation";
+import { ReceiptDuplicateError, validateWorkspaceRecord, workspaceRecordSchemas } from "./validation";
 import {
   applyCommerceCommand,
   assertCommerceTransactionEdit,
@@ -611,10 +611,12 @@ export async function savePrivateRecord<K extends keyof WorkspaceData>(
           store.workspace.transactions.find((row) => row.id === record.id),
           record as Transaction,
         );
-    } catch {
+    } catch (error) {
       throw new PrivateProfileError(
         "invalid",
-        "Check the record details and linked accounts.",
+        error instanceof ReceiptDuplicateError
+          ? error.message
+          : "Check the record details and linked accounts.",
       );
     }
     const existing = store.workspace[collection].some(

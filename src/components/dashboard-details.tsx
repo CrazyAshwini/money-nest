@@ -1,7 +1,6 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import Decimal from "decimal.js";
 import { ArrowUpRight, X } from "lucide-react";
 import Link from "next/link";
 import { useRef, type ReactNode } from "react";
@@ -333,17 +332,13 @@ function usageSource(row: AccountUsage) {
       ? "Inferred from reported available credit"
       : row.provenance === "reported"
         ? "Reported usage"
+        : row.provenance === "calculated"
+          ? "Report plus posted payments"
         : "Usage not reported";
 }
 
 function availableCredit(row: AccountUsage) {
-  // Partial bill exposure cannot establish the remaining account-wide limit.
-  return row.used !== null &&
-    row.limit !== null &&
-    new Decimal(row.limit).gt(0) &&
-    ["reported", "inferred"].includes(row.provenance)
-    ? Decimal.max(0, new Decimal(row.limit).minus(row.used)).toFixed(2)
-    : null;
+  return row.available;
 }
 
 function dueStatus(data: WorkspaceData, bill: Bill, today: string) {
@@ -386,11 +381,13 @@ function DebtDetails({
     summary.count > 0 &&
     summary.rows.every(
       (row) =>
-        row.used !== null && ["reported", "inferred"].includes(row.provenance),
+        row.used !== null && ["reported", "inferred", "calculated"].includes(row.provenance),
     );
   const available = summary.rows.map(availableCredit);
   const availableComplete =
     summary.count > 0 && available.every((value) => value !== null);
+  const currentOutstanding = summary.rows.map((row) => accountBalance(data, row.account.id, today).current);
+  const knownCurrentOutstanding = currentOutstanding.filter((value) => value !== null);
   const bills = data.bills
     .filter((bill) => accountIds.has(bill.accountId))
     .map((bill) => ({ bill, summary: dueStatus(data, bill, today) }))
@@ -433,6 +430,10 @@ function DebtDetails({
         </p>
       </div>
       <dl className="financial-details-values financial-details-aggregate">
+        <DetailValue label={knownCurrentOutstanding.length === summary.count ? "Current outstanding" : "Known current outstanding"}>
+          {knownCurrentOutstanding.length ? formatMoney(sumMoney(knownCurrentOutstanding)) : "Not available"}
+          <small>{knownCurrentOutstanding.length}/{summary.count} balances known</small>
+        </DetailValue>
         <DetailValue
           label={
             outstandingCount === summary.count && summary.count
@@ -472,8 +473,9 @@ function DebtDetails({
         </DetailValue>
       </dl>
       <p className="financial-details-note">
-        Usage and reported outstanding can differ. Figures use each account’s
-        latest report, not live credit data.
+        Usage and outstanding can differ. Current figures apply posted payments
+        to each account’s report or confirmed opening balance. Reported values
+        keep their original dates.
         {!exposureComplete &&
           " Missing reports or bill-only exposure prevent an exact total."}
         {!summary.complete &&
@@ -489,7 +491,6 @@ function DebtDetails({
       >
         {summary.rows.map((row) => {
           const snapshot = latestSnapshot(data, row.account.id, today);
-          const available = availableCredit(row);
           const nextBill = bills.find(
             ({ bill, summary }) =>
               bill.accountId === row.account.id &&
@@ -498,6 +499,22 @@ function DebtDetails({
           const deposit = data.fixedDeposits.find(
             (item) => item.backingAccountId === row.account.id,
           );
+          const availableDisplay =
+            row.availableCredit !== null
+              ? `${formatMoney(row.availableCredit)} (${row.availableCreditStatus === "verified" ? "Verified" : "Estimated"})`
+              : row.estimatedAvailableCredit !== null
+                ? `Estimated ${formatMoney(row.estimatedAvailableCredit)} (Unverified)`
+                : "Unknown";
+
+          const verificationLabel =
+            row.balanceVerificationStatus === "verified"
+              ? "Verified"
+              : row.balanceVerificationStatus === "estimated"
+                ? "Report + payments (Estimated)"
+                : row.balanceVerificationStatus === "partial"
+                  ? "Partial exposure (Unverified bills only)"
+                  : "Unconfirmed";
+
           return (
             <article className="financial-details-record" key={row.account.id}>
               <div className="financial-details-record-heading">
@@ -518,28 +535,43 @@ function DebtDetails({
                 </p>
               )}
               <dl className="financial-details-values">
+                <DetailValue label="Current outstanding">
+                  {row.currentOutstanding == null
+                    ? "Not available"
+                    : formatMoney(row.currentOutstanding)}
+                </DetailValue>
                 <DetailValue label="Reported outstanding">
-                  {snapshot?.reportedOutstanding == null
+                  {row.issuerReportedOutstanding == null
                     ? "Not reported"
-                    : formatMoney(snapshot.reportedOutstanding)}
+                    : formatMoney(row.issuerReportedOutstanding)}
                 </DetailValue>
                 <DetailValue label="Credit limit">
-                  {row.limit === null ? "Not set" : formatMoney(row.limit)}
+                  {row.totalCreditLimit === null
+                    ? "Not set"
+                    : formatMoney(row.totalCreditLimit)}
                 </DetailValue>
-                <DetailValue label="Available from known usage">
-                  {available === null
-                    ? "Not available"
-                    : formatMoney(available)}
+                <DetailValue label="Available credit">
+                  {availableDisplay}
                 </DetailValue>
                 <DetailValue label="Utilization">
-                  {formatUsagePercentage(row.percentage)}
+                  {formatUsagePercentage(row.creditUtilization)}
                 </DetailValue>
-                <DetailValue label="Usage as of">{date(row.asOf)}</DetailValue>
-                <DetailValue label="Next statement">
-                  {date(snapshot?.nextStatementDate)}
+                <DetailValue label="Amount due">
+                  {row.billedAmount !== null
+                    ? formatMoney(row.billedAmount)
+                    : "Not available"}
                 </DetailValue>
-                <DetailValue label="Next recorded payment due">
-                  {nextBill ? date(nextBill.bill.dueDate) : "Not available"}
+                <DetailValue label="Next bill generation date">
+                  {date(row.statementGenerationDate || snapshot?.nextStatementDate)}
+                </DetailValue>
+                <DetailValue label="Payment due date">
+                  {nextBill ? date(nextBill.bill.dueDate) : date(row.paymentDueDate)}
+                </DetailValue>
+                <DetailValue label="Verification status">
+                  {verificationLabel}
+                </DetailValue>
+                <DetailValue label="Last updated date">
+                  {date(row.asOf || row.baselineAsOf)}
                 </DetailValue>
                 <DetailValue label="Payment status">
                   {nextBill?.summary.label ||
@@ -548,17 +580,74 @@ function DebtDetails({
                       : "Not available")}
                 </DetailValue>
               </dl>
-              <UsageMeter {...row} label={`${row.account.name} utilization`} />
+
+              {/* Transaction details breakdown (Part A6) */}
+              <div className="financial-details-breakdown">
+                <div>
+                  <dt>Unbilled purchases</dt>
+                  <dd>{formatMoney(row.unbilledAmount ?? "0.00")}</dd>
+                </div>
+                <div>
+                  <dt>Confirmed repayments</dt>
+                  <dd>{formatMoney(row.confirmedRepayments)}</dd>
+                </div>
+                <div>
+                  <dt>Confirmed refunds</dt>
+                  <dd>{formatMoney(row.confirmedRefunds)}</dd>
+                </div>
+                <div>
+                  <dt>Pending holds</dt>
+                  <dd>{formatMoney(row.pendingAuthorizations)}</dd>
+                </div>
+              </div>
+
+              {/* Utilization progress bar: only render when valid utilization is known */}
+              {row.creditUtilization !== null && row.provenance !== "partial" ? (
+                <UsageMeter {...row} label={`${row.account.name} utilization`} />
+              ) : (
+                <p className="financial-details-note">
+                  Utilization progress bar hidden · Complete outstanding balance not verified
+                </p>
+              )}
+
               <p className="financial-details-note">
                 {usageSource(row)}
-                {row.asOf ? ` · ${date(row.asOf)}` : " · Snapshot needed"}
+                {row.asOf ? ` · As of ${date(row.asOf)}` : " · Snapshot needed"}
               </p>
-              <DetailLink
-                href={`/accounts/${row.account.id}`}
-                onClose={onClose}
-              >
-                View account
-              </DetailLink>
+
+              {/* Account actions (Part A6) */}
+              <div className="financial-details-actions">
+                <DetailLink
+                  href={`/transactions?account=${row.account.id}`}
+                  onClose={onClose}
+                >
+                  View transactions
+                </DetailLink>
+                <DetailLink
+                  href={`/bills?account=${row.account.id}`}
+                  onClose={onClose}
+                >
+                  View statement
+                </DetailLink>
+                <DetailLink
+                  href={`/accounts/${row.account.id}?action=repay`}
+                  onClose={onClose}
+                >
+                  Record repayment
+                </DetailLink>
+                <DetailLink
+                  href={`/accounts/${row.account.id}?action=snapshot`}
+                  onClose={onClose}
+                >
+                  Update balance
+                </DetailLink>
+                <DetailLink
+                  href={`/accounts/${row.account.id}`}
+                  onClose={onClose}
+                >
+                  Reconcile account
+                </DetailLink>
+              </div>
             </article>
           );
         })}
