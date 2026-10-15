@@ -1,4 +1,5 @@
 "use client";
+import { BrandLockup } from "./brand-lockup";
 import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -313,10 +314,7 @@ export function FinanceApp() {
                   className="brand dashboard-mobile-brand"
                   aria-label="Money Nest home"
                 >
-                  <span className="brand-icon" aria-hidden="true">
-                    M
-                  </span>
-                  <span>Money Nest</span>
+                  <BrandLockup />
                 </Link>
                 <DashboardWelcome />
               </>

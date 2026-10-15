@@ -2,11 +2,12 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Bot, X } from "lucide-react";
+import { X } from "lucide-react";
 import {
   dashboardFirstName,
   dashboardGreeting,
 } from "@/lib/dashboard-greeting";
+import { NestBotAvatar } from "./brand-lockup";
 import { useFinance } from "./finance-provider";
 import "./dashboard-welcome.css";
 
@@ -66,7 +67,7 @@ export function DashboardWelcome() {
             className="nestbot-trigger"
             aria-label="Open NestBot"
           >
-            <Bot size={19} aria-hidden="true" />
+            <NestBotAvatar />
             <span>NestBot</span>
           </button>
         </Dialog.Trigger>
@@ -75,7 +76,7 @@ export function DashboardWelcome() {
           <Dialog.Content className="nestbot-panel" aria-modal="true">
             <div className="nestbot-heading">
               <div className="nestbot-title">
-                <Bot size={22} aria-hidden="true" />
+                <NestBotAvatar size={32} />
                 <Dialog.Title>NestBot</Dialog.Title>
               </div>
               <Dialog.Close asChild>
