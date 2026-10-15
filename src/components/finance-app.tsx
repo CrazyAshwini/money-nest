@@ -246,7 +246,14 @@ export function FinanceApp() {
       <main className="loading">
         <h1>Unable to load your workspace</h1>
         <p role="alert">{message}</p>
-        <button className="button primary" onClick={() => void refresh()}>
+        <button
+          className="button primary"
+          onClick={() => {
+            setEditor(null);
+            setMobile(false);
+            void refresh();
+          }}
+        >
           Try again
         </button>
         <Link href="/login">Return to sign in</Link>
@@ -515,7 +522,7 @@ export function FinanceApp() {
           mode={mode}
           onAdd={() => open({ type: "transaction" })}
         />
-        <NestBot />
+        <NestBot onReceiptRequest={() => open({ type: "transaction" })} />
         {editor && (
           <RecordEditor editor={editor} onClose={() => setEditor(null)} />
         )}
@@ -887,7 +894,12 @@ function CreditCardItem({
   const usage = accountUsage(data, account.id, today);
   const used = usage.used;
   const bill = data.bills
-    .filter((b) => b.accountId === account.id)
+    .filter(
+      (b) =>
+        b.accountId === account.id &&
+        b.userId === account.userId &&
+        b.statementDate <= today,
+    )
     .sort((a, b) => b.statementDate.localeCompare(a.statementDate))[0];
   return (
     <Link href={`/accounts/${account.id}`} className="credit-card">
@@ -941,7 +953,7 @@ function CreditCardItem({
                   ? "Reported"
                   : usage.provenance === "calculated"
                     ? "Report + payments"
-                  : "Unconfirmed"}
+                    : "Unconfirmed"}
           </b>
         </span>
         <span>
@@ -1304,17 +1316,32 @@ function AccountsPage({
       (t) => t.fromAccountId === a.id || t.toAccountId === a.id,
     );
     const filteredAccountTxns = allAccountTxns.filter((t) => {
-      if (accountTxnTab === "purchases") return t.fromAccountId === a.id && t.kind === "expense";
-      if (accountTxnTab === "repayments") return t.toAccountId === a.id && ["bill_payment", "transfer"].includes(t.kind);
-      if (accountTxnTab === "refunds") return t.toAccountId === a.id && t.kind === "refund";
+      if (accountTxnTab === "purchases")
+        return t.fromAccountId === a.id && t.kind === "expense";
+      if (accountTxnTab === "repayments")
+        return (
+          t.toAccountId === a.id &&
+          ["bill_payment", "transfer"].includes(t.kind)
+        );
+      if (accountTxnTab === "refunds")
+        return t.toAccountId === a.id && t.kind === "refund";
       if (accountTxnTab === "pending") return t.status === "pending_review";
       return true;
     });
 
-    const purchasesCount = allAccountTxns.filter((t) => t.fromAccountId === a.id && t.kind === "expense").length;
-    const repaymentsCount = allAccountTxns.filter((t) => t.toAccountId === a.id && ["bill_payment", "transfer"].includes(t.kind)).length;
-    const refundsCount = allAccountTxns.filter((t) => t.toAccountId === a.id && t.kind === "refund").length;
-    const pendingCount = allAccountTxns.filter((t) => t.status === "pending_review").length;
+    const purchasesCount = allAccountTxns.filter(
+      (t) => t.fromAccountId === a.id && t.kind === "expense",
+    ).length;
+    const repaymentsCount = allAccountTxns.filter(
+      (t) =>
+        t.toAccountId === a.id && ["bill_payment", "transfer"].includes(t.kind),
+    ).length;
+    const refundsCount = allAccountTxns.filter(
+      (t) => t.toAccountId === a.id && t.kind === "refund",
+    ).length;
+    const pendingCount = allAccountTxns.filter(
+      (t) => t.status === "pending_review",
+    ).length;
 
     return (
       <>
@@ -1327,7 +1354,9 @@ function AccountsPage({
               {isDebtAccount(a) && (
                 <button
                   className="button"
-                  onClick={() => open({ type: "transaction", kind: "bill_payment" })}
+                  onClick={() =>
+                    open({ type: "transaction", kind: "bill_payment" })
+                  }
                 >
                   <CreditCard size={15} />
                   Record repayment
@@ -1349,12 +1378,13 @@ function AccountsPage({
             </>
           }
         />
-        {(
+        {
           <div className="info-banner">
             <Landmark size={17} aria-hidden="true" />
             <span>
               <strong>
-                {usage ? "Updated outstanding" : "Updated balance"} · {formatOptional(balance.current)}
+                {usage ? "Updated outstanding" : "Updated balance"} ·{" "}
+                {formatOptional(balance.current)}
               </strong>
               <br />
               {balance.currentSource === "snapshot"
@@ -1364,30 +1394,35 @@ function AccountsPage({
                   : "Add a reported snapshot or a known opening balance to calculate this account's balance."}
             </span>
           </div>
-        )}
+        }
         {usage && (
           <div className="info-banner">
             <CreditCard size={17} aria-hidden="true" />
             <span>
-              <strong>Credit limit:</strong> {usage.totalCreditLimit ? formatMoney(usage.totalCreditLimit) : "Not set"} ·{" "}
-              <strong>Current outstanding:</strong> {usage.currentOutstanding ? formatMoney(usage.currentOutstanding) : "Not available"} ·{" "}
-              <strong>Available credit:</strong> {
-                usage.availableCredit !== null
-                  ? `${formatMoney(usage.availableCredit)} (${usage.availableCreditStatus === "verified" ? "Verified" : "Estimated"})`
-                  : usage.estimatedAvailableCredit !== null
-                    ? `Estimated ${formatMoney(usage.estimatedAvailableCredit)} (Unverified)`
-                    : "Unknown until verified"
-              } ·{" "}
-              <strong>Utilization:</strong> {formatUsagePercentage(usage.creditUtilization)} ·{" "}
-              <strong>Status:</strong> {
-                usage.balanceVerificationStatus === "verified"
-                  ? "Verified"
-                  : usage.balanceVerificationStatus === "estimated"
-                    ? "Report + payments (Estimated)"
-                    : usage.balanceVerificationStatus === "partial"
-                      ? "Partial exposure (Unverified bills only)"
-                      : "Unconfirmed"
-              }
+              <strong>Credit limit:</strong>{" "}
+              {usage.totalCreditLimit
+                ? formatMoney(usage.totalCreditLimit)
+                : "Not set"}{" "}
+              · <strong>Current outstanding:</strong>{" "}
+              {usage.currentOutstanding
+                ? formatMoney(usage.currentOutstanding)
+                : "Not available"}{" "}
+              · <strong>Available credit:</strong>{" "}
+              {usage.availableCredit !== null
+                ? `${formatMoney(usage.availableCredit)} (${usage.availableCreditStatus === "verified" ? "Verified" : "Estimated"})`
+                : usage.estimatedAvailableCredit !== null
+                  ? `Estimated ${formatMoney(usage.estimatedAvailableCredit)} (Unverified)`
+                  : "Unknown until verified"}{" "}
+              · <strong>Utilization:</strong>{" "}
+              {formatUsagePercentage(usage.creditUtilization)} ·{" "}
+              <strong>Status:</strong>{" "}
+              {usage.balanceVerificationStatus === "verified"
+                ? "Verified"
+                : usage.balanceVerificationStatus === "estimated"
+                  ? "Report + payments (Estimated)"
+                  : usage.balanceVerificationStatus === "partial"
+                    ? "Partial exposure (Unverified bills only)"
+                    : "Unconfirmed"}
             </span>
           </div>
         )}

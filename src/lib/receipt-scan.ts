@@ -109,6 +109,25 @@ const clean = (text: string | null): string | null =>
     .replace(/\s+/g, " ")
     .trim() || null;
 
+function paymentReference(value: string | null): string | null {
+  const text = clean(value);
+  const key = text?.replace(/\s/g, "").toLowerCase();
+  return key &&
+    /[a-z0-9]/.test(key) &&
+    ![
+      "unknown",
+      "unconfirmed",
+      "notavailable",
+      "notshown",
+      "pending",
+      "none",
+      "n/a",
+      "na",
+    ].includes(key)
+    ? text
+    : null;
+}
+
 export function normalizeReceiptExtraction(input: unknown): ReceiptExtraction {
   const parsed = receiptExtractionSchema.parse(input);
   const modelWarnings = parsed.warnings
@@ -167,7 +186,7 @@ export function normalizeReceiptExtraction(input: unknown): ReceiptExtraction {
     platform: clean(parsed.platform ?? null),
     merchant: clean(parsed.merchant),
     description: clean(parsed.description),
-    externalReference: clean(parsed.externalReference),
+    externalReference: paymentReference(parsed.externalReference),
     accountHint: clean(parsed.accountHint),
     warnings: Array.from(new Set([...warnings, ...modelWarnings])).slice(0, 8),
   };

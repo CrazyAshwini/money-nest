@@ -7,6 +7,9 @@ let db: PGlite;
 let previousViewColumns: string[];
 const legacyOwner = crypto.randomUUID();
 const legacyTransaction = crypto.randomUUID();
+const legacyReceiptIds = [crypto.randomUUID(), crypto.randomUUID()];
+const legacyBank = crypto.randomUUID();
+let beforeReceiptMigration: unknown[];
 const emptyCommerce = { orders: [], refunds: [], operations: [] };
 
 beforeAll(async () => {
@@ -37,6 +40,13 @@ beforeAll(async () => {
         )
       ).rows.map((row) => row.column_name);
     }
+    if (file.endsWith("_confirmed_receipt_account_posting.sql")) {
+      await db.query("insert into accounts(id,user_id,name,kind) values($1,$2,'Legacy synthetic bank','bank')", [legacyBank, legacyOwner]);
+      for (let index = 0; index < legacyReceiptIds.length; index++) {
+        await db.query("insert into transactions(id,user_id,amount,kind,description,from_account_id,source_system,source_object_id,external_reference) values($1,$2,45,'expense','Existing receipt',$3,'receipt_ai',$4,$5)", [legacyReceiptIds[index], legacyOwner, legacyBank, `legacy-source-${index}`, index ? "legacy ref 123" : "LEGACYREF123"]);
+      }
+      beforeReceiptMigration = (await db.query("select to_jsonb(t) as value from transactions t order by id")).rows;
+    }
     await db.exec(readFileSync(join(directory, file), "utf8"));
   }
 }, 60000);
@@ -57,7 +67,7 @@ async function newOwner() {
   await session(owner);
   return owner;
 }
-async function fixture() {
+async function fixture(debtKind = "credit_card") {
   const owner = await newOwner();
   const bank = crypto.randomUUID();
   const wallet = crypto.randomUUID();
@@ -67,8 +77,8 @@ async function fixture() {
   const cardSnapshot = crypto.randomUUID();
   const unknownBalance = crypto.randomUUID();
   await db.query(
-    "insert into accounts(id,user_id,name,kind) values($1,$4,'Synthetic bank','bank'),($2,$4,'Synthetic wallet','wallet'),($3,$4,'Synthetic card','credit_card')",
-    [bank, wallet, card, owner],
+    "insert into accounts(id,user_id,name,kind) values($1,$4,'Synthetic bank','bank'),($2,$4,'Synthetic wallet','wallet'),($3,$4,'Synthetic credit',$5)",
+    [bank, wallet, card, owner, debtKind],
   );
   // UTC is still the 14th, but this report belongs to the 15th in IST.
   await db.query(
@@ -112,10 +122,13 @@ async function insertTransaction(
     to_account_id: null,
     from_balance_snapshot_id: f.snapshot,
     to_balance_snapshot_id: null,
+    source_system: null,
+    source_object_id: null,
+    external_reference: null,
     ...overrides,
   };
   await db.query(
-    "insert into transactions(id,user_id,amount,currency,kind,status,occurred_on,description,from_account_id,to_account_id,from_balance_snapshot_id,to_balance_snapshot_id) select id,user_id,amount,currency,kind,status,occurred_on,description,from_account_id,to_account_id,from_balance_snapshot_id,to_balance_snapshot_id from jsonb_populate_record(null::transactions,$1)",
+    "insert into transactions(id,user_id,amount,currency,kind,status,occurred_on,description,from_account_id,to_account_id,from_balance_snapshot_id,to_balance_snapshot_id,source_system,source_object_id,external_reference) select id,user_id,amount,currency,kind,status,occurred_on,description,from_account_id,to_account_id,from_balance_snapshot_id,to_balance_snapshot_id,source_system,source_object_id,external_reference from jsonb_populate_record(null::transactions,$1)",
     [JSON.stringify(record)],
   );
   return record;
@@ -184,6 +197,11 @@ function workspace(owner: string) {
 }
 
 describe("explicit same-day balance report persistence", () => {
+  it("applies the receipt migration without rewriting legacy finance rows or normalized duplicate references", async () => {
+    await db.exec("reset role");
+    expect((await db.query("select to_jsonb(t) as value from transactions t order by id")).rows).toEqual(beforeReceiptMigration);
+  });
+
   it("leaves existing rows untouched and appends exact-decimal, owner-scoped view columns", async () => {
     await session(legacyOwner);
     expect(await readTransaction(legacyTransaction)).toEqual({
@@ -479,6 +497,81 @@ describe("explicit same-day balance report persistence", () => {
     ).toBe(data.snapshots[0].id);
   });
 
+  it.each(["credit_card", "pay_later"])("persists zero-valued %s report confirmations on purchases and refunds", async (kind) => {
+    const f = await fixture(kind);
+    const metrics = ["reported_utilized", "reported_outstanding", "reported_available"];
+    for (const metric of metrics) {
+      const assignments = metrics.map((field) => `${field}=${field === metric ? "0" : "null"}`).join(",");
+      await db.query(`update account_snapshots set reported_balance=null,${assignments} where id=$1`, [f.cardSnapshot]);
+      const purchase = await insertTransaction(f, { from_account_id: f.card, from_balance_snapshot_id: f.cardSnapshot });
+      const refund = await insertTransaction(f, { kind: "refund", from_account_id: null, from_balance_snapshot_id: null, to_account_id: f.card, to_balance_snapshot_id: f.cardSnapshot });
+      expect((await readTransaction(purchase.id)).from_balance_snapshot_id).toBe(f.cardSnapshot);
+      expect((await readTransaction(refund.id)).to_balance_snapshot_id).toBe(f.cardSnapshot);
+      await expect(db.query("update account_snapshots set reported_utilized=null,reported_outstanding=null,reported_available=null,reported_balance=0 where id=$1", [f.cardSnapshot])).rejects.toThrow("Remove transaction balance confirmations");
+    }
+    await expect(insertTransaction(f, { from_account_id: f.card, from_balance_snapshot_id: f.cardSnapshot, occurred_on: "2026-10-14" })).rejects.toThrow("same account and date");
+    await expect(insertTransaction(f, { from_account_id: f.wallet, from_balance_snapshot_id: f.cardSnapshot })).rejects.toThrow("same account and date");
+    await expect(db.query("update account_snapshots set as_of='2026-10-16T00:00:00Z' where id=$1", [f.cardSnapshot])).rejects.toThrow("Remove transaction balance confirmations");
+  });
+
+  it("rejects alternate-ID screenshot fingerprints even when the original is voided", async () => {
+    const f = await fixture();
+    const source = { source_system: "receipt_ai", source_object_id: "a".repeat(64), status: "voided" };
+    await insertTransaction(f, source);
+    await expect(insertTransaction(f, { ...source, status: "posted" })).rejects.toThrow("transactions_source_identity");
+  });
+
+  it("rejects normalized same-account receipt references on inserts and updates, including Unicode whitespace", async () => {
+    const f = await fixture();
+    const source = { source_system: "receipt_ai", source_object_id: "a".repeat(64), external_reference: "RRN123456789", status: "voided" };
+    await insertTransaction(f, source);
+    // Whitespace copied from screenshots can include NBSP and narrow NBSP.
+    for (const whitespace of [" ", "\t", "\u00a0", "\u202f", "\u2009", "\ufeff"]) {
+      await expect(insertTransaction(f, { ...source, source_object_id: crypto.randomUUID(), external_reference: `rrn${whitespace}123456789`, status: "posted" })).rejects.toThrow("payment reference already exists");
+    }
+    const other = await insertTransaction(f, { ...source, source_object_id: "b".repeat(64), external_reference: "OTHERREF" });
+    await expect(db.query("update transactions set external_reference=' rrn 123456789 ' where id=$1", [other.id])).rejects.toThrow("payment reference already exists");
+    expect((await db.query<{ count: number }>("select count(*)::int as count from transactions where user_id=$1", [f.owner])).rows[0].count).toBe(2);
+  });
+
+  it("scopes receipt references to the owner, source, and selected account while keeping unknown references unclassified", async () => {
+    const f = await fixture();
+    const source = { source_system: "receipt_ai", external_reference: "RRN123456789" };
+    await insertTransaction(f, source);
+    await insertTransaction(f, { ...source, from_account_id: f.wallet, from_balance_snapshot_id: f.walletSnapshot });
+    await insertTransaction(f, { ...source, source_system: "csv" });
+    await insertTransaction(f, { ...source, external_reference: "Unknown" });
+    await insertTransaction(f, { ...source, external_reference: " unknown " });
+    const foreign = await fixture();
+    await insertTransaction(foreign, source);
+    await expect(insertTransaction(foreign, { ...source, from_account_id: f.bank, from_balance_snapshot_id: f.snapshot })).rejects.toThrow();
+    await session(f.owner);
+    expect((await db.query<{ count: number }>("select count(*)::int as count from api_transactions")).rows[0].count).toBe(5);
+  });
+
+  it("allows same-ID commerce retries and edits of pre-existing normalized duplicates without inserting another debit", async () => {
+    await session(legacyOwner);
+    const receipt = (await db.query<Record<string, unknown>>("select * from transactions where id=$1", [legacyReceiptIds[1]])).rows[0];
+    const commit = async (changes: Record<string, unknown>) => db.query("select commit_finance_commerce($1,$2,$3)", [await revision(), JSON.stringify([{ ...receipt, ...changes }]), JSON.stringify(emptyCommerce)]);
+    await commit({ description: "Reviewed existing receipt" });
+    await commit({ description: "Reviewed existing receipt" });
+    await expect(commit({ external_reference: " LEGACY REF 123 ", id: crypto.randomUUID(), source_object_id: "new-source" })).rejects.toThrow("payment reference already exists");
+    expect((await db.query<{ count: number }>("select count(*)::int as count from transactions where id=any($1::uuid[])", [legacyReceiptIds])).rows[0].count).toBe(2);
+  });
+
+  it("rolls back an entire commerce save when a later receipt conflicts with an existing reference", async () => {
+    const f = await fixture();
+    await insertTransaction(f, { source_system: "receipt_ai", source_object_id: "existing-source", external_reference: "RRN123456789" });
+    const rows = [
+      { id: crypto.randomUUID(), user_id: f.owner, amount: "45.00", currency: "INR", kind: "expense", status: "posted", occurred_on: "2026-10-15", description: "First save must roll back", from_account_id: f.bank, source_system: "receipt_ai", source_object_id: "first-new-source", external_reference: "DISTINCTREF" },
+      { id: crypto.randomUUID(), user_id: f.owner, amount: "45.00", currency: "INR", kind: "expense", status: "posted", occurred_on: "2026-10-15", description: "Conflicting screenshot", from_account_id: f.bank, source_system: "receipt_ai", source_object_id: "second-new-source", external_reference: " rrn 123456789 " },
+    ];
+    const beforeRevision = await revision();
+    await expect(db.query("select commit_finance_commerce($1,$2,$3)", [beforeRevision, JSON.stringify(rows), JSON.stringify(emptyCommerce)])).rejects.toThrow("payment reference already exists");
+    expect(await revision()).toBe(beforeRevision);
+    expect((await db.query<{ count: number }>("select count(*)::int as count from transactions where user_id=$1", [f.owner])).rows[0].count).toBe(1);
+  });
+
   it("keeps the view and mutation functions under caller permissions", async () => {
     await db.exec("reset role");
     const functions = await db.query<{
@@ -486,9 +579,9 @@ describe("explicit same-day balance report persistence", () => {
       prosecdef: boolean;
       proconfig: string[];
     }>(
-      "select proname,prosecdef,proconfig from pg_proc where proname in ('validate_transaction_balance_snapshot','protect_transaction_balance_snapshot','commit_reviewed_import','commit_finance_commerce','merge_private_profile_cloud')",
+      "select proname,prosecdef,proconfig from pg_proc where proname in ('validate_transaction_balance_snapshot','protect_transaction_balance_snapshot','validate_receipt_payment_reference','commit_reviewed_import','commit_finance_commerce','merge_private_profile_cloud')",
     );
-    expect(functions.rows).toHaveLength(5);
+    expect(functions.rows).toHaveLength(6);
     for (const fn of functions.rows) {
       expect(fn.prosecdef).toBe(false);
       expect(fn.proconfig).toContain('search_path=""');

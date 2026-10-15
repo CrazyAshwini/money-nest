@@ -51,22 +51,39 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json().catch(() => null)) as BotRequestPayload | null;
+    const { ownerId, cloud } = await authenticateAIOwnerRequest(request, true);
+    const body = (await request
+      .json()
+      .catch(() => null)) as BotRequestPayload | null;
     if (!body || typeof body !== "object") {
       return privateResponse({ error: "Invalid request payload." }, 400);
     }
 
     const isWrite = body.action === "confirm_transaction";
-    const { ownerId, cloud } = await authenticateAIOwnerRequest(request, isWrite);
+    if (body.image) {
+      return privateResponse(
+        {
+          error:
+            "Open Add transaction and use the receipt scanner. Review payment completion and select the source and destination accounts before saving.",
+          code: "use_receipt_scanner",
+        },
+        422,
+      );
+    }
 
     let workspace: WorkspaceData;
-    let supabaseClient: Awaited<ReturnType<typeof createSupabaseServerClient>> = null;
-    const sessionToken = request.cookies.get("finance-os-private-session")?.value ?? "";
+    let supabaseClient: Awaited<ReturnType<typeof createSupabaseServerClient>> =
+      null;
+    const sessionToken =
+      request.cookies.get("finance-os-private-session")?.value ?? "";
 
     if (!cloud || privateProfileEnabled()) {
       const privateData = await readPrivateProfile(sessionToken);
       if (!privateData) {
-        throw new PrivateProfileError("auth", "Sign in to access your profile.");
+        throw new PrivateProfileError(
+          "auth",
+          "Sign in to access your profile.",
+        );
       }
       workspace = privateData.workspace;
     } else {
@@ -81,7 +98,10 @@ export async function POST(request: NextRequest) {
     // Confirmation of transaction mutation
     if (isWrite) {
       if (!body.confirmedTransaction) {
-        return privateResponse({ error: "Missing transaction confirmation draft." }, 400);
+        return privateResponse(
+          { error: "Missing transaction confirmation draft." },
+          400,
+        );
       }
 
       const transaction = confirmTransactionPost(
@@ -93,7 +113,10 @@ export async function POST(request: NextRequest) {
       if (!cloud || privateProfileEnabled()) {
         await savePrivateRecord(sessionToken, "transactions", transaction);
       } else if (supabaseClient) {
-        const dbRecord = toDatabase(transaction as unknown as Record<string, unknown>, ownerId);
+        const dbRecord = toDatabase(
+          transaction as unknown as Record<string, unknown>,
+          ownerId,
+        );
         const { error: upsertErr } = await supabaseClient
           .from("transactions")
           .upsert(dbRecord, { onConflict: "id" });

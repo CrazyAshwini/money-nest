@@ -279,7 +279,10 @@ test("compact cards open details for every active account and retain account nav
       await expect(row).toBeVisible();
       await expect(row).toContainText(`••${account.maskedSuffix}`);
       await expect(
-        row.getByRole("link", { name: "View account", exact: true }),
+        row.getByRole("link", {
+          name: kind === "bank" ? "View account" : "Reconcile account",
+          exact: true,
+        }),
       ).toHaveAttribute("href", `/accounts/${account.id}`);
     }
     await expect(
@@ -385,10 +388,8 @@ test("credit and Pay Later percentages retain bands, capped meters and unknown c
   await expect(overLimitMeter).toHaveAttribute("aria-valuetext", /125% used/);
   for (const name of ["QA Missing Limit Card", "QA Unreported Card"]) {
     const row = accountRow(credit, name);
-    await expect(row.locator(".usage-meter")).toHaveAttribute(
-      "data-band",
-      "unknown",
-    );
+    await expect(row.locator(".usage-meter")).toHaveCount(0);
+    await expect(row.getByRole("meter")).toHaveCount(0);
     await expect(valueFor(row, "Utilization")).toHaveText("Unknown");
     await expect(row).not.toContainText(/\b0(?:\.0)?%/);
   }
@@ -466,7 +467,7 @@ test("all detail rows scroll into view without horizontal overflow on desktop an
         (account) => account.active && account.kind === kind,
       )) {
         const link = accountRow(dialog, account.name).getByRole("link", {
-          name: "View account",
+          name: kind === "bank" ? "View account" : "Reconcile account",
           exact: true,
         });
         await link.scrollIntoViewIfNeeded();

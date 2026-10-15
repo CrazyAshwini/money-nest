@@ -30,7 +30,7 @@ const QUICK_PROMPTS = [
   "Which bills are due next?",
 ];
 
-export function NestBot() {
+export function NestBot({ onReceiptRequest }: { onReceiptRequest: () => void }) {
   const { refresh } = useFinance();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -41,14 +41,13 @@ export function NestBot() {
       id: "initial-greeting",
       role: "assistant",
       content:
-        "Hello! I'm Money Nest Bot. Ask me about your bank balances, monthly spending, credit card outstandings, upcoming bills, or upload a payment screenshot to add a transaction.",
+        "Hello! I'm Money Nest Bot. Ask me about your bank balances, monthly spending, credit card outstandings, or upcoming bills. The receipt button opens the transaction scanner form, where you can upload a screenshot, choose the correct account, and review the payment before saving.",
       createdAt: new Date().toISOString(),
       suggestedActions: QUICK_PROMPTS,
     },
   ]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -181,74 +180,6 @@ export function NestBot() {
           : m,
       ),
     );
-  };
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setIsLoading(true);
-    const userMsg: NestBotMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: `Uploaded screenshot: ${file.name}`,
-      createdAt: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-
-    try {
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => {
-          const result = reader.result as string;
-          const base64 = result.split(",")[1];
-          resolve(base64);
-        };
-        reader.onerror = reject;
-      });
-      reader.readAsDataURL(file);
-      const base64Data = await base64Promise;
-
-      const payload: BotRequestPayload = {
-        message: "Analyze screenshot",
-        image: {
-          data: base64Data,
-          mimeType: file.type || "image/jpeg",
-          name: file.name,
-        },
-      };
-
-      const res = await fetch("/api/ai/bot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Upload error ${res.status}`);
-      }
-
-      const botResp: BotResponsePayload = await res.json();
-      setMessages((prev) => [...prev, botResp.message]);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content:
-            err instanceof Error
-              ? err.message
-              : "Could not analyze receipt screenshot.",
-          createdAt: new Date().toISOString(),
-          error: "upload_failed",
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
   };
 
   return (
@@ -390,18 +321,14 @@ export function NestBot() {
                   handleSend();
                 }}
               >
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  style={{ display: "none" }}
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={handleFileUpload}
-                />
                 <button
                   type="button"
                   className="nestbot-upload-btn"
-                  onClick={() => fileInputRef.current?.click()}
-                  title="Upload receipt screenshot"
+                  onClick={() => {
+                    setIsOpen(false);
+                    onReceiptRequest();
+                  }}
+                  title="Open receipt scanner"
                   aria-label="Upload receipt screenshot"
                   disabled={isLoading}
                 >

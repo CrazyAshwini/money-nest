@@ -44,6 +44,7 @@ import {
 } from "../app/api/ai/settings/route";
 import { POST as receiptPOST } from "../app/api/ai/receipt/route";
 import { POST as ordersPOST } from "../app/api/ai/orders/route";
+import { POST as botPOST } from "../app/api/ai/bot/route";
 
 const configuration = {
   provider: "gemini",
@@ -104,6 +105,47 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("hosted owner-only receipt AI", () => {
+  it("routes bot screenshots to the reviewed receipt flow before loading or posting finance data", async () => {
+    const response = await botPOST(
+      request(
+        JSON.stringify({
+          message: "Analyze screenshot",
+          image: {
+            data: "synthetic-image",
+            mimeType: "image/png",
+            name: "fixture.png",
+          },
+        }),
+        {},
+        "https://money-nest.example/api/ai/bot",
+      ),
+    );
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({
+      code: "use_receipt_scanner",
+    });
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(mocks.getUser).toHaveBeenCalledOnce();
+    expect(mocks.readConfiguration).not.toHaveBeenCalled();
+    expect(mocks.scanReceipt).not.toHaveBeenCalled();
+  });
+
+  it.each(["", "https://unrelated.example"])(
+    "rejects bot POST Origin %s before reading its payload",
+    async (origin) => {
+      const input = request(
+        "payload must stay unread",
+        { origin },
+        "https://money-nest.example/api/ai/bot",
+      );
+      const response = await botPOST(input);
+      expect(response.status).toBe(403);
+      expect(input.bodyUsed).toBe(false);
+      expect(mocks.getUser).not.toHaveBeenCalled();
+      expect(mocks.readConfiguration).not.toHaveBeenCalled();
+    },
+  );
+
   it("verifies the owner with getUser and keeps server keys and identity out of settings", async () => {
     const response = await settingsGET(request());
     expect(response.status).toBe(200);
@@ -133,7 +175,7 @@ describe("hosted owner-only receipt AI", () => {
     "blocks invalid sessions before reading metadata, uploads or spending credits: %j",
     async ({ user, error }) => {
       mocks.getUser.mockResolvedValue({ data: { user }, error });
-      for (const handler of [receiptPOST, ordersPOST, settingsPOST]) {
+      for (const handler of [receiptPOST, ordersPOST, settingsPOST, botPOST]) {
         const denied = request("body that must stay unread");
         const response = await handler(denied);
         expect(response.status).toBe(403);
@@ -221,10 +263,21 @@ describe("hosted owner-only receipt AI", () => {
   it("authenticates the owner on the exact current preview and rejects other Vercel domains before upload", async () => {
     const origin = "https://money-nest-current.vercel.app";
     vi.stubEnv("VERCEL_URL", new URL(origin).host);
-    const preview = request("body", { host: new URL(origin).host, origin }, `${origin}/api/ai/receipt`);
-    await expect(authenticateAIOwnerRequest(preview)).resolves.toEqual({ ownerId: OWNER, cloud: true });
+    const preview = request(
+      "body",
+      { host: new URL(origin).host, origin },
+      `${origin}/api/ai/receipt`,
+    );
+    await expect(authenticateAIOwnerRequest(preview)).resolves.toEqual({
+      ownerId: OWNER,
+      cloud: true,
+    });
     mocks.client.mockClear();
-    const denied = request("not read", { host: new URL(origin).host, origin: "https://other.vercel.app" }, `${origin}/api/ai/receipt`);
+    const denied = request(
+      "not read",
+      { host: new URL(origin).host, origin: "https://other.vercel.app" },
+      `${origin}/api/ai/receipt`,
+    );
     expect((await receiptPOST(denied)).status).toBe(403);
     expect(denied.bodyUsed).toBe(false);
     expect(mocks.client).not.toHaveBeenCalled();

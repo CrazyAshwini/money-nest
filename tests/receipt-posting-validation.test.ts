@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { AccountSnapshot, Transaction, WorkspaceData } from "../src/lib/types";
 import { ReceiptDuplicateError, validateWorkspaceRecord } from "../src/lib/validation";
+import { accountBalance } from "../src/lib/finance";
+import { accountUsage } from "../src/lib/usage";
+import { balanceSnapshotIdForEdit } from "../src/lib/transaction-balance-confirmation";
 
 function fixture() {
   const userId = randomUUID();
@@ -22,6 +25,71 @@ function fixture() {
 }
 
 describe("confirmed screenshot posting boundary", () => {
+  it.each(["credit_card", "pay_later"] as const)("preserves %s purchase and refund balances when editing a receipt after a newer utilization-only report", (kind) => {
+    for (const side of ["from", "to"] as const) {
+      const f = fixture();
+      const accountId = kind === "credit_card" ? f.card : f.payLater;
+      const outstanding = side === "from" ? "145.00" : "55.00";
+      const earlier = f.report(accountId, { asOf: "2026-10-15T08:00:00Z", reportedOutstanding: "100.00" });
+      const newer = f.report(accountId, { asOf: "2026-10-15T09:00:00Z", reportedUtilized: outstanding });
+      f.data.snapshots = [earlier, newer];
+      const previous: Transaction = { ...f.entry,
+        kind: side === "from" ? "expense" : "refund",
+        fromAccountId: side === "from" ? accountId : null,
+        toAccountId: side === "to" ? accountId : null,
+        [`${side}BalanceSnapshotId`]: earlier.id,
+      };
+      f.data.transactions = [previous];
+      expect(accountBalance(f.data, accountId, "2026-10-15").current).toBe(outstanding);
+      const edited = { ...previous, description: "Corrected receipt label",
+        [`${side}BalanceSnapshotId`]: balanceSnapshotIdForEdit(f.data, previous, previous, side),
+      };
+      f.data.transactions = [validateWorkspaceRecord(f.data, "transactions", edited, f.userId)];
+      expect(accountBalance(f.data, accountId, "2026-10-15").current).toBe(outstanding);
+      expect(accountUsage(f.data, accountId, "2026-10-15").used).toBe(outstanding);
+    }
+  });
+
+  it("retains a valid historical cash confirmation after a later-day report, including amount corrections", () => {
+    const f = fixture();
+    const earlier = f.report(f.bank, { reportedBalance: "1000.00" });
+    const newer = f.report(f.bank, { asOf: "2026-10-16T08:00:00Z", reportedBalance: "955.00" });
+    f.data.snapshots = [earlier, newer];
+    const previous = { ...f.entry, fromBalanceSnapshotId: earlier.id };
+    const edited = { ...previous, amount: "50.00" };
+    edited.fromBalanceSnapshotId = balanceSnapshotIdForEdit(f.data, previous, edited, "from")!;
+    f.data.transactions = [edited];
+    expect(accountBalance(f.data, f.bank, "2026-10-15").current).toBe("950.00");
+    expect(accountBalance(f.data, f.bank, "2026-10-16").current).toBe("955.00");
+  });
+
+  it("honors explicit inclusion or exclusion against a newer report independently for either side", () => {
+    const f = fixture();
+    const bankReport = f.report(f.bank, { reportedBalance: "1000.00" });
+    const cardReport = f.report(f.card, { reportedOutstanding: "100.00" });
+    const newer = f.report(f.bank, { asOf: "2026-10-15T09:00:00Z", reportedBalance: "955.00" });
+    f.data.snapshots = [bankReport, cardReport, newer];
+    const previous = { ...f.entry, kind: "transfer" as const, toAccountId: f.card, fromBalanceSnapshotId: bankReport.id, toBalanceSnapshotId: cardReport.id };
+    expect(balanceSnapshotIdForEdit(f.data, previous, previous, "from", { snapshotId: newer.id, included: true })).toBeNull();
+    expect(balanceSnapshotIdForEdit(f.data, previous, previous, "from", { snapshotId: newer.id, included: false })).toBe(newer.id);
+    expect(balanceSnapshotIdForEdit(f.data, previous, previous, "to")).toBe(cardReport.id);
+    expect(balanceSnapshotIdForEdit(f.data, undefined, previous, "from", { snapshotId: newer.id, included: false })).toBe(newer.id);
+  });
+
+  it("clears confirmations for changed owners, accounts, dates, or invalid reports", () => {
+    const f = fixture();
+    const snapshot = f.report(f.bank, { reportedBalance: "0.00" });
+    f.data.snapshots = [snapshot];
+    const previous = { ...f.entry, fromBalanceSnapshotId: snapshot.id };
+    for (const changes of [{ fromAccountId: f.card }, { occurredOn: "2026-10-16" }, { occurredOn: null }, { userId: randomUUID() }]) {
+      expect(balanceSnapshotIdForEdit(f.data, previous, { ...previous, ...changes }, "from")).toBeNull();
+    }
+    for (const changes of [{ id: randomUUID() }, { userId: randomUUID() }, { accountId: f.card }, { asOf: "2026-10-16T00:00:00Z" }, { reportedBalance: null, reportedAvailable: "0.00" }]) {
+      f.data.snapshots = [{ ...snapshot, ...changes }];
+      expect(balanceSnapshotIdForEdit(f.data, previous, previous, "from")).toBeNull();
+    }
+  });
+
   it.each(["reportedUtilized", "reportedOutstanding", "reportedAvailable"] as const)("accepts a known zero %s for either liability account", (field) => {
     const f = fixture();
     for (const accountId of [f.card, f.payLater]) {
@@ -72,6 +140,9 @@ describe("confirmed screenshot posting boundary", () => {
     expect(() => validateWorkspaceRecord(f.data, "transactions", next, f.userId)).toThrow("Review the existing transaction");
     expect(() => validateWorkspaceRecord(f.data, "transactions", { ...next, kind: "income", fromAccountId: null, toAccountId: f.card }, f.userId)).not.toThrow();
     expect(() => validateWorkspaceRecord(f.data, "transactions", { ...next, sourceSystem: "csv" }, f.userId)).not.toThrow();
+    for (const whitespace of ["\u00a0", "\u202f", "\u2009", "\ufeff"]) {
+      expect(() => validateWorkspaceRecord(f.data, "transactions", { ...next, externalReference: `rrn${whitespace}123456789` }, f.userId)).toThrow(ReceiptDuplicateError);
+    }
   });
 
   it("allows unrelated edits of legacy duplicate identities while rejecting a new conflicting identity", () => {

@@ -62,14 +62,17 @@ end $$;
 create function private.validate_receipt_payment_reference() returns trigger
 language plpgsql security invoker set search_path='' as $$
 declare reference_key text; previous_key text; reference_account uuid;
+  -- Match JavaScript's \s normalization, including pasted non-breaking spaces.
+  -- PostgreSQL's locale-dependent [:space:] class does not include them.
+  reference_whitespace constant text := U&'[\0009-\000D\0020\00A0\1680\2000-\200A\2028\2029\202F\205F\3000\FEFF]+';
 begin
   if new.source_system is distinct from 'receipt_ai' then return new; end if;
-  reference_key := nullif(pg_catalog.regexp_replace(pg_catalog.lower(new.external_reference),'[[:space:]]+','','g'),'');
+  reference_key := nullif(pg_catalog.regexp_replace(pg_catalog.lower(new.external_reference),reference_whitespace,'','g'),'');
   reference_account := coalesce(new.from_account_id,new.to_account_id);
   if reference_key is null or reference_account is null or reference_key !~ '[a-z0-9]'
     or reference_key in ('unknown','unconfirmed','notavailable','notshown','pending','none','n/a','na') then return new; end if;
   if tg_op='UPDATE' then
-    previous_key := nullif(pg_catalog.regexp_replace(pg_catalog.lower(old.external_reference),'[[:space:]]+','','g'),'');
+    previous_key := nullif(pg_catalog.regexp_replace(pg_catalog.lower(old.external_reference),reference_whitespace,'','g'),'');
     if (new.user_id,new.source_system,reference_account,reference_key) is not distinct from
       (old.user_id,old.source_system,coalesce(old.from_account_id,old.to_account_id),previous_key) then return new; end if;
   elsif exists (
@@ -77,14 +80,14 @@ begin
     -- Leave unchanged legacy identities editable before that UPDATE fires.
     select 1 from public.transactions t where t.id=new.id and t.user_id=new.user_id and t.source_system='receipt_ai'
       and coalesce(t.from_account_id,t.to_account_id)=reference_account
-      and pg_catalog.regexp_replace(pg_catalog.lower(t.external_reference),'[[:space:]]+','','g')=reference_key
+      and pg_catalog.regexp_replace(pg_catalog.lower(t.external_reference),reference_whitespace,'','g')=reference_key
   ) then
     return new;
   end if;
   if exists (
     select 1 from public.transactions t where t.id<>new.id and t.user_id=new.user_id and t.source_system='receipt_ai'
       and coalesce(t.from_account_id,t.to_account_id)=reference_account
-      and pg_catalog.regexp_replace(pg_catalog.lower(t.external_reference),'[[:space:]]+','','g')=reference_key
+      and pg_catalog.regexp_replace(pg_catalog.lower(t.external_reference),reference_whitespace,'','g')=reference_key
   ) then
     raise exception 'This payment reference already exists for the selected account. Review the existing transaction and its payment links.'
       using errcode='23505';

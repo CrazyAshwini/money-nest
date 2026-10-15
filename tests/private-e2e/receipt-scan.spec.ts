@@ -30,10 +30,11 @@ const email = `receipt.${randomBytes(5).toString("hex")}@example.test`;
 const password = randomBytes(18).toString("base64url");
 const bankName = "Synthetic receipt bank";
 const merchant = "Synthetic Shopping Corner";
-const reference = "SYNTHETIC-PAYMENT-RECEIPT-1";
+const imageReference = "SYNTHETIC-PAYMENT-RECEIPT-1";
 const receiptDescription =
   "Synthetic receipt shopping at Synthetic Shopping Corner";
-const fingerprint = "1".repeat(64);
+let reference = imageReference;
+let fingerprint = "1".repeat(64);
 const redactionLabel =
   "I removed personal, banking and other sensitive information from this image";
 type ReceiptProvider = "Google Gemini" | "Vercel AI Gateway";
@@ -104,6 +105,7 @@ async function chooseBank(dialog: Locator) {
 async function openEditor(page: Page) {
   await page.goto("/transactions");
   await page
+    .getByRole("main")
     .getByRole("button", { name: "Add transaction", exact: true })
     .click();
   const dialog = page.locator(".transaction-modal");
@@ -315,7 +317,7 @@ test.beforeAll(async ({ browser }) => {
         );
         return canvas.toDataURL("image/png");
       },
-      { merchantName: merchant, paymentReference: reference },
+      { merchantName: merchant, paymentReference: imageReference },
     );
     png = Buffer.from(fixtureDataURL.split(",")[1], "base64");
     await fixturePage.close();
@@ -338,6 +340,10 @@ test.beforeAll(async ({ browser }) => {
 });
 
 test.beforeEach(async ({ context }) => {
+  // The suite shares one profile. Independent synthetic scans must not claim
+  // that they came from an earlier screenshot or payment reference.
+  reference = `SYNTHETIC-PAYMENT-${randomUUID()}`;
+  fingerprint = randomBytes(32).toString("hex");
   await context.addCookies(cookies);
 });
 
@@ -1333,6 +1339,12 @@ test("AI scan fills a reviewed draft only, then a chosen account saves to the re
     "2026-10-09",
   );
   await expect(
+    dialog.getByRole("checkbox", {
+      name: "I confirmed that this payment was completed.",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(
     dialog.getByRole("combobox", { name: "Status", exact: true }),
   ).toHaveCount(0);
   await expect(
@@ -1792,6 +1804,7 @@ test("unconfirmed orders debit a bank only after explicit payment confirmation a
   const baseline = new Decimal(baselineText.replace(/[^\d.-]/g, ""));
   const before = await transactions(page);
   await page
+    .getByRole("main")
     .getByRole("button", { name: "Add transaction", exact: true })
     .click();
   const dialog = page.locator(".transaction-modal");
@@ -1879,7 +1892,31 @@ test("possible duplicates warn before review and cancellation adds nothing", asy
   page,
 }) => {
   await mockSettings(page);
-  await mockScan(page);
+  const result = scanResult();
+  const template = (await transactions(page)).find(
+    (row) =>
+      row.kind === "expense" && row.status === "posted" && row.fromAccountId,
+  );
+  expect(template).toBeTruthy();
+  const seedResponse = await page.request.post("/api/workspace", {
+    headers: { Origin: baseURL },
+    data: {
+      collection: "transactions",
+      record: {
+        ...template!,
+        id: randomUUID(),
+        description: receiptDescription,
+        merchant,
+        amount: result.extraction.amount,
+        occurredOn: result.extraction.occurredOn,
+        externalReference: result.extraction.externalReference,
+        sourceSystem: "receipt_ai",
+        sourceObjectId: result.fingerprint,
+      },
+    },
+  });
+  expect(seedResponse.ok()).toBe(true);
+  await mockScan(page, result);
   const before = await transactions(page);
   const dialog = await openEditor(page);
   await scan(dialog);
@@ -2125,11 +2162,79 @@ for (const kind of ["income", "refund"] as const)
     });
   });
 
+test("correcting a screenshot transaction type clears its accounts and requires a fresh review", async ({
+  page,
+}) => {
+  await mockSettings(page);
+  const result = scanResult({
+    description: "Synthetic corrected screenshot refund",
+    merchant: null,
+    amount: "24.25",
+  });
+  await mockScan(page, result);
+  const before = await workspace(page);
+  const bank = before.accounts.find((account) => account.name === bankName)!;
+  const dialog = await openEditor(page);
+  await scan(dialog);
+  await receipt(dialog)
+    .getByRole("button", { name: "Use details", exact: true })
+    .click();
+  await chooseBank(dialog);
+  const review = dialog.getByRole("checkbox", {
+    name: reviewLabel,
+    exact: true,
+  });
+  await review.check();
+  await dialog
+    .getByRole("combobox", { name: "Transaction type", exact: true })
+    .selectOption("refund");
+  await expect(
+    dialog.getByRole("heading", { name: "Add New Refund", exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("combobox", { name: "From account", exact: true }),
+  ).toHaveCount(0);
+  const destination = dialog.getByRole("combobox", {
+    name: "To account",
+    exact: true,
+  });
+  await expect(destination).toHaveValue("");
+  await expect(review).not.toBeChecked();
+  await expect(
+    dialog.getByRole("button", { name: "Save transaction", exact: true }),
+  ).toBeDisabled();
+  await destination.selectOption({ label: bankName });
+  await chooseBalanceTreatments(dialog, "excluded");
+  await review.check();
+  await dialog
+    .getByRole("button", { name: "Save transaction", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  const saved = (await transactions(page)).filter(
+    (row) => row.sourceObjectId === result.fingerprint,
+  );
+  expect(saved).toHaveLength(1);
+  expect(saved[0]).toMatchObject({
+    kind: "refund",
+    status: "posted",
+    amount: "24.25",
+    fromAccountId: null,
+    toAccountId: bank.id,
+    fromBalanceSnapshotId: null,
+    toBalanceSnapshotId: before.snapshots.find(
+      (snapshot) => snapshot.accountId === bank.id,
+    )!.id,
+  });
+});
+
 const receiptMovementCases = [
   { name: "bank purchase", kind: "expense", from: bankName },
+  { name: "wallet purchase", kind: "expense", from: "Pocket Wallet" },
   { name: "credit card purchase", kind: "expense", from: "Aster Platinum" },
   { name: "Pay Later purchase", kind: "expense", from: "Luma Pay Later" },
   { name: "bank income", kind: "income", to: bankName },
+  { name: "wallet income", kind: "income", to: "Pocket Wallet" },
+  { name: "bank refund", kind: "refund", to: bankName },
   { name: "credit card refund", kind: "refund", to: "Aster Platinum" },
   { name: "Pay Later refund", kind: "refund", to: "Luma Pay Later" },
   {
@@ -2178,7 +2283,15 @@ for (const movement of receiptMovementCases)
             ? ":scope > strong"
             : ".credit-amount > strong",
         );
+    const cardAvailable = (account: WorkspaceData["accounts"][number]) =>
+      page
+        .locator("a.credit-card")
+        .filter({ hasText: account.name })
+        .locator(".credit-meta > span")
+        .filter({ hasText: /^Available/ })
+        .locator("b");
     const expected = new Map<string, string>();
+    const expectedAvailable = new Map<string, string>();
     await page.goto("/accounts");
     for (const account of involved) {
       const baseline = new Decimal(
@@ -2189,6 +2302,19 @@ for (const movement of receiptMovementCases)
       const outgoing = account.name === from;
       const delta = outgoing === liability ? "45.00" : "-45.00";
       expected.set(account.id, formatMoney(baseline.plus(delta).toFixed(2)));
+      if (liability) {
+        const availableText = await cardAvailable(account).innerText();
+        expect(availableText).toMatch(/^₹/);
+        const availableBaseline = new Decimal(
+          availableText.replace(/[^\d.-]/g, ""),
+        );
+        expectedAvailable.set(
+          account.id,
+          formatMoney(
+            availableBaseline.plus(outgoing ? "-45.00" : "45.00").toFixed(2),
+          ),
+        );
+      }
     }
     await page.goto("/dashboard");
     const spendingCard = page
@@ -2221,6 +2347,12 @@ for (const movement of receiptMovementCases)
     await expect(
       dialog.getByRole("combobox", { name: "Transaction type", exact: true }),
     ).toHaveValue(movement.kind);
+    await expect(
+      dialog.getByRole("checkbox", {
+        name: "I confirmed that this payment was completed.",
+        exact: true,
+      }),
+    ).toHaveCount(0);
     for (const [side, accountName] of [
       ["From account", from],
       ["To account", to],
@@ -2271,11 +2403,21 @@ for (const movement of receiptMovementCases)
       ).toBe(snapshot!.id);
     }
     await page.goto("/accounts");
-    for (const account of involved)
+    for (const account of involved) {
       await expect(cardAmount(account)).toHaveText(expected.get(account.id)!);
+      if (expectedAvailable.has(account.id))
+        await expect(cardAvailable(account)).toHaveText(
+          expectedAvailable.get(account.id)!,
+        );
+    }
     await page.reload();
-    for (const account of involved)
+    for (const account of involved) {
       await expect(cardAmount(account)).toHaveText(expected.get(account.id)!);
+      if (expectedAvailable.has(account.id))
+        await expect(cardAvailable(account)).toHaveText(
+          expectedAvailable.get(account.id)!,
+        );
+    }
     expect(
       (await transactions(page)).filter(
         (row) => row.sourceObjectId === fingerprint,
@@ -2383,6 +2525,15 @@ test("failed payment remains Needs review without an expense status control", as
   await expect(
     dialog.getByRole("combobox", { name: "Status", exact: true }),
   ).toHaveCount(0);
+  await expect(
+    dialog.getByRole("checkbox", {
+      name: "I confirmed that this payment was completed.",
+      exact: true,
+    }),
+  ).not.toBeChecked();
+  await expect(
+    dialog.getByText(/The screenshot shows a failed payment/),
+  ).toBeVisible();
   await chooseBank(dialog);
   await dialog
     .getByRole("checkbox", { name: reviewLabel, exact: true })

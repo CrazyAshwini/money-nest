@@ -256,8 +256,12 @@ export function FinanceProvider({
       const result = await res.json();
       if (!res.ok)
         throw new Error(result.error || "Changes could not be saved.");
-      if (!(await refresh()))
-        throw new Error("Your change was saved, but balances could not be refreshed. Reload the workspace before trying again.");
+      if (!(await refresh())) {
+        const message =
+          "Your change was saved, but balances could not be refreshed. Reload the workspace before trying again.";
+        toast(message, "error");
+        throw new Error(message);
+      }
       return;
     }
     const rows = current[collection] as OwnedRecord[];
@@ -307,8 +311,12 @@ export function FinanceProvider({
       const result = await res.json();
       if (!res.ok)
         throw new Error(result.error || "Import could not be saved.");
-      if (!(await refresh()))
-        throw new Error("Your import was saved, but balances could not be refreshed. Reload the workspace before trying again.");
+      if (!(await refresh())) {
+        const message =
+          "Your import was saved, but balances could not be refreshed. Reload the workspace before trying again.";
+        toast(message, "error");
+        throw new Error(message);
+      }
       return result.count || 0;
     }
     const existing = new Set(

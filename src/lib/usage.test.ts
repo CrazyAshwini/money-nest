@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { accountUsage, usageBand, usageSummary } from "./usage";
-import type { Account, AccountSnapshot, Bill, WorkspaceData } from "./types";
+import { accountBalance, monthlySummary } from "./finance";
+import type { Account, AccountSnapshot, Bill, Transaction, WorkspaceData } from "./types";
 
 const AS_OF = "2026-10-09";
 const OWNER = "owner";
@@ -79,6 +80,24 @@ function addBill(
   };
   data.bills.push(bill);
   return bill;
+}
+
+function addTransaction(data: WorkspaceData, values: Partial<Transaction> = {}): Transaction {
+  const transaction: Transaction = {
+    id: `transaction-${data.transactions.length}`,
+    userId: OWNER,
+    amount: "45.00",
+    currency: "INR",
+    kind: "expense",
+    status: "posted",
+    occurredOn: AS_OF,
+    description: "Synthetic payment",
+    fromAccountId: null,
+    toAccountId: null,
+    ...values,
+  };
+  data.transactions.push(transaction);
+  return transaction;
 }
 
 describe("usage bands", () => {
@@ -330,6 +349,169 @@ describe("account usage", () => {
       provenance: "reported",
       band: "smart",
     });
+  });
+});
+
+describe("current credit movement and evidence", () => {
+  it.each(["credit_card", "pay_later"] as const)("keeps utilization, outstanding and available credit distinct for %s", (kind) => {
+    const data = fixture();
+    const card = addAccount(data, { kind });
+    const bank = addAccount(data, { kind: "bank", creditLimit: null });
+    const report = addSnapshot(data, card.id, {
+      asOf: "2026-10-08T08:00:00Z",
+      reportedUtilized: "300.00",
+      reportedOutstanding: "200.00",
+      reportedAvailable: "650.00",
+    });
+    addSnapshot(data, bank.id, { asOf: "2026-10-08T08:00:00Z", reportedBalance: "1000.00" });
+    const purchase = addTransaction(data, { fromAccountId: card.id });
+    addTransaction(data, { amount: "25.00", kind: "bill_payment", fromAccountId: bank.id, toAccountId: card.id });
+    addTransaction(data, { amount: "10.00", kind: "refund", toAccountId: card.id, refundOfTransactionId: purchase.id });
+    expect(monthlySummary(data, "2026-10")).toMatchObject({ gross: "45.00", refunds: "10.00" });
+    for (const values of [
+      { status: "pending_review" as const },
+      { status: "voided" as const },
+      { occurredOn: "2026-10-10" },
+      { occurredOn: null },
+      { userId: "another-owner" },
+    ]) addTransaction(data, { fromAccountId: card.id, ...values });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({
+      used: "310.00",
+      currentOutstanding: "210.00",
+      issuerReportedOutstanding: "200.00",
+      ledgerCalculatedOutstanding: "210.00",
+      available: "640.00",
+      availableCredit: "640.00",
+      confirmedRepayments: "25.00",
+      confirmedRefunds: "10.00",
+      pendingAuthorizations: null,
+      movementsSinceSnapshot: 3,
+    });
+    expect(accountBalance(data, bank.id, AS_OF).current).toBe("975.00");
+    expect(report.reportedOutstanding).toBe("200.00");
+    purchase.amount = "50.00";
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ used: "315.00", currentOutstanding: "215.00", available: "635.00" });
+  });
+
+  it("requires an exact same-day confirmation and absorbs it into a newer report", () => {
+    const data = fixture();
+    const card = addAccount(data);
+    const report = addSnapshot(data, card.id, { asOf: `${AS_OF}T08:00:00Z`, reportedUtilized: "300.00", reportedOutstanding: "200.00", reportedAvailable: "700.00" });
+    const transaction = addTransaction(data, { fromAccountId: card.id, createdAt: `${AS_OF}T12:00:00Z` });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ used: "300.00", currentOutstanding: "200.00", available: "700.00" });
+    transaction.fromBalanceSnapshotId = report.id;
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ used: "345.00", currentOutstanding: "245.00", available: "655.00", movementsSinceSnapshot: 1 });
+    addSnapshot(data, card.id, { asOf: `${AS_OF}T09:00:00Z`, reportedUtilized: "345.00", reportedOutstanding: "245.00", reportedAvailable: "655.00" });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ used: "345.00", currentOutstanding: "245.00", available: "655.00", movementsSinceSnapshot: 0 });
+  });
+
+  it("absorbs the old confirmation when reports share an identical timestamp", () => {
+    const data = fixture();
+    const card = addAccount(data);
+    const report = addSnapshot(data, card.id, { reportedOutstanding: "200.00" });
+    addTransaction(data, { fromAccountId: card.id, fromBalanceSnapshotId: report.id });
+    addSnapshot(data, card.id, { reportedOutstanding: "245.00" });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ used: "245.00", currentOutstanding: "245.00", movementsSinceSnapshot: 0 });
+  });
+
+  it("preserves overpayments through subsequent purchases and restores available credit", () => {
+    const data = fixture();
+    const card = addAccount(data);
+    const bank = addAccount(data, { kind: "bank", creditLimit: null });
+    addSnapshot(data, card.id, { asOf: "2026-10-08", reportedOutstanding: "100.00" });
+    addTransaction(data, { kind: "bill_payment", amount: "250.00", fromAccountId: bank.id, toAccountId: card.id });
+    addTransaction(data, { amount: "20.00", fromAccountId: card.id });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ used: "0.00", currentOutstanding: "0.00", availableCredit: "1130.00" });
+    addTransaction(data, { amount: "150.00", fromAccountId: card.id });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ used: "20.00", currentOutstanding: "20.00", availableCredit: "980.00" });
+  });
+
+  it("does not turn pending receipt review into an issuer hold or lower availability", () => {
+    const data = fixture();
+    const card = addAccount(data);
+    addSnapshot(data, card.id, { reportedUtilized: "200.00" });
+    addTransaction(data, { fromAccountId: card.id, amount: "80.00", status: "pending_review", sourceSystem: "receipt_ai" });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({
+      used: "200.00", available: "800.00", availableCredit: "800.00",
+      pendingAuthorizations: null, issuerReportedOutstanding: null,
+      currentOutstanding: null, ledgerCalculatedOutstanding: null,
+      availableCreditStatus: "estimated", balanceVerificationStatus: "unconfirmed",
+    });
+  });
+
+  it("uses newer usage evidence instead of stale available credit, while retaining current issuer availability", () => {
+    const data = fixture();
+    const card = addAccount(data);
+    addSnapshot(data, card.id, { asOf: "2026-10-07", reportedAvailable: "1000.00" });
+    addSnapshot(data, card.id, { asOf: "2026-10-08", reportedUtilized: "500.00" });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ used: "500.00", availableCredit: "500.00", availableCreditStatus: "estimated" });
+    addSnapshot(data, card.id, { reportedUtilized: "550.00", reportedAvailable: "400.00" });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ used: "550.00", availableCredit: "400.00", availableCreditStatus: "verified" });
+  });
+
+  it("retains the latest actual outstanding report when newer utilization differs", () => {
+    const data = fixture();
+    const card = addAccount(data);
+    addSnapshot(data, card.id, { asOf: "2026-10-07", reportedOutstanding: "200.00" });
+    addSnapshot(data, card.id, { asOf: "2026-10-08", reportedUtilized: "500.00" });
+    addTransaction(data, { fromAccountId: card.id });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ used: "545.00", issuerReportedOutstanding: "200.00", currentOutstanding: "245.00" });
+  });
+
+  it("filters payment counters by date, ownership, status and bank/wallet source", () => {
+    const data = fixture();
+    const card = addAccount(data);
+    const bank = addAccount(data, { kind: "bank" });
+    const otherCard = addAccount(data);
+    addTransaction(data, { kind: "bill_payment", fromAccountId: bank.id, toAccountId: card.id });
+    addTransaction(data, { kind: "transfer", amount: "20.00", fromAccountId: bank.id, toAccountId: card.id, status: "pending_review" });
+    addTransaction(data, { kind: "refund", amount: "10.00", toAccountId: card.id });
+    for (const values of [
+      { occurredOn: "2026-10-10" }, { occurredOn: null },
+      { status: "voided" as const }, { userId: "another-owner" },
+    ]) {
+      addTransaction(data, { kind: "bill_payment", fromAccountId: bank.id, toAccountId: card.id, ...values });
+      addTransaction(data, { kind: "refund", toAccountId: card.id, ...values });
+    }
+    addTransaction(data, { kind: "transfer", fromAccountId: otherCard.id, toAccountId: card.id });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ confirmedRepayments: "45.00", pendingRepayments: "20.00", confirmedRefunds: "10.00" });
+  });
+
+  it("keeps bill-only exposure partial and does not apply future allocations to today's due", () => {
+    const data = fixture();
+    const card = addAccount(data, { kind: "pay_later" });
+    const bank = addAccount(data, { kind: "bank" });
+    const bill = addBill(data, card.id);
+    addBill(data, card.id, { userId: "another-owner", statementDate: "2026-10-08", statementAmount: "900.00" });
+    const payment = addTransaction(data, { kind: "bill_payment", amount: "170.00", fromAccountId: bank.id, toAccountId: card.id, occurredOn: "2026-10-10" });
+    data.allocations.push({ id: "allocation", userId: OWNER, billId: bill.id, transactionId: payment.id, amount: "170.00", verified: true });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({
+      used: "170.00", billedAmount: "170.00", currentOutstanding: null,
+      availableCredit: null, estimatedAvailableCredit: "830.00", creditUtilization: null,
+      balanceVerificationStatus: "partial", latestBill: bill,
+    });
+    expect(accountUsage(data, card.id, "2026-10-10")).toMatchObject({ used: null, billedAmount: "0.00", currentOutstanding: null, balanceVerificationStatus: "unconfirmed" });
+  });
+
+  it("shows an issuer-reported unbilled amount and next statement date without inventing missing history", () => {
+    const data = fixture();
+    const card = addAccount(data);
+    addBill(data, card.id);
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ unbilledAmount: null, statementGenerationDate: null });
+    addSnapshot(data, card.id, { asOf: "2026-10-08T08:00:00Z", reportedUnbilled: "85.00", nextStatementDate: "2026-10-20" });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ unbilledAmount: "85.00", statementGenerationDate: "2026-10-20" });
+    addTransaction(data, { kind: "refund", toAccountId: card.id, amount: "20.00" });
+    expect(accountUsage(data, card.id, AS_OF).unbilledAmount).toBeNull();
+  });
+
+  it("recognizes verified timestamped reports on the workspace calendar day", () => {
+    const data = fixture();
+    const card = addAccount(data);
+    const report = addSnapshot(data, card.id, { asOf: "2026-10-08T19:00:00Z", reportedOutstanding: "200.00", reportedAvailable: "800.00" });
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ balanceVerificationStatus: "verified", availableCreditStatus: "verified" });
+    report.verifiedByUser = false;
+    expect(accountUsage(data, card.id, AS_OF)).toMatchObject({ balanceVerificationStatus: "estimated", availableCreditStatus: "estimated" });
+    expect(accountUsage(data, card.id, "2026-10-10")).toMatchObject({ balanceVerificationStatus: "estimated", availableCreditStatus: "estimated" });
   });
 });
 

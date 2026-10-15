@@ -116,6 +116,19 @@ export function monthLabel(month: string): string {
     timeZone: "UTC",
   }).format(new Date(`${month}-01T00:00:00Z`));
 }
+/** Positive means a newer report. Recording metadata only orders equal report dates. */
+export function compareSnapshotReports(a: AccountSnapshot, b: AccountSnapshot): number {
+  const recordedAt = (snapshot: AccountSnapshot) => {
+    // Cloud records carry these fields; older/imported reports may omit them.
+    const metadata = snapshot as AccountSnapshot & { createdAt?: string; updatedAt?: string };
+    const timestamps = [metadata.createdAt, metadata.updatedAt]
+      .map((value) => value ? Date.parse(value) : 0)
+      .filter(Number.isFinite);
+    return Math.max(0, ...timestamps);
+  };
+  return Date.parse(a.asOf) - Date.parse(b.asOf) ||
+    recordedAt(a) - recordedAt(b) || a.id.localeCompare(b.id);
+}
 export function latestSnapshot(
   data: WorkspaceData,
   accountId: string,
@@ -129,9 +142,7 @@ export function latestSnapshot(
         s.userId === account?.userId &&
         localDateISO(s.asOf) <= localDateISO(asOf),
     )
-    .sort(
-      (a, b) => Date.parse(b.asOf) - Date.parse(a.asOf) || b.id.localeCompare(a.id),
-    )[0];
+    .sort((a, b) => compareSnapshotReports(b, a))[0];
 }
 export const isDebtAccount = (account: Pick<Account, "kind">) =>
   account.kind === "credit_card" || account.kind === "pay_later";
@@ -204,7 +215,7 @@ export function accountMovementsSinceSnapshot(
     return Boolean(anchor &&
       [anchor.reportedOutstanding, anchor.reportedUtilized, anchor.reportedAvailable].some((value) => value != null) &&
       localDateISO(anchor.asOf) === snapshotDate &&
-      Date.parse(anchor.asOf) >= Date.parse(snapshot.asOf));
+      compareSnapshotReports(anchor, snapshot) > 0);
   };
   for (const transaction of data.transactions) {
     if (transaction.userId !== account.userId || transaction.status !== "posted" ||

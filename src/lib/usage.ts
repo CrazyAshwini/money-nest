@@ -1,7 +1,9 @@
 import Decimal from "decimal.js";
 import {
+  accountBalance,
   accountMovementsSinceSnapshot,
   billSummary,
+  compareSnapshotReports,
   isDebtAccount,
   latestSnapshot,
   ledgerBalance,
@@ -46,7 +48,8 @@ export interface AccountUsage {
   currentOutstanding: Money | null;
   billedAmount: Money | null;
   unbilledAmount: Money | null;
-  pendingAuthorizations: Money;
+  /** Receipt review is not evidence of an issuer authorization or hold. */
+  pendingAuthorizations: Money | null;
   confirmedRepayments: Money;
   pendingRepayments: Money;
   confirmedRefunds: Money;
@@ -177,9 +180,15 @@ export function accountUsage(
     snapshots: data.snapshots.filter((row) => nonnegativeMoney(row.reportedAvailable) !== null),
   }, accountId, asOf) : undefined;
   let available: Money | null = null;
-  if (availableSnapshot) {
+  // An older availability report cannot override a newer account-wide usage
+  // report. On the same report, retain the issuer's explicit availability.
+  const useAvailableReport = availableSnapshot &&
+    (!snapshot || compareSnapshotReports(availableSnapshot, snapshot) >= 0);
+  let availableMovements = 0;
+  if (useAvailableReport) {
     const movements = accountMovementsSinceSnapshot(data, accountId, availableSnapshot, asOf);
     available = Decimal.max(0, new Decimal(availableSnapshot.reportedAvailable!).minus(movements.change)).toFixed(2);
+    availableMovements = movements.count;
     if (!snapshot && signedUsed === null) {
       baselineAsOf = availableSnapshot.asOf;
       usageAsOf = movements.count > 0 ? cutoff : availableSnapshot.asOf;
@@ -189,29 +198,26 @@ export function accountUsage(
     available = Decimal.max(0, new Decimal(limit).minus(signedUsed)).toFixed(2);
   }
 
+  const cutoffData = {
+    ...data,
+    allocations: data.allocations.filter((allocation) =>
+      data.transactions.some((transaction) =>
+        transaction.id === allocation.transactionId &&
+        transaction.userId === account.userId &&
+        transaction.occurredOn !== null && transaction.occurredOn <= cutoff,
+      ),
+    ),
+  };
+  const accountBills = data.bills
+    .filter((bill) => bill.accountId === account.id &&
+      bill.userId === account.userId && bill.statementDate <= cutoff)
+    .sort((a, b) => b.statementDate.localeCompare(a.statementDate) || b.id.localeCompare(a.id));
+
   // Order bills establish a minimum known exposure, not an account-wide balance.
   let unpaidBillsAmount: Money | null = null;
   let unpaidBillsCount = 0;
   if (account.kind === "pay_later" && used === null) {
-    const cutoffData = {
-      ...data,
-      allocations: data.allocations.filter((allocation) =>
-        data.transactions.some(
-          (transaction) =>
-            transaction.id === allocation.transactionId &&
-            transaction.userId === account.userId &&
-            transaction.occurredOn !== null &&
-            transaction.occurredOn <= cutoff,
-        ),
-      ),
-    };
-    const unpaidBills = data.bills
-      .filter(
-        (bill) =>
-          bill.accountId === account.id &&
-          bill.userId === account.userId &&
-          bill.statementDate <= cutoff,
-      )
+    const unpaidBills = accountBills
       .map((bill) => ({
         bill,
         remaining: billSummary(cutoffData, bill.id, cutoff).remaining,
@@ -229,101 +235,79 @@ export function accountUsage(
     }
   }
 
-  // Bills & Statement info
-  const accountBills = data.bills
-    .filter((b) => b.accountId === account.id && b.statementDate <= cutoff)
-    .sort((a, b) => b.statementDate.localeCompare(a.statementDate));
+  // A statement is separate from account-wide utilization and outstanding.
   const latestBill = accountBills[0];
-  const statementGenerationDate = latestBill?.statementDate ?? null;
+  const statementGenerationDate = latestSnapshot({
+    ...data,
+    snapshots: data.snapshots.filter((row) => row.nextStatementDate != null),
+  }, accountId, asOf)?.nextStatementDate ?? null;
   const paymentDueDate = latestBill?.dueDate ?? null;
-  const billedAmount = latestBill ? billSummary(data, latestBill, cutoff).remaining : null;
+  const billedAmount = latestBill ? billSummary(cutoffData, latestBill, cutoff).remaining : null;
 
-  // Breakdown of transactions
-  let pendingAuthDec = new Decimal(0);
+  // These are recorded, dated payments through the cutoff. Pending receipt
+  // review does not establish that the issuer reserved any available credit.
   let confirmedRepaymentsDec = new Decimal(0);
   let pendingRepaymentsDec = new Decimal(0);
   let confirmedRefundsDec = new Decimal(0);
-  let unbilledPurchasesDec = new Decimal(0);
-  let unbilledRefundsDec = new Decimal(0);
-
-  const statementCutoff = latestBill?.statementDate ?? "";
 
   for (const txn of data.transactions) {
-    if (txn.userId !== account.userId) continue;
-    // Pending authorizations
-    if (txn.fromAccountId === account.id && txn.status === "pending_review" && txn.kind === "expense") {
-      pendingAuthDec = pendingAuthDec.plus(txn.amount);
-    }
-    // Confirmed repayments
-    if (txn.toAccountId === account.id && txn.status === "posted" && ["bill_payment", "transfer"].includes(txn.kind)) {
+    if (txn.userId !== account.userId || !txn.occurredOn || txn.occurredOn > cutoff)
+      continue;
+    const source = data.accounts.find((row) => row.id === txn.fromAccountId && row.userId === account.userId);
+    const repayment = txn.toAccountId === account.id &&
+      source && ["bank", "wallet"].includes(source.kind) &&
+      ["bill_payment", "transfer"].includes(txn.kind);
+    if (repayment && txn.status === "posted") {
       confirmedRepaymentsDec = confirmedRepaymentsDec.plus(txn.amount);
     }
-    // Pending repayments
-    if (txn.toAccountId === account.id && txn.status === "pending_review" && ["bill_payment", "transfer"].includes(txn.kind)) {
+    if (repayment && txn.status === "pending_review") {
       pendingRepaymentsDec = pendingRepaymentsDec.plus(txn.amount);
     }
-    // Confirmed refunds
     if (txn.toAccountId === account.id && txn.status === "posted" && txn.kind === "refund") {
       confirmedRefundsDec = confirmedRefundsDec.plus(txn.amount);
     }
-    // Unbilled purchases / refunds (occurred after statement date through cutoff)
-    if (txn.status === "posted" && txn.occurredOn && txn.occurredOn <= cutoff) {
-      if (!statementCutoff || txn.occurredOn > statementCutoff) {
-        if (txn.fromAccountId === account.id && txn.kind === "expense") {
-          unbilledPurchasesDec = unbilledPurchasesDec.plus(txn.amount);
-        }
-        if (txn.toAccountId === account.id && txn.kind === "refund") {
-          unbilledRefundsDec = unbilledRefundsDec.plus(txn.amount);
-        }
-      }
-    }
   }
 
-  const pendingAuthorizations = pendingAuthDec.toFixed(2);
+  const pendingAuthorizations = null;
   const confirmedRepayments = confirmedRepaymentsDec.toFixed(2);
   const pendingRepayments = pendingRepaymentsDec.toFixed(2);
   const confirmedRefunds = confirmedRefundsDec.toFixed(2);
-  const netUnbilled = Decimal.max(0, unbilledPurchasesDec.minus(unbilledRefundsDec));
-  const unbilledAmount = netUnbilled.toFixed(2);
+  // The data model records issuer unbilled amounts but cannot tell whether a
+  // subsequent payment/refund was applied to billed or unbilled debt. Preserve
+  // the reported amount only while no later movement makes that split unknown.
+  const unbilledSnapshot = isDebtAccount(account) ? latestSnapshot({
+    ...data,
+    snapshots: data.snapshots.filter((row) => nonnegativeMoney(row.reportedUnbilled) !== null),
+  }, accountId, asOf) : undefined;
+  const unbilledAmount = unbilledSnapshot &&
+    accountMovementsSinceSnapshot(data, accountId, unbilledSnapshot, asOf).count === 0
+    ? nonnegativeMoney(unbilledSnapshot.reportedUnbilled) : null;
 
-  // Available credit and Estimated available credit:
-  let availableCredit: Money | null = null;
-  let estimatedAvailableCredit: Money | null = null;
-  let availableCreditStatus: "verified" | "estimated" | "unknown" = "unknown";
+  const availableCredit = available;
+  const estimatedAvailableCredit = available ?? (
+    provenance === "partial" && used !== null && limit !== null && new Decimal(limit).gt(0)
+      ? Decimal.max(0, new Decimal(limit).minus(used)).toFixed(2) : null
+  );
+  const availableCreditStatus: AccountUsage["availableCreditStatus"] = available === null
+    ? "unknown"
+    : useAvailableReport && availableSnapshot.verifiedByUser &&
+        localDateISO(availableSnapshot.asOf) === cutoff && availableMovements === 0
+      ? "verified" : "estimated";
 
-  if (availableSnapshot && availableSnapshot.reportedAvailable != null) {
-    availableCredit = available;
-    availableCreditStatus = (movementsSinceSnapshot === 0 && availableSnapshot.asOf === cutoff) ? "verified" : "estimated";
-    estimatedAvailableCredit = available;
-  } else if (signedUsed !== null && limit !== null && new Decimal(limit).gt(0)) {
-    const rawEst = Decimal.max(0, new Decimal(limit).minus(signedUsed).minus(pendingAuthorizations)).toFixed(2);
-    availableCredit = rawEst;
-    availableCreditStatus = (snapshot && snapshot.asOf === cutoff && movementsSinceSnapshot === 0) ? "verified" : "estimated";
-    estimatedAvailableCredit = rawEst;
-  } else if (provenance === "partial") {
-    // Partial bill-only exposure (e.g. Meesho: ₹2,100 limit, ₹170 unpaid bill)
-    // Actual available credit: Unknown until verified!
-    availableCredit = null;
-    availableCreditStatus = "unknown";
-    if (limit !== null && new Decimal(limit).gt(0) && used !== null) {
-      estimatedAvailableCredit = Decimal.max(0, new Decimal(limit).minus(used).minus(pendingAuthorizations)).toFixed(2);
-    }
-  } else {
-    availableCredit = null;
-    availableCreditStatus = "unknown";
-    estimatedAvailableCredit = null;
-  }
-
-  // Balance verification status
+  const outstandingSnapshot = isDebtAccount(account) ? latestSnapshot({
+    ...data,
+    snapshots: data.snapshots.filter((row) => nonnegativeMoney(row.reportedOutstanding) !== null),
+  }, accountId, asOf) : undefined;
+  const outstanding = isDebtAccount(account) ? accountBalance(data, accountId, asOf) : null;
+  const currentOutstanding = outstanding?.current == null
+    ? null : Decimal.max(0, outstanding.current).toFixed(2);
   let balanceVerificationStatus: AccountUsage["balanceVerificationStatus"] = "unconfirmed";
-  if (snapshot && snapshot.asOf === cutoff && movementsSinceSnapshot === 0) {
-    balanceVerificationStatus = "verified";
-  } else if (snapshot && movementsSinceSnapshot > 0) {
-    balanceVerificationStatus = "estimated";
-  } else if (provenance === "partial") {
+  if (provenance === "partial") {
     balanceVerificationStatus = "partial";
-  } else if (isDebtAccount(account) && account.openingBalance != null) {
-    balanceVerificationStatus = "estimated";
+  } else if (currentOutstanding !== null) {
+    balanceVerificationStatus = outstandingSnapshot?.verifiedByUser &&
+      localDateISO(outstandingSnapshot.asOf) === cutoff && outstanding?.movementsSinceSnapshot === 0
+      ? "verified" : "estimated";
   }
 
   // Usage level & progress (never render misleading progress for partial/unknown)
@@ -341,9 +325,9 @@ export function accountUsage(
     movementsSinceSnapshot,
     snapshot: snapshot ?? availableSnapshot,
     totalCreditLimit: limit,
-    issuerReportedOutstanding: nonnegativeMoney(snapshot?.reportedUtilized) ?? nonnegativeMoney(snapshot?.reportedOutstanding),
-    ledgerCalculatedOutstanding: signedUsed !== null ? Decimal.max(0, signedUsed).toFixed(2) : null,
-    currentOutstanding: used,
+    issuerReportedOutstanding: nonnegativeMoney(outstandingSnapshot?.reportedOutstanding),
+    ledgerCalculatedOutstanding: currentOutstanding,
+    currentOutstanding,
     billedAmount,
     unbilledAmount,
     pendingAuthorizations,
@@ -356,7 +340,7 @@ export function accountUsage(
     creditUtilization: level.percentage,
     statementGenerationDate,
     paymentDueDate,
-    lastReconciliationDate: snapshot?.asOf ?? baselineAsOf ?? null,
+    lastReconciliationDate: outstandingSnapshot?.asOf ?? null,
     balanceVerificationStatus,
     unpaidBillsAmount,
     unpaidBillsCount,

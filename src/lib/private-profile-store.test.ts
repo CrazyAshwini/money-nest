@@ -719,6 +719,38 @@ describe("isolated private profile storage", () => {
     expect((await readPrivateProfile(sessionToken))!.workspace.transactions).toHaveLength(1);
   });
 
+  it("serializes stale receipt saves so normalized references create one payment and reject the other", async () => {
+    const { sessionToken } = await established();
+    const receipt = transaction({ sourceSystem: "receipt_ai", sourceObjectId: "e".repeat(64), externalReference: "RRN987654321" });
+    const results = await Promise.allSettled([
+      savePrivateRecord(sessionToken, "transactions", receipt),
+      savePrivateRecord(sessionToken, "transactions", { ...receipt, id: randomUUID(), sourceObjectId: "f".repeat(64), externalReference: "rrn\u00a0987654321" }),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected).toMatchObject({ status: "rejected", reason: { code: "invalid", message: expect.stringContaining("Review the existing transaction") } });
+    const saved = (await readPrivateProfile(sessionToken))!.workspace;
+    expect(saved.transactions).toHaveLength(1);
+    expect(saved.auditEvents.filter((event) => event.entityType === "transactions")).toHaveLength(1);
+  });
+
+  it.each(["credit_card", "pay_later"] as const)("round-trips %s same-day confirmations and protects their report identity", async (kind) => {
+    const { sessionToken } = await established();
+    const accountId = randomUUID();
+    const snapshotId = randomUUID();
+    await savePrivateRecord(sessionToken, "accounts", { ...workspace().accounts[0], id: accountId, kind });
+    const report = { id: snapshotId, userId: OWNER, accountId, asOf: "2026-10-08T20:00:00Z", source: "app_screenshot" as const, verifiedByUser: true, reportedUtilized: "0.00" };
+    await savePrivateRecord(sessionToken, "snapshots", report);
+    const receipt = transaction({ sourceSystem: "receipt_ai", sourceObjectId: "e".repeat(64), fromAccountId: accountId, fromBalanceSnapshotId: snapshotId });
+    await savePrivateRecord(sessionToken, "transactions", receipt);
+    await savePrivateRecord(sessionToken, "transactions", { ...receipt, amount: "45.00" });
+    expect((await readPrivateProfile(sessionToken))!.workspace.transactions).toEqual([{ ...receipt, amount: "45.00" }]);
+    await expect(savePrivateRecord(sessionToken, "snapshots", { ...report, asOf: "2026-10-09T20:00:00Z" })).rejects.toMatchObject({ code: "invalid" });
+    await expect(savePrivateRecord(sessionToken, "snapshots", { ...report, reportedUtilized: null, reportedBalance: "0.00" })).rejects.toMatchObject({ code: "invalid" });
+    await expect(savePrivateRecord(sessionToken, "transactions", { ...receipt, fromAccountId: ACCOUNT })).rejects.toMatchObject({ code: "invalid" });
+    expect((await readPrivateProfile(sessionToken))!.workspace.snapshots[0]).toEqual(report);
+  });
+
   it("validates initial ownership and links before creating a store", async () => {
     const data = workspace();
     data.transactions.push(transaction({ userId: randomUUID() }));

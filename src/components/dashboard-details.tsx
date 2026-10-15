@@ -334,7 +334,7 @@ function usageSource(row: AccountUsage) {
         ? "Reported usage"
         : row.provenance === "calculated"
           ? "Report plus posted payments"
-        : "Usage not reported";
+          : "Usage not reported";
 }
 
 function availableCredit(row: AccountUsage) {
@@ -381,15 +381,29 @@ function DebtDetails({
     summary.count > 0 &&
     summary.rows.every(
       (row) =>
-        row.used !== null && ["reported", "inferred", "calculated"].includes(row.provenance),
+        row.used !== null &&
+        ["reported", "inferred", "calculated"].includes(row.provenance),
     );
   const available = summary.rows.map(availableCredit);
   const availableComplete =
     summary.count > 0 && available.every((value) => value !== null);
-  const currentOutstanding = summary.rows.map((row) => accountBalance(data, row.account.id, today).current);
-  const knownCurrentOutstanding = currentOutstanding.filter((value) => value !== null);
+  const currentOutstanding = summary.rows.map(
+    (row) => accountBalance(data, row.account.id, today).current,
+  );
+  const knownCurrentOutstanding = currentOutstanding.filter(
+    (value) => value !== null,
+  );
   const bills = data.bills
-    .filter((bill) => accountIds.has(bill.accountId))
+    .filter(
+      (bill) =>
+        accountIds.has(bill.accountId) &&
+        bill.statementDate <= today &&
+        summary.rows.some(
+          (row) =>
+            row.account.id === bill.accountId &&
+            row.account.userId === bill.userId,
+        ),
+    )
     .map((bill) => ({ bill, summary: dueStatus(data, bill, today) }))
     .sort(
       (a, b) =>
@@ -403,8 +417,14 @@ function DebtDetails({
       (transaction) =>
         transaction.kind === "bill_payment" &&
         transaction.status === "posted" &&
+        transaction.occurredOn &&
+        transaction.occurredOn <= today &&
         transaction.toAccountId &&
-        accountIds.has(transaction.toAccountId),
+        summary.rows.some(
+          (row) =>
+            row.account.id === transaction.toAccountId &&
+            row.account.userId === transaction.userId,
+        ),
     )
     .sort(
       (a, b) =>
@@ -430,9 +450,19 @@ function DebtDetails({
         </p>
       </div>
       <dl className="financial-details-values financial-details-aggregate">
-        <DetailValue label={knownCurrentOutstanding.length === summary.count ? "Current outstanding" : "Known current outstanding"}>
-          {knownCurrentOutstanding.length ? formatMoney(sumMoney(knownCurrentOutstanding)) : "Not available"}
-          <small>{knownCurrentOutstanding.length}/{summary.count} balances known</small>
+        <DetailValue
+          label={
+            knownCurrentOutstanding.length === summary.count
+              ? "Current outstanding"
+              : "Known current outstanding"
+          }
+        >
+          {knownCurrentOutstanding.length
+            ? formatMoney(sumMoney(knownCurrentOutstanding))
+            : "Not available"}
+          <small>
+            {knownCurrentOutstanding.length}/{summary.count} balances known
+          </small>
         </DetailValue>
         <DetailValue
           label={
@@ -562,10 +592,14 @@ function DebtDetails({
                     : "Not available"}
                 </DetailValue>
                 <DetailValue label="Next bill generation date">
-                  {date(row.statementGenerationDate || snapshot?.nextStatementDate)}
+                  {date(
+                    row.statementGenerationDate || snapshot?.nextStatementDate,
+                  )}
                 </DetailValue>
                 <DetailValue label="Payment due date">
-                  {nextBill ? date(nextBill.bill.dueDate) : date(row.paymentDueDate)}
+                  {nextBill
+                    ? date(nextBill.bill.dueDate)
+                    : date(row.paymentDueDate)}
                 </DetailValue>
                 <DetailValue label="Verification status">
                   {verificationLabel}
@@ -585,7 +619,11 @@ function DebtDetails({
               <div className="financial-details-breakdown">
                 <div>
                   <dt>Unbilled purchases</dt>
-                  <dd>{formatMoney(row.unbilledAmount ?? "0.00")}</dd>
+                  <dd>
+                    {row.unbilledAmount == null
+                      ? "Unknown"
+                      : formatMoney(row.unbilledAmount)}
+                  </dd>
                 </div>
                 <div>
                   <dt>Confirmed repayments</dt>
@@ -597,16 +635,25 @@ function DebtDetails({
                 </div>
                 <div>
                   <dt>Pending holds</dt>
-                  <dd>{formatMoney(row.pendingAuthorizations)}</dd>
+                  <dd>
+                    {row.pendingAuthorizations == null
+                      ? "Unknown"
+                      : formatMoney(row.pendingAuthorizations)}
+                  </dd>
                 </div>
               </div>
 
               {/* Utilization progress bar: only render when valid utilization is known */}
-              {row.creditUtilization !== null && row.provenance !== "partial" ? (
-                <UsageMeter {...row} label={`${row.account.name} utilization`} />
+              {row.creditUtilization !== null &&
+              row.provenance !== "partial" ? (
+                <UsageMeter
+                  {...row}
+                  label={`${row.account.name} utilization`}
+                />
               ) : (
                 <p className="financial-details-note">
-                  Utilization progress bar hidden · Complete outstanding balance not verified
+                  Utilization progress bar hidden · Complete outstanding balance
+                  not verified
                 </p>
               )}
 

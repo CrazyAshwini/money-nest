@@ -533,6 +533,39 @@ describe("updated bank and wallet balances", () => {
       accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current,
     ).toBe("800.10");
   });
+  it.each(["bank", "credit_card", "pay_later"] as const)("uses recording time to absorb an old anchor when a newer %s report has the same asOf and a lower UUID", (kind) => {
+    const data = fixture();
+    const account = data.accounts.find((row) => row.kind === kind)!;
+    const debt = kind !== "bank";
+    const oldReport = Object.assign(report(data, account.id, "1000.00"), {
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      createdAt: "2026-10-04T10:00:00Z",
+      ...(debt ? { reportedOutstanding: "1000.00" } : {}),
+    });
+    txn(data, { fromAccountId: account.id, fromBalanceSnapshotId: oldReport.id, amount: "45.00" });
+    const replacement = Object.assign(report(data, account.id, debt ? "1045.00" : "955.00"), {
+      id: "00000000-0000-4000-8000-000000000001",
+      createdAt: "2026-10-04T10:01:00Z",
+      ...(debt ? { reportedOutstanding: "1045.00" } : {}),
+    });
+    expect(latestAccountBalanceSnapshot(data, account.id, DEMO_TODAY)).toBe(replacement);
+    expect(accountBalance(data, account.id, DEMO_TODAY)).toMatchObject({
+      current: debt ? "1045.00" : "955.00", movementsSinceSnapshot: 0, snapshot: replacement,
+    });
+  });
+  it("uses the same recording-time order for later utilization anchors and earlier outstanding reports", () => {
+    const data = fixture();
+    Object.assign(report(data, DEMO_ACCOUNT_IDS.platinum), {
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      reportedOutstanding: "1000.00", createdAt: "2026-10-04T10:00:00Z",
+    });
+    const utilization = Object.assign(report(data, DEMO_ACCOUNT_IDS.platinum), {
+      id: "00000000-0000-4000-8000-000000000001",
+      reportedUtilized: "1200.00", createdAt: "2026-10-04T10:01:00Z",
+    });
+    txn(data, { fromAccountId: DEMO_ACCOUNT_IDS.platinum, fromBalanceSnapshotId: utilization.id, amount: "45.00" });
+    expect(accountBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY)).toMatchObject({ current: "1045.00", movementsSinceSnapshot: 1 });
+  });
   it("does not apply confirmed same-day voided or future movements", () => {
     const data = fixture();
     const snapshot = report(data);

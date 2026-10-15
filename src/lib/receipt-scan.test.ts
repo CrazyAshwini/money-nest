@@ -50,6 +50,24 @@ const transaction = (changes: Partial<Transaction> = {}): Transaction => ({
 });
 
 describe("receipt extraction boundaries", () => {
+  it.each([
+    "Unknown",
+    "Not shown",
+    "N/A",
+    "unconfirmed",
+    "Pending",
+    "—",
+    "Not\u00a0available",
+  ])(
+    "does not save the placeholder %s as a unique payment reference",
+    (externalReference) => {
+      const result = normalizeReceiptExtraction(
+        extraction({ externalReference }),
+      );
+      expect(result.externalReference).toBeNull();
+      expect(receiptDraft(result).externalReference).toBeNull();
+    },
+  );
   it("bounds multi-transaction output and requires a separate platform value for every entry", () => {
     const row = extraction({ platform: null });
     expect(
