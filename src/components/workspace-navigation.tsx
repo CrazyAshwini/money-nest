@@ -20,6 +20,7 @@ import {
   Plus,
   UserRound,
 } from "lucide-react";
+import { BrandLockup } from "./brand-lockup";
 import type { UserProfile } from "@/lib/profile-types";
 
 export const NAV_ITEMS = [
@@ -60,10 +61,7 @@ export function WorkspaceNavigation({
         aria-label="Money Nest home"
         onClick={onNavigate}
       >
-        <span className="brand-icon" aria-hidden="true">
-          M
-        </span>
-        <span>Money Nest</span>
+        <BrandLockup />
       </Link>
       <Link
         href={profileHref}
