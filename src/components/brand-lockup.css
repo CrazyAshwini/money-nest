@@ -1,0 +1,64 @@
+/* Shared brand identity for desktop sidebar, mobile header and NestBot. */
+.brand .money-nest-brand-mascot {
+  display: block;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  object-fit: contain;
+}
+.brand .money-nest-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .24em;
+  color: #263139;
+  font-size: 17px;
+  font-weight: 760;
+  line-height: 1.35;
+  letter-spacing: -.55px;
+  white-space: nowrap;
+}
+.brand .money-nest-wordmark-nest {
+  position: relative;
+  color: #24814C;
+  font-weight: 820;
+}
+.brand .money-nest-bird {
+  position: absolute;
+  bottom: 68%;
+  right: -7px;
+  width: 20px;
+  height: 18px;
+  pointer-events: none;
+}
+.brand .money-nest-underline {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  height: 8px;
+  pointer-events: none;
+}
+.money-nest-bot-avatar {
+  width: 25px;
+  height: 25px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.nestbot-title .money-nest-bot-avatar { width: 32px; height: 32px; }
+@media (max-width: 760px) {
+  .dashboard-topbar .dashboard-mobile-brand .money-nest-brand-mascot {
+    width: 39px;
+    height: 39px;
+    flex-basis: 39px;
+  }
+  .dashboard-topbar .dashboard-mobile-brand .money-nest-wordmark { font-size: 17px; }
+}
+@media (max-width: 360px) {
+  .dashboard-topbar .dashboard-mobile-brand .money-nest-brand-mascot {
+    width: 33px;
+    height: 33px;
+    flex-basis: 33px;
+  }
+  .dashboard-topbar .dashboard-mobile-brand .money-nest-wordmark { font-size: 15px; }
+  .dashboard-topbar .dashboard-mobile-brand .money-nest-bird { width: 15px; right: -5px; }
+}
