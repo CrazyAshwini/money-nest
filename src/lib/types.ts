@@ -56,6 +56,10 @@ export interface Transaction extends OwnedRecord {
   description: string;
   fromAccountId: string | null;
   toAccountId: string | null;
+  /** Explicit confirmation that this source-account report excludes this same-day movement. */
+  fromBalanceSnapshotId?: string | null;
+  /** Explicit confirmation that this destination-account report excludes this same-day movement. */
+  toBalanceSnapshotId?: string | null;
   category?: string | null;
   subcategory?: string | null;
   /** App or service used to place the purchase, separate from its seller. */

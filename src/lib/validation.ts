@@ -2,6 +2,7 @@ import { z } from "zod";
 import Decimal from "decimal.js";
 import {
   isDebtAccount,
+  localDateISO,
   sumMoney,
   validateBillAllocation,
   validateEmiAllocation,
@@ -101,6 +102,8 @@ export const transactionSchema = z
     description: z.string().trim().min(1).max(200),
     fromAccountId: uuid.nullable(),
     toAccountId: uuid.nullable(),
+    fromBalanceSnapshotId: uuid.nullish(),
+    toBalanceSnapshotId: uuid.nullish(),
     category: boundedText.nullish(),
     subcategory: boundedText.nullish(),
     platform: z.string().trim().max(100).nullish(),
@@ -439,6 +442,28 @@ export function validateWorkspaceRecord<K extends keyof WorkspaceData>(
     const previous = existing as Transaction | undefined;
     account(next.fromAccountId);
     account(next.toAccountId);
+    for (const [snapshotId, accountId] of [
+      [next.fromBalanceSnapshotId, next.fromAccountId],
+      [next.toBalanceSnapshotId, next.toAccountId],
+    ]) {
+      if (snapshotId == null) continue;
+      const linkedAccount = account(accountId);
+      const snapshot = data.snapshots.find(
+        (row) => row.id === snapshotId && row.userId === userId,
+      );
+      if (
+        !linkedAccount ||
+        isDebtAccount(linkedAccount) ||
+        !snapshot ||
+        snapshot.accountId !== linkedAccount.id ||
+        snapshot.reportedBalance == null ||
+        !next.occurredOn ||
+        localDateISO(snapshot.asOf) !== next.occurredOn
+      )
+        throw new Error(
+          "A balance snapshot confirmation must match an owned bank or wallet report on the transaction date.",
+        );
+    }
     const allocated =
       data.allocations.some((a) => a.transactionId === next.id) ||
       data.emiAllocations.some((a) => a.transactionId === next.id) ||

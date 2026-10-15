@@ -1326,7 +1326,7 @@ function AccountsPage({
               </strong>
               <br />
               {balance.currentSource === "snapshot"
-                ? `Reported snapshot + posted movements after ${formatDate(balance.currentBaselineAsOf)}, through ${formatDate(today)}. Snapshot-day entries are treated as included.`
+                ? `Reported snapshot + posted movements after ${formatDate(balance.currentBaselineAsOf)}, through ${formatDate(today)}. Same-day payments change the balance only when confirmed as missing from that report.`
                 : balance.currentSource === "opening"
                   ? `Opening balance + dated posted movements through ${formatDate(today)}.`
                   : "Add a reported snapshot or a known opening balance to calculate this account's balance."}
@@ -1343,7 +1343,11 @@ function AccountsPage({
           <Stat
             title="Calculated ledger balance"
             value={formatOptional(balance.calculated)}
-            caption="Opening balance + dated posted movements"
+            caption={
+              balance.asOf
+                ? "Posted ledger covered by this report"
+                : "Opening balance + dated posted movements"
+            }
             icon={ArrowLeftRight}
           />
           <Stat

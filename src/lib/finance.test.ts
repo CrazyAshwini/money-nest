@@ -9,6 +9,7 @@ import {
   estimatedFdValue,
   formatMoney,
   groupSummary,
+  latestBalanceSnapshot,
   ledgerBalance,
   monthlySummary,
   sumMoney,
@@ -23,7 +24,12 @@ import {
   DEMO_TODAY,
   DEMO_USER_ID,
 } from "./seed";
-import type { Bill, Transaction, WorkspaceData } from "./types";
+import type {
+  AccountSnapshot,
+  Bill,
+  Transaction,
+  WorkspaceData,
+} from "./types";
 import {
   accountSchema,
   isoDateSchema,
@@ -294,15 +300,17 @@ describe("updated bank and wallet balances", () => {
     reportedBalance = "900.10",
     asOf = "2026-10-04T08:00:00Z",
   ) {
-    data.snapshots.push({
-      id: `snapshot-${data.snapshots.length}`,
+    const snapshot: AccountSnapshot = {
+      id: `00000000-0000-4000-8000-${String(sequence++).padStart(12, "0")}`,
       userId: DEMO_USER_ID,
       accountId,
       asOf,
       reportedBalance,
       source: "user_report",
       verifiedByUser: true,
-    });
+    };
+    data.snapshots.push(snapshot);
+    return snapshot;
   }
   it("updates bank cash after a posted expense without rewriting the report or reconciliation", () => {
     const data = fixture();
@@ -352,6 +360,341 @@ describe("updated bank and wallet balances", () => {
     expect(
       accountBalance(data, DEMO_ACCOUNT_IDS.bank, "2026-10-04").current,
     ).toBe("900.10");
+  });
+  it("applies an explicitly confirmed same-day expense once after it is posted", () => {
+    const data = fixture();
+    const snapshot = report(data, DEMO_ACCOUNT_IDS.bank, "13456.04");
+    const originalReport = JSON.stringify(snapshot);
+    const expense = txn(data, {
+      amount: "45.00",
+      status: "pending_review",
+      fromBalanceSnapshotId: snapshot.id,
+    });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current,
+    ).toBe("13456.04");
+    const beforePosting = accountBalance(
+      data,
+      DEMO_ACCOUNT_IDS.bank,
+      DEMO_TODAY,
+    );
+    expense.status = "posted";
+    const result = accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY);
+    expect(result).toMatchObject({
+      current: "13411.04",
+      reported: "13456.04",
+      movementsSinceSnapshot: 1,
+      calculated: beforePosting.calculated,
+      difference: beforePosting.difference,
+      reconciliation: beforePosting.reconciliation,
+    });
+    expect(accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY)).toEqual(
+      result,
+    );
+    expect(JSON.stringify(snapshot)).toBe(originalReport);
+  });
+  it("reconciles same-day transfers at each exact report while retaining their ledger effects", () => {
+    const data = fixture();
+    const source = report(data, DEMO_ACCOUNT_IDS.bank, "1000.00");
+    const destination = report(data, DEMO_ACCOUNT_IDS.savings, "1000.00");
+    txn(data, {
+      kind: "transfer",
+      amount: "45.00",
+      toAccountId: DEMO_ACCOUNT_IDS.savings,
+      fromBalanceSnapshotId: source.id,
+      toBalanceSnapshotId: destination.id,
+    });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({
+      current: "955.00",
+      calculated: "1000.00",
+      difference: "0.00",
+      reconciliation: "matched",
+    });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.savings, DEMO_TODAY),
+    ).toMatchObject({
+      current: "1045.00",
+      calculated: "1000.00",
+      difference: "0.00",
+      reconciliation: "matched",
+    });
+    expect(ledgerBalance(data, DEMO_ACCOUNT_IDS.bank, "2026-10-04")).toBe(
+      "955.00",
+    );
+    expect(ledgerBalance(data, DEMO_ACCOUNT_IDS.savings, "2026-10-04")).toBe(
+      "1045.00",
+    );
+  });
+  it("includes an older report's same-day movement when reconciling its replacement", () => {
+    const data = fixture();
+    const oldReport = report(data, DEMO_ACCOUNT_IDS.bank, "1000.00");
+    txn(data, { amount: "45.00", fromBalanceSnapshotId: oldReport.id });
+    report(data, DEMO_ACCOUNT_IDS.bank, "955.00", "2026-10-04T09:00:00Z");
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({
+      current: "955.00",
+      calculated: "955.00",
+      difference: "0.00",
+      reconciliation: "matched",
+      movementsSinceSnapshot: 0,
+    });
+  });
+  it("keeps reconciliation unknown without an opening baseline despite same-day confirmation", () => {
+    const data = fixture();
+    const account = data.accounts.find(
+      (item) => item.id === DEMO_ACCOUNT_IDS.bank,
+    )!;
+    account.openingBalance = null;
+    account.openingBalanceDate = null;
+    const snapshot = report(data, DEMO_ACCOUNT_IDS.bank, "1000.00");
+    txn(data, { amount: "45.00", fromBalanceSnapshotId: snapshot.id });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({
+      current: "955.00",
+      calculated: null,
+      difference: null,
+      reconciliation: "unknown",
+    });
+  });
+  it("keeps same-day transfer confirmation independent for each account", () => {
+    const data = fixture();
+    const source = report(data);
+    const destination = report(data, DEMO_ACCOUNT_IDS.savings, "100.20");
+    const transfer = txn(data, {
+      kind: "transfer",
+      amount: "35.25",
+      toAccountId: DEMO_ACCOUNT_IDS.savings,
+      fromBalanceSnapshotId: source.id,
+    });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current,
+    ).toBe("864.85");
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.savings, DEMO_TODAY).current,
+    ).toBe("100.20");
+    transfer.toBalanceSnapshotId = destination.id;
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.savings, DEMO_TODAY).current,
+    ).toBe("135.45");
+    transfer.fromBalanceSnapshotId = destination.id;
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current,
+    ).toBe("900.10");
+  });
+  it("applies same-day incoming cash to wallets without changing debt reports", () => {
+    const data = fixture();
+    const wallet = report(data, DEMO_ACCOUNT_IDS.wallet, "20.10");
+    txn(data, {
+      kind: "income",
+      amount: "0.25",
+      fromAccountId: null,
+      toAccountId: DEMO_ACCOUNT_IDS.wallet,
+      toBalanceSnapshotId: wallet.id,
+    });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.wallet, DEMO_TODAY).current,
+    ).toBe("20.35");
+    const debt = report(data, DEMO_ACCOUNT_IDS.platinum, "500.00");
+    debt.reportedOutstanding = "500.00";
+    txn(data, {
+      fromAccountId: DEMO_ACCOUNT_IDS.platinum,
+      fromBalanceSnapshotId: debt.id,
+    });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY).current,
+    ).toBe("500.00");
+  });
+  it("absorbs a same-day confirmation when a newer report replaces its exact baseline", () => {
+    const data = fixture();
+    const oldReport = report(data);
+    const expense = txn(data, { fromBalanceSnapshotId: oldReport.id });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current,
+    ).toBe("800.10");
+    const newerReport = report(
+      data,
+      DEMO_ACCOUNT_IDS.bank,
+      "800.10",
+      "2026-10-04T09:00:00Z",
+    );
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({ current: "800.10", movementsSinceSnapshot: 0 });
+    // A malformed historical reference cannot override the calendar-day cutoff.
+    expense.occurredOn = "2026-10-03";
+    expense.fromBalanceSnapshotId = newerReport.id;
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current,
+    ).toBe("800.10");
+  });
+  it("does not apply confirmed same-day voided or future movements", () => {
+    const data = fixture();
+    const snapshot = report(data);
+    txn(data, { status: "voided", fromBalanceSnapshotId: snapshot.id });
+    txn(data, { occurredOn: "2026-10-10", fromBalanceSnapshotId: snapshot.id });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toMatchObject({ current: "900.10", movementsSinceSnapshot: 0 });
+  });
+  it("finds the latest owned cash report rather than a newer non-balance report", () => {
+    const data = fixture();
+    const balance = report(data);
+    const nonBalance = report(
+      data,
+      DEMO_ACCOUNT_IDS.bank,
+      "800.00",
+      "2026-10-05T08:00:00Z",
+    );
+    nonBalance.reportedBalance = null;
+    nonBalance.reportedAvailable = "800.00";
+    const foreign = report(
+      data,
+      DEMO_ACCOUNT_IDS.bank,
+      "700.00",
+      "2026-10-06T08:00:00Z",
+    );
+    foreign.userId = "20000000-0000-4000-8000-000000000001";
+    expect(
+      latestBalanceSnapshot(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY),
+    ).toEqual(balance);
+    expect(
+      latestBalanceSnapshot(data, DEMO_ACCOUNT_IDS.platinum, DEMO_TODAY),
+    ).toBeUndefined();
+  });
+  it("validates and preserves both balance confirmations using the Indian calendar day", () => {
+    const data = fixture();
+    const source = report(
+      data,
+      DEMO_ACCOUNT_IDS.bank,
+      "900.10",
+      "2026-10-04T19:00:00Z",
+    );
+    const destination = report(
+      data,
+      DEMO_ACCOUNT_IDS.savings,
+      "100.20",
+      "2026-10-05T01:00:00Z",
+    );
+    const transfer = txn(data, {
+      kind: "transfer",
+      occurredOn: "2026-10-05",
+      toAccountId: DEMO_ACCOUNT_IDS.savings,
+      fromBalanceSnapshotId: source.id,
+      toBalanceSnapshotId: destination.id,
+    });
+    expect(
+      validateWorkspaceRecord(data, "transactions", transfer, DEMO_USER_ID),
+    ).toMatchObject({
+      fromBalanceSnapshotId: source.id,
+      toBalanceSnapshotId: destination.id,
+    });
+    expect(
+      accountBalance(data, DEMO_ACCOUNT_IDS.bank, DEMO_TODAY).current,
+    ).toBe("800.10");
+  });
+  it.each<{
+    name: string;
+    transaction?: Partial<Transaction>;
+    snapshot?: Partial<AccountSnapshot>;
+  }>([
+    {
+      name: "another owner's report",
+      snapshot: { userId: "20000000-0000-4000-8000-000000000001" },
+    },
+    {
+      name: "another account's report",
+      snapshot: { accountId: DEMO_ACCOUNT_IDS.savings },
+    },
+    {
+      name: "a report on the wrong destination side",
+      transaction: {
+        kind: "transfer",
+        toAccountId: DEMO_ACCOUNT_IDS.savings,
+        toBalanceSnapshotId: "same-report",
+      },
+    },
+    {
+      name: "a debt report",
+      snapshot: { accountId: DEMO_ACCOUNT_IDS.platinum },
+      transaction: { fromAccountId: DEMO_ACCOUNT_IDS.platinum },
+    },
+    {
+      name: "a report without a cash balance",
+      snapshot: { reportedBalance: null, reportedAvailable: "900.10" },
+    },
+    {
+      name: "a missing report",
+      transaction: {
+        fromBalanceSnapshotId: "00000000-0000-4000-8000-999999999999",
+      },
+    },
+    {
+      name: "a missing linked account",
+      transaction: {
+        fromAccountId: null,
+        externalPayer: "Confirmed external payer",
+      },
+    },
+    {
+      name: "a previous-day movement",
+      transaction: { occurredOn: "2026-10-03" },
+    },
+    {
+      name: "a following-day movement",
+      transaction: { occurredOn: "2026-10-05" },
+    },
+    {
+      name: "an undated pending movement",
+      transaction: { occurredOn: null, status: "pending_review" },
+    },
+  ])(
+    "rejects balance confirmation against $name",
+    ({ transaction, snapshot }) => {
+      const data = fixture();
+      const baseline = report(data);
+      Object.assign(baseline, snapshot);
+      const movement = txn(data, {
+        fromBalanceSnapshotId: baseline.id,
+        ...transaction,
+        ...(transaction?.toBalanceSnapshotId === "same-report"
+          ? { toBalanceSnapshotId: baseline.id }
+          : {}),
+      });
+      expect(() =>
+        validateWorkspaceRecord(data, "transactions", movement, DEMO_USER_ID),
+      ).toThrow(/balance snapshot confirmation/);
+    },
+  );
+  it("allows clearing a balance confirmation when payment or date needs review", () => {
+    const data = fixture();
+    const snapshot = report(data);
+    const movement = txn(data, { fromBalanceSnapshotId: snapshot.id });
+    for (const correction of [
+      { occurredOn: "2026-10-05" },
+      { occurredOn: null, status: "pending_review" as const },
+    ]) {
+      expect(
+        validateWorkspaceRecord(
+          data,
+          "transactions",
+          {
+            ...movement,
+            ...correction,
+            fromBalanceSnapshotId: null,
+            toBalanceSnapshotId: null,
+          },
+          DEMO_USER_ID,
+        ),
+      ).toMatchObject({
+        ...correction,
+        fromBalanceSnapshotId: null,
+        toBalanceSnapshotId: null,
+      });
+    }
   });
   it("applies posted income, refunds, repayments and both sides of transfers with decimal arithmetic", () => {
     const data = fixture();

@@ -50,6 +50,8 @@ export const transactionSchema = z
     description: z.string().trim().min(1).max(500),
     fromAccountId: id.nullable(),
     toAccountId: id.nullable(),
+    fromBalanceSnapshotId: id.nullable().optional(),
+    toBalanceSnapshotId: id.nullable().optional(),
     category: optionalText,
     subcategory: optionalText,
     platform: z.string().trim().max(100).nullish(),

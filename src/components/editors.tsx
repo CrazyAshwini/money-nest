@@ -15,7 +15,15 @@ import {
   type ExpenseGroup,
   type Emi,
 } from "@/lib/types";
-import { validateBillAllocation, validateEmiAllocation } from "@/lib/finance";
+import {
+  accountBalance,
+  formatDate,
+  formatMoney,
+  latestBalanceSnapshot,
+  localDateISO,
+  validateBillAllocation,
+  validateEmiAllocation,
+} from "@/lib/finance";
 import { ReceiptScanner, type AppliedReceipt } from "./receipt-scanner";
 import {
   getCategoryPlatformOptions,
@@ -169,6 +177,33 @@ export function RecordEditor({
   const [receiptReviewed, setReceiptReviewed] = useState(false);
   const [receiptPaymentConfirmed, setReceiptPaymentConfirmed] = useState(false);
   const [pendingConfirmed, setPendingConfirmed] = useState(false);
+  const [balanceChoices, setBalanceChoices] = useState<Record<string, string>>(
+    {},
+  );
+  const sameDayBalances = (["from", "to"] as const).flatMap((side) => {
+    const accountId = transaction[`${side}AccountId`];
+    const snapshot = latestBalanceSnapshot(data, accountId, today);
+    const account = data.accounts.find((item) => item.id === accountId);
+    if (
+      !snapshot ||
+      !account ||
+      localDateISO(snapshot.asOf) !== transaction.occurredOn
+    )
+      return [];
+    const key = `${side}:${accountId}:${snapshot.id}:${transaction.occurredOn}`;
+    const previous = editor.type === "transaction" ? editor.record : undefined;
+    const previousMatches =
+      previous?.[`${side}AccountId`] === accountId &&
+      previous.occurredOn === transaction.occurredOn;
+    const choice =
+      balanceChoices[key] ??
+      (previousMatches && previous?.[`${side}BalanceSnapshotId`] === snapshot.id
+        ? "excluded"
+        : previousMatches && previous?.status === "posted"
+          ? "included"
+          : "");
+    return [{ side, account, snapshot, key, choice }];
+  });
   function updateTransaction<K extends keyof TransactionValues>(
     key: K,
     value: TransactionValues[K],
@@ -177,6 +212,12 @@ export function RecordEditor({
     setReceiptReviewed(false);
     setReceiptPaymentConfirmed(false);
     setPendingConfirmed(false);
+    if (
+      key === "fromAccountId" ||
+      key === "toAccountId" ||
+      key === "occurredOn"
+    )
+      setBalanceChoices({});
   }
   function applyReceiptFields(applied: AppliedReceipt) {
     const draft = applied.draft;
@@ -205,6 +246,7 @@ export function RecordEditor({
     setReceiptReviewed(false);
     setReceiptPaymentConfirmed(false);
     setPendingConfirmed(false);
+    setBalanceChoices({});
     setError("");
   }
   function applyReceipt(applied: AppliedReceipt) {
@@ -272,6 +314,7 @@ export function RecordEditor({
     setError("");
     setBusy(true);
     const f = new FormData(event.currentTarget);
+    let successMessage = `${names[editor.type][0].toUpperCase() + names[editor.type].slice(1)} saved.`;
     try {
       if (editor.type === "account") {
         const suffix = text(f, "maskedSuffix");
@@ -325,36 +368,42 @@ export function RecordEditor({
             "For an external loan repayment, choose its bank source, leave the destination external, and name the lender.",
           );
         const prev = editor.record;
-        const canConfirmPending =
-          prev?.status === "pending_review" &&
-          prev.sourceSystem !== "receipt_ai";
+        const canConfirmPending = prev?.status === "pending_review";
         const notes =
           kind === "expense"
             ? prev?.notes || null
             : externalRepayment
               ? `Confirmed external lender: ${lender}. ${transaction.notes.trim()}`.trim()
               : transaction.notes.trim() || null;
-        await save("transactions", {
+        const status: Transaction["status"] =
+          prev?.status === "voided"
+            ? "voided"
+            : !date ||
+                (receipt?.requiresPendingReview &&
+                  !(receipt.canConfirmPayment && receiptPaymentConfirmed)) ||
+                ((kind === "transfer" || kind === "bill_payment") &&
+                  (!from || (!to && !externalRepayment)))
+              ? "pending_review"
+              : receipt
+                ? "posted"
+                : canConfirmPending && pendingConfirmed
+                  ? "posted"
+                  : (transaction.status as Transaction["status"]);
+        if (
+          status === "posted" &&
+          sameDayBalances.some(({ choice }) => !choice)
+        )
+          throw new Error(
+            "Choose whether the reported account balance already includes this payment.",
+          );
+        const savedTransaction: Transaction = {
           ...prev,
           ...base,
           id: receiptQueue[receiptIndex]?.id ?? base.id,
           amount: value,
           currency: "INR",
           kind,
-          status:
-            prev?.status === "voided"
-              ? "voided"
-              : !date ||
-                  (receipt?.requiresPendingReview &&
-                    !(receipt.canConfirmPayment && receiptPaymentConfirmed)) ||
-                  ((kind === "transfer" || kind === "bill_payment") &&
-                    (!from || (!to && !externalRepayment)))
-                ? "pending_review"
-                : receipt
-                  ? "posted"
-                  : canConfirmPending && pendingConfirmed
-                    ? "posted"
-                    : (transaction.status as Transaction["status"]),
+          status,
           occurredOn: date,
           description: transaction.description.trim(),
           merchant: transaction.merchant.trim() || null,
@@ -368,7 +417,49 @@ export function RecordEditor({
           notes,
           sourceSystem: receipt ? "receipt_ai" : prev?.sourceSystem || "manual",
           sourceObjectId: receipt?.fingerprint || prev?.sourceObjectId || null,
-        });
+          fromBalanceSnapshotId:
+            sameDayBalances.find(
+              ({ side, choice }) => side === "from" && choice === "excluded",
+            )?.snapshot.id ?? null,
+          toBalanceSnapshotId:
+            sameDayBalances.find(
+              ({ side, choice }) => side === "to" && choice === "excluded",
+            )?.snapshot.id ?? null,
+        };
+        await save("transactions", savedTransaction);
+        if (status === "pending_review") {
+          successMessage =
+            "Saved as Needs review. This transaction is excluded from account balances.";
+        } else if (status === "posted") {
+          const updated = {
+            ...data,
+            transactions: [
+              ...data.transactions.filter(
+                (item) => item.id !== savedTransaction.id,
+              ),
+              savedTransaction,
+            ],
+          };
+          const balances = data.accounts.filter(
+            (account) =>
+              (account.kind === "bank" || account.kind === "wallet") &&
+              (account.id === from || account.id === to),
+          );
+          successMessage =
+            "Transaction saved." +
+            balances
+              .map((account) => {
+                const balance = accountBalance(
+                  updated,
+                  account.id,
+                  today,
+                ).current;
+                return balance == null
+                  ? ""
+                  : ` ${account.name}: ${formatMoney(balance)}.`;
+              })
+              .join("");
+        }
       } else if (editor.type === "bill") {
         await save("bills", {
           ...editor.record,
@@ -517,9 +608,7 @@ export function RecordEditor({
         );
         return;
       }
-      toast(
-        `${names[editor.type][0].toUpperCase() + names[editor.type].slice(1)} saved.`,
-      );
+      toast(successMessage);
       onClose();
     } catch (e) {
       setError(
@@ -772,6 +861,33 @@ export function RecordEditor({
               <Field label="Date" className="full">
                 {transactionInput("occurredOn", "date")}
               </Field>
+              {sameDayBalances.map(({ account, snapshot, key, choice }) => (
+                <Field
+                  key={key}
+                  label={`Does the ${account.name} balance already include this payment?`}
+                  className="full"
+                >
+                  <select
+                    aria-label={`Does the ${account.name} balance already include this payment?`}
+                    value={choice}
+                    onChange={(event) =>
+                      setBalanceChoices((current) => ({
+                        ...current,
+                        [key]: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Choose balance treatment</option>
+                    <option value="included">Yes — already included</option>
+                    <option value="excluded">No — update balance</option>
+                  </select>
+                  <span className="form-note">
+                    Reported {formatMoney(snapshot.reportedBalance!)} on{" "}
+                    {formatDate(snapshot.asOf)}. Choose “No” only if this
+                    payment is missing from that amount.
+                  </span>
+                </Field>
+              ))}
               {transaction.kind !== "expense" && (
                 <>
                   <Field label="Bank reference">
@@ -857,18 +973,24 @@ export function RecordEditor({
                   Missing dates or incomplete transfers stay in Needs review.
                 </p>
               )}
+              {editor.record?.status === "pending_review" && (
+                <label className="check-row full">
+                  <input
+                    type="checkbox"
+                    checked={pendingConfirmed}
+                    onChange={(event) =>
+                      setPendingConfirmed(event.target.checked)
+                    }
+                  />
+                  I confirmed this payment and account
+                </label>
+              )}
               {editor.record?.status === "pending_review" &&
-                editor.record.sourceSystem !== "receipt_ai" && (
-                  <label className="check-row full">
-                    <input
-                      type="checkbox"
-                      checked={pendingConfirmed}
-                      onChange={(event) =>
-                        setPendingConfirmed(event.target.checked)
-                      }
-                    />
-                    I confirmed this payment and account
-                  </label>
+                !pendingConfirmed && (
+                  <p className="transaction-hint full">
+                    Needs review payments do not change balances. Confirm the
+                    payment after checking it with your bank.
+                  </p>
                 )}
             </>
           )}

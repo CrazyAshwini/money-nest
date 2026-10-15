@@ -25,6 +25,7 @@ async function addTransaction(
     kind?: string;
     to?: string;
     externalLender?: string;
+    date?: string;
   },
 ) {
   const transactionKind = values.kind ?? "expense";
@@ -50,7 +51,9 @@ async function addTransaction(
     .getByRole("textbox", { name: "Description", exact: true })
     .fill(values.description);
   await dialog.getByLabel("Amount · ₹", { exact: true }).fill(values.amount);
-  await dialog.getByLabel("Date", { exact: true }).fill("2026-10-09");
+  await dialog
+    .getByLabel("Date", { exact: true })
+    .fill(values.date ?? "2026-10-09");
   await dialog
     .getByRole("combobox", {
       name: ["income", "refund"].includes(transactionKind)
@@ -73,6 +76,11 @@ async function addTransaction(
       })
       .check();
   }
+  const balanceTreatments = dialog.getByRole("combobox", {
+    name: /^Does the .+ balance already include this payment\?$/,
+  });
+  for (const treatment of await balanceTreatments.all())
+    await treatment.selectOption("included");
   await dialog
     .getByRole("button", { name: "Save transaction", exact: true })
     .click();
@@ -105,6 +113,73 @@ async function settleDashboard(page: Page) {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
   });
+}
+
+async function seedBankBalanceFixture(
+  page: Page,
+  asOf: string,
+  pendingReceiptDescription?: string,
+) {
+  return page.evaluate(
+    ({ storageKey, bankName, asOf, pendingReceiptDescription }) => {
+      if (sessionStorage.getItem("finance-os:mode") !== "demo")
+        throw new Error("This fixture requires an isolated demo workspace.");
+      const workspace = JSON.parse(
+        localStorage.getItem(storageKey)!,
+      ) as WorkspaceData;
+      const bank = workspace.accounts.find(
+        (account) => account.name === bankName && account.active,
+      );
+      const snapshot = workspace.snapshots.find(
+        (item) => item.accountId === bank?.id,
+      );
+      if (!bank || !snapshot)
+        throw new Error("The synthetic bank snapshot fixture is required.");
+      const pendingId = "00000000-0000-4000-8000-000000009821";
+      const fixture: WorkspaceData = {
+        accounts: [bank],
+        snapshots: [{ ...snapshot, asOf, reportedBalance: "13456.04" }],
+        transactions: pendingReceiptDescription
+          ? [
+              {
+                id: pendingId,
+                userId: bank.userId,
+                amount: "45.00",
+                currency: "INR",
+                kind: "expense",
+                status: "pending_review",
+                occurredOn: "2026-10-09",
+                description: pendingReceiptDescription,
+                category: "Food",
+                fromAccountId: bank.id,
+                toAccountId: null,
+                sourceSystem: "receipt_ai",
+                sourceObjectId: "fictional-receipt-45",
+              },
+            ]
+          : [],
+        bills: [],
+        allocations: [],
+        fixedDeposits: [],
+        loans: [],
+        emis: [],
+        emiAllocations: [],
+        groups: [],
+        shares: [],
+        settlements: [],
+        reminders: [],
+        auditEvents: [],
+      };
+      localStorage.setItem(storageKey, JSON.stringify(fixture));
+      return { bankId: bank.id, snapshotId: snapshot.id, pendingId };
+    },
+    {
+      storageKey: STORAGE_KEY,
+      bankName: BANK,
+      asOf,
+      pendingReceiptDescription,
+    },
+  );
 }
 
 test.beforeEach(async ({ page }) => {
@@ -448,6 +523,163 @@ test("a posted expense after the reported date updates the bank card and dashboa
   await noPageOverflow(page);
 });
 
+test("a saved receipt requires confirmation and explicit same-day balance treatment before debiting once", async ({
+  page,
+}) => {
+  const description = "E2E fictional receipt payment 45";
+  const { pendingId, snapshotId } = await seedBankBalanceFixture(
+    page,
+    "2026-10-09T08:00:00Z",
+    description,
+  );
+  const bankTotal = () =>
+    page
+      .getByRole("button", { name: "Total bank balance details", exact: true })
+      .locator(":scope > strong");
+  const storedReceipts = () =>
+    page.evaluate(
+      ({ storageKey, pendingId }) =>
+        (
+          JSON.parse(localStorage.getItem(storageKey)!) as WorkspaceData
+        ).transactions.filter((transaction) => transaction.id === pendingId),
+      { storageKey: STORAGE_KEY, pendingId },
+    );
+  const editReceipt = async () => {
+    await page.goto("/transactions");
+    await page
+      .getByRole("textbox", { name: "Search transactions", exact: true })
+      .fill(description);
+    await page
+      .getByRole("button", { name: `Edit ${description}`, exact: true })
+      .click();
+    return page.locator(".transaction-modal");
+  };
+  const balanceQuestion = `Does the ${BANK} balance already include this payment?`;
+  await page.reload();
+  await expect(bankTotal()).toHaveText("₹13,456.04");
+  await expect.poll(() => spending(page)).toBe("0.00");
+
+  let dialog = await editReceipt();
+  await expect(
+    dialog.getByRole("checkbox", {
+      name: "I confirmed this payment and account",
+      exact: true,
+    }),
+  ).not.toBeChecked();
+  await expect(
+    dialog.getByRole("combobox", { name: balanceQuestion, exact: true }),
+  ).toHaveValue("");
+  await dialog
+    .getByRole("button", { name: "Save transaction", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(async () => (await storedReceipts())[0]?.status)
+    .toBe("pending_review");
+  await page.goto("/dashboard");
+  await expect(bankTotal()).toHaveText("₹13,456.04");
+  await expect.poll(() => spending(page)).toBe("0.00");
+
+  dialog = await editReceipt();
+  await dialog
+    .getByRole("checkbox", {
+      name: "I confirmed this payment and account",
+      exact: true,
+    })
+    .check();
+  await dialog
+    .getByRole("button", { name: "Save transaction", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toContainText(
+    "Choose whether the reported account balance already includes this payment.",
+  );
+  await expect
+    .poll(async () => (await storedReceipts())[0]?.status)
+    .toBe("pending_review");
+  await dialog
+    .getByRole("combobox", { name: balanceQuestion, exact: true })
+    .selectOption("excluded");
+  await dialog
+    .getByRole("button", { name: "Save transaction", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(async () => (await storedReceipts())[0]?.status)
+    .toBe("posted");
+  expect(await storedReceipts()).toHaveLength(1);
+  expect((await storedReceipts())[0]).toMatchObject({
+    amount: "45.00",
+    sourceSystem: "receipt_ai",
+    fromBalanceSnapshotId: snapshotId,
+  });
+  await page.goto("/dashboard");
+  await expect(bankTotal()).toHaveText("₹13,411.04");
+  await expect.poll(() => spending(page)).toBe("45.00");
+  await page.reload();
+  await expect(bankTotal()).toHaveText("₹13,411.04");
+  await expect.poll(() => spending(page)).toBe("45.00");
+
+  dialog = await editReceipt();
+  await expect(
+    dialog.getByRole("combobox", { name: balanceQuestion, exact: true }),
+  ).toHaveValue("excluded");
+  await dialog.getByLabel("Amount · ₹", { exact: true }).fill("50.00");
+  await dialog
+    .getByRole("button", { name: "Save transaction", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(await storedReceipts()).toHaveLength(1);
+  await page.goto("/dashboard");
+  await expect(bankTotal()).toHaveText("₹13,406.04");
+  await expect.poll(() => spending(page)).toBe("50.00");
+  await page.reload();
+  await expect(bankTotal()).toHaveText("₹13,406.04");
+  await expect.poll(() => spending(page)).toBe("50.00");
+  await page.goto("/accounts");
+  await expect(
+    page
+      .locator("a.bank-card")
+      .filter({ hasText: BANK })
+      .locator(":scope > strong"),
+  ).toHaveText("₹13,406.04");
+});
+
+test("a manual expense already included in a same-day report stays covered while later spending debits", async ({
+  page,
+}) => {
+  await seedBankBalanceFixture(page, "2026-10-08T08:00:00Z");
+  const bankTotal = () =>
+    page
+      .getByRole("button", { name: "Total bank balance details", exact: true })
+      .locator(":scope > strong");
+  await page.reload();
+  await expect(bankTotal()).toHaveText("₹13,456.04");
+  await addTransaction(page, {
+    description: "E2E payment already included in bank report",
+    amount: "15.25",
+    date: "2026-10-08",
+  });
+  await expect(bankTotal()).toHaveText("₹13,456.04");
+  await expect.poll(() => spending(page)).toBe("15.25");
+  await addTransaction(page, {
+    description: "E2E payment after bank report",
+    amount: "25.00",
+    date: "2026-10-09",
+  });
+  await expect(bankTotal()).toHaveText("₹13,431.04");
+  await expect.poll(() => spending(page)).toBe("40.25");
+  await page.reload();
+  await expect(bankTotal()).toHaveText("₹13,431.04");
+  await expect.poll(() => spending(page)).toBe("40.25");
+  await page.goto("/accounts");
+  await expect(
+    page
+      .locator("a.bank-card")
+      .filter({ hasText: BANK })
+      .locator(":scope > strong"),
+  ).toHaveText("₹13,431.04");
+});
+
 test("manual pending expenses require explicit confirmation and voided edits stay voided", async ({
   page,
 }) => {
@@ -565,6 +797,12 @@ test("manual pending expenses require explicit confirmation and voided edits sta
       exact: true,
     })
     .check();
+  for (const treatment of await dialog
+    .getByRole("combobox", {
+      name: /^Does the .+ balance already include this payment\?$/,
+    })
+    .all())
+    await treatment.selectOption("included");
   await dialog
     .getByRole("button", { name: "Save transaction", exact: true })
     .click();
