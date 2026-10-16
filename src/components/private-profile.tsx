@@ -14,6 +14,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
+import { BrandLogo } from "./brand-lockup";
 import { Badge, Field, PasswordField, Section } from "./ui";
 import { NAV_ITEMS } from "./workspace-navigation";
 import "./profile-theme.css";
@@ -268,10 +269,7 @@ export function PrivateProfilePage() {
   return (
     <main className="private-access access-theme">
       <Link href="/dashboard" className="brand" aria-label="Money Nest home">
-        <span className="brand-icon" aria-hidden="true">
-          M
-        </span>
-        Money Nest
+        <BrandLogo />
       </Link>
       <div className="private-access-card">
         <span className="login-icon" aria-hidden="true">

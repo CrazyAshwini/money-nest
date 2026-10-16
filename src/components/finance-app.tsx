@@ -1,5 +1,5 @@
 "use client";
-import { BrandLockup } from "./brand-lockup";
+import { AppBrandIcon, BrandLogo } from "./brand-lockup";
 import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -228,7 +228,7 @@ export function FinanceApp() {
   if (mode === "loading")
     return (
       <main className="loading" role="status" aria-busy="true">
-        <div className="brand-icon">M</div>
+        <AppBrandIcon />
         <LoaderCircle className="spin" aria-hidden="true" />
         <p>Opening your finance workspace…</p>
         <div className="workspace-skeleton">
@@ -323,7 +323,7 @@ export function FinanceApp() {
                   className="brand dashboard-mobile-brand"
                   aria-label="Money Nest home"
                 >
-                  <BrandLockup />
+                  <BrandLogo />
                 </Link>
                 <DashboardWelcome />
               </>

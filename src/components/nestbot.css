@@ -1,5 +1,10 @@
 /* Money Nest Bot Styles — Clean Green & White Theme */
 
+.nestbot-floating-trigger,
+.nestbot-chat-window {
+  --nestbot-brand: #155e50;
+}
+
 /* Floating Launchers */
 .nestbot-floating-trigger {
   position: fixed;
@@ -13,7 +18,7 @@
   padding: 0 18px;
   border: 1px solid var(--border);
   border-radius: 24px;
-  background: var(--brand);
+  background: var(--nestbot-brand);
   color: white;
   font-weight: 600;
   font-size: 14px;
@@ -75,14 +80,16 @@
   justify-content: space-between;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
-  background: var(--brand);
+  background: var(--nestbot-brand);
   color: white;
 }
 
 .nestbot-chat-header-info {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
 }
 
 .nestbot-chat-header-info h3 {
@@ -90,9 +97,14 @@
   font-weight: 600;
   margin: 0;
   color: white;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nestbot-chat-header-badge {
+  flex-shrink: 0;
   font-size: 11px;
   background: rgb(255 255 255 / 20%);
   padding: 2px 7px;
@@ -103,6 +115,11 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
+}
+
+.nestbot-chat-window.minimized .nestbot-chat-header-badge {
+  display: none;
 }
 
 .nestbot-icon-btn {
@@ -120,6 +137,11 @@
 
 .nestbot-icon-btn:hover {
   background: rgb(255 255 255 / 18%);
+}
+
+.nestbot-chat-header .nestbot-icon-btn:focus-visible {
+  outline-color: #ffffff;
+  outline-offset: -2px;
 }
 
 /* Messages Area */
@@ -148,6 +170,10 @@
 
 .nestbot-msg.assistant {
   align-self: flex-start;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
 }
 
 .nestbot-bubble {
@@ -157,12 +183,14 @@
 }
 
 .nestbot-msg.user .nestbot-bubble {
-  background: var(--brand);
+  background: var(--nestbot-brand);
   color: white;
   border-bottom-right-radius: 4px;
 }
 
 .nestbot-msg.assistant .nestbot-bubble {
+  flex: 1;
+  min-width: 0;
   background: var(--panel);
   border: 1px solid var(--border);
   color: var(--text);
@@ -214,8 +242,8 @@
 
 .nestbot-quick-pill:hover {
   background: var(--brand-soft);
-  border-color: var(--brand);
-  color: var(--brand);
+  border-color: var(--nestbot-brand);
+  color: var(--nestbot-brand);
 }
 
 /* Action confirmation card */
@@ -248,7 +276,7 @@
   padding: 6px 14px;
   border: none;
   border-radius: 8px;
-  background: var(--brand);
+  background: var(--nestbot-brand);
   color: white;
   font-size: 12px;
   font-weight: 600;
@@ -304,7 +332,7 @@
 }
 
 .nestbot-input:focus {
-  border-color: var(--brand);
+  border-color: var(--nestbot-brand);
 }
 
 .nestbot-send-btn {
@@ -314,7 +342,7 @@
   height: 40px;
   border: none;
   border-radius: 50%;
-  background: var(--brand);
+  background: var(--nestbot-brand);
   color: white;
   cursor: pointer;
   flex-shrink: 0;
@@ -341,8 +369,8 @@
 }
 
 .nestbot-upload-btn:hover {
-  color: var(--brand);
-  border-color: var(--brand);
+  color: var(--nestbot-brand);
+  border-color: var(--nestbot-brand);
 }
 
 /* Mobile Responsiveness */
@@ -381,5 +409,20 @@
 
   .nestbot-input-area {
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 360px) {
+  .nestbot-chat-header {
+    padding-inline: 12px;
+  }
+
+  .nestbot-chat-header-info h3 {
+    font-size: 14px;
+  }
+
+  .nestbot-chat-header-badge {
+    font-size: 10px;
+    padding-inline: 5px;
   }
 }

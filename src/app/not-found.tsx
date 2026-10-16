@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandLogo } from "@/components/brand-lockup";
 export default function NotFound() {
   return (
     <main className="not-found-page">
@@ -8,10 +9,7 @@ export default function NotFound() {
           className="brand"
           aria-label="Money Nest overview"
         >
-          <span className="brand-icon" aria-hidden="true">
-            M<span />
-          </span>
-          <span>Money Nest</span>
+          <BrandLogo />
         </Link>
         <p className="eyebrow">404 · Page not found</p>
         <h1 id="not-found-title">Let's get you back home.</h1>

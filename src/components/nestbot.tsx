@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, type FormEvent } from "react";
 import {
-  Bot,
   X,
   Minimize2,
   Maximize2,
@@ -14,6 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
+import { NestBotAvatar } from "./brand-lockup";
 import type {
   BotRequestPayload,
   BotResponsePayload,
@@ -195,7 +195,7 @@ export function NestBot({ onReceiptRequest }: { onReceiptRequest: () => void }) 
           }}
           aria-label="Open Money Nest Bot"
         >
-          <Bot size={20} aria-hidden="true" />
+          <NestBotAvatar size={28} />
           <span>Ask NestBot</span>
         </button>
       )}
@@ -205,7 +205,7 @@ export function NestBot({ onReceiptRequest }: { onReceiptRequest: () => void }) 
         <div className={`nestbot-chat-window ${isMinimized ? "minimized" : ""}`}>
           <div className="nestbot-chat-header">
             <div className="nestbot-chat-header-info">
-              <Bot size={20} aria-hidden="true" />
+              <NestBotAvatar size={32} />
               <h3>Money Nest Bot</h3>
               <span className="nestbot-chat-header-badge">AI Assistant</span>
             </div>
@@ -235,6 +235,7 @@ export function NestBot({ onReceiptRequest }: { onReceiptRequest: () => void }) 
               <div className="nestbot-messages">
                 {messages.map((m) => (
                   <div key={m.id} className={`nestbot-msg ${m.role}`}>
+                    {m.role === "assistant" && <NestBotAvatar size={28} />}
                     <div className="nestbot-bubble">
                       <p>{m.content}</p>
 
@@ -304,6 +305,7 @@ export function NestBot({ onReceiptRequest }: { onReceiptRequest: () => void }) 
 
                 {isLoading && (
                   <div className="nestbot-msg assistant">
+                    <NestBotAvatar size={28} />
                     <div className="nestbot-bubble" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Loader2 size={16} className="animate-spin" />
                       <span>Thinking & checking records...</span>

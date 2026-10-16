@@ -38,13 +38,19 @@
   height: 8px;
   pointer-events: none;
 }
-.money-nest-bot-avatar {
-  width: 25px;
-  height: 25px;
+.money-nest-bot-avatar,
+.money-nest-app-icon {
+  display: block;
   flex-shrink: 0;
   object-fit: contain;
 }
-.nestbot-title .money-nest-bot-avatar { width: 32px; height: 32px; }
+.money-nest-app-icon {
+  border-radius: 24%;
+}
+.not-found-card > .brand {
+  justify-content: center;
+  padding-inline: 0;
+}
 @media (max-width: 760px) {
   .dashboard-topbar .dashboard-mobile-brand .money-nest-brand-mascot {
     width: 39px;

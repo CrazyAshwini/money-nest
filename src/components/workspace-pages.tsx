@@ -1,5 +1,6 @@
 "use client";
 import { ReceiptAISettingsPanel } from "./ai-settings";
+import { BrandLogo } from "./brand-lockup";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -673,10 +674,7 @@ function LoginStory() {
   return (
     <div className="login-story">
       <Link className="brand" href="/dashboard" aria-label="Money Nest home">
-        <span className="brand-icon" aria-hidden="true">
-          M
-        </span>
-        Money Nest
+        <BrandLogo />
       </Link>
       <div>
         <span className="eyebrow">MAKE ROOM FOR CLARITY</span>
@@ -710,10 +708,7 @@ function MobileAccessBrand() {
       className="brand access-mobile-brand"
       aria-label="Money Nest home"
     >
-      <span className="brand-icon" aria-hidden="true">
-        M
-      </span>
-      Money Nest
+      <BrandLogo />
     </Link>
   );
 }

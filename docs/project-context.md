@@ -31,6 +31,7 @@ This document records verified context. After reviewing/testing the report, the 
 
 ## Verified UI state
 
+- A separate branding-only review refines the panda assets, shared logo surfaces and app metadata while preserving the existing wordmark/bird/nest and financial/auth/bot handlers. See the [16 October branding audit](branding-audit-2026-10-16.md) for verification evidence and artwork provenance. It requires owner approval before merge/production deployment; installed Android/iOS icon refresh is a separate device check. Do not assume a review branch is live.
 - Phone bottom bar: Home, Accounts, centered Add command, Analytics, Profile. The existing transaction editor handles Add; Profile exposes the existing finance destinations previously under More. Orders remains restricted to the existing private-local mode.
 - Dashboard has Money Nest mobile branding, a time-zone-aware first-name greeting, Search/Notifications, and a truthful unavailable NestBot panel. Desktop retains sidebar branding and one header Add button. The dashboard's hamburger/avatar, Overview heading, static welcome, and quick-action strip are removed; other pages retain their existing drawer navigation.
 - A later committed floating Money Nest Bot also exists alongside that older header panel. Its receipt action now opens the shared transaction/scanner review; direct bot image requests are rejected. The receipt-posting verification does not certify live chat-provider responses or reconcile the two bot entry points.
