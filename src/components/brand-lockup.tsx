@@ -2,16 +2,17 @@ import Image from "next/image";
 import "./brand-lockup.css";
 
 /** Accessible text is provided by the containing link or button. */
-export function BrandLockup({ iconOnly = false }: { iconOnly?: boolean }) {
+export function BrandLogo({ iconOnly = false }: { iconOnly?: boolean }) {
   return (
     <>
       <Image
-        src="/brand/panda-money-bag.svg"
+        src="/brand/moneynest-mascot.webp"
         alt=""
         aria-hidden="true"
         className="money-nest-brand-mascot"
         width={50}
         height={50}
+        loading="eager"
         unoptimized
       />
       {!iconOnly && (
@@ -38,15 +39,36 @@ export function BrandLockup({ iconOnly = false }: { iconOnly?: boolean }) {
   );
 }
 
+export { BrandLogo as BrandLockup };
+
+/** Decorative app artwork; the surrounding surface supplies its accessible name. */
+export function AppBrandIcon({ size = 48 }: { size?: number }) {
+  return (
+    <Image
+      src="/icon.svg"
+      alt=""
+      aria-hidden="true"
+      className="money-nest-app-icon"
+      width={size}
+      height={size}
+      style={{ width: size, height: size }}
+      loading="eager"
+      unoptimized
+    />
+  );
+}
+
 export function NestBotAvatar({ size = 25 }: { size?: number }) {
   return (
     <Image
-      src="/brand/panda-money-bag.svg"
+      src="/brand/nestbot-icon.webp"
       alt=""
       aria-hidden="true"
       className="money-nest-bot-avatar"
       width={size}
       height={size}
+      style={{ width: size, height: size }}
+      loading="eager"
       unoptimized
     />
   );

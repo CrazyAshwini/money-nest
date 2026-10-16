@@ -1,0 +1,2 @@
+# Keep the deterministic generated SVG byte-identical on Windows checkouts.
+public/icon.svg -text
