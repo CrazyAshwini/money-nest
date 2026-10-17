@@ -5,6 +5,7 @@ import { privateProfileEnabled } from "@/lib/private-profile-store";
 import { privateAuthPOST } from "@/lib/private-profile-http";
 import {
   cloudRecoveryEmailAllowed,
+  cloudSignupConfirmationEmailAllowed,
   cloudSignupEmailAllowed,
   cloudSignupEnabled,
   cloudUserAllowed,
@@ -15,20 +16,79 @@ import {
 } from "@/lib/cloud-request";
 
 export const dynamic = "force-dynamic";
-const response = (body: unknown, status = 200) =>
+const response = (body: unknown, status = 200, retryAfter?: number) =>
   NextResponse.json(body, {
     status,
     headers: {
       "Cache-Control": "private, no-store",
       "Referrer-Policy": "no-referrer",
+      ...(retryAfter ? { "Retry-After": String(retryAfter) } : {}),
     },
   });
 
-const input = z.object({
-  action: z.enum(["login", "signup", "logout", "reset", "update-password"]),
-  email: z.string().trim().max(254).pipe(z.email()).optional(),
-  password: z.string().min(8).max(128).optional(),
-});
+const emailInput = z.string().trim().toLowerCase().max(254).pipe(z.email());
+const input = z.discriminatedUnion("action", [
+  z.object({
+    action: z.enum(["login", "signup", "logout", "reset", "update-password"]),
+    email: emailInput.optional(),
+    password: z.string().min(8).max(128).optional(),
+  }),
+  z.strictObject({
+    action: z.literal("verify-signup-otp"),
+    email: emailInput,
+    token: z
+      .string()
+      .max(32)
+      .transform((value) => value.replace(/\s/g, ""))
+      .pipe(z.string().regex(/^[0-9]{6}$/)),
+  }),
+  z.strictObject({
+    action: z.literal("resend-signup-otp"),
+    email: emailInput,
+  }),
+]);
+
+// This is retry advice; Supabase Auth enforces the actual project-wide email
+// frequency and verification limits, including across application instances.
+const OTP_RETRY_AFTER = 60;
+const invalidCode =
+  "This code is invalid or has expired. Request a new code and try again.";
+
+async function boundedBody(request: NextRequest) {
+  const reader = request.body?.getReader();
+  if (!reader) return { body: null, tooLarge: false };
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 8192) {
+        await reader.cancel().catch(() => undefined);
+        return { body: null, tooLarge: true };
+      }
+      chunks.push(value);
+    }
+    return {
+      body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown,
+      tooLarge: false,
+    };
+  } catch {
+    return { body: null, tooLarge: false };
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function otpRateLimited(error: { status?: number; code?: string }) {
+  return (
+    error.status === 429 ||
+    error.code === "over_email_send_rate_limit" ||
+    error.code === "over_request_rate_limit"
+  );
+}
+
 export async function POST(request: NextRequest) {
   if (privateProfileEnabled()) return privateAuthPOST(request);
   if (!cloudRequestAllowed(request, true))
@@ -45,13 +105,138 @@ export async function POST(request: NextRequest) {
     );
   if (Number(request.headers.get("content-length") || 0) > 8192)
     return response({ error: "Request is too large." }, 413);
-  const parsed = input.safeParse(await request.json().catch(() => null));
+  const body = await boundedBody(request);
+  if (body.tooLarge) return response({ error: "Request is too large." }, 413);
+  const parsed = input.safeParse(body.body);
   if (!parsed.success)
     return response(
-      { error: "Enter a valid email and a password of at least 8 characters." },
+      {
+        error:
+          "Enter valid account details. Email codes must contain six digits.",
+      },
       400,
     );
-  const { action, email, password } = parsed.data;
+  const { action, email } = parsed.data;
+
+  if (action === "resend-signup-otp") {
+    const origin = cloudApplicationOrigin(request);
+    if (!origin)
+      return response({ error: "Email verification is not configured." }, 503);
+    // Do not reveal registration status or send mail to unrelated addresses.
+    if (!cloudSignupConfirmationEmailAllowed(email))
+      return response({ ok: true, retryAfter: OTP_RETRY_AFTER });
+    try {
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: {
+          emailRedirectTo: new URL("/auth/callback", origin).toString(),
+        },
+      });
+      if (error) {
+        if (otpRateLimited(error))
+          return response(
+            {
+              error: "Please wait before requesting another code.",
+              retryAfter: OTP_RETRY_AFTER,
+            },
+            429,
+            OTP_RETRY_AFTER,
+          );
+        return response(
+          { error: "We could not send a code. Please try again later." },
+          503,
+        );
+      }
+      return response({ ok: true, retryAfter: OTP_RETRY_AFTER });
+    } catch {
+      return response(
+        { error: "We could not send a code. Please try again later." },
+        503,
+      );
+    }
+  }
+
+  if (action === "verify-signup-otp") {
+    if (!cloudSignupConfirmationEmailAllowed(email))
+      return response({ error: invalidCode }, 400);
+    const clearSession = async () => {
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // Never return success after an unavailable verification/session check.
+      }
+    };
+    try {
+      const result = await supabase.auth.verifyOtp({
+        email,
+        token: parsed.data.token,
+        type: "email",
+      });
+      if (result.error) {
+        if (otpRateLimited(result.error))
+          return response(
+            {
+              error: "Too many code attempts. Please wait and try again.",
+              retryAfter: OTP_RETRY_AFTER,
+            },
+            429,
+            OTP_RETRY_AFTER,
+          );
+        return response({ error: invalidCode }, 400);
+      }
+      const session = result.data.session;
+      if (
+        typeof session?.access_token !== "string" ||
+        !session.access_token ||
+        typeof session.refresh_token !== "string" ||
+        !session.refresh_token ||
+        typeof session.user?.id !== "string" ||
+        !session.user.id
+      ) {
+        await clearSession();
+        return response(
+          {
+            error:
+              "Email verification could not establish a session. Sign in or request a new code.",
+            code: "session_unavailable",
+          },
+          401,
+        );
+      }
+      // verifyOtp saves the session through our cookie-aware SSR client. Its
+      // returned user is not authorization evidence; validate with Auth again.
+      const verified = await supabase.auth.getUser();
+      const user = verified.data.user;
+      if (
+        verified.error ||
+        !cloudUserAllowed(user) ||
+        typeof user?.email_confirmed_at !== "string" ||
+        !user.email_confirmed_at.trim() ||
+        user.email?.trim().toLowerCase() !== email ||
+        user.id !== session.user.id
+      ) {
+        await clearSession();
+        return response(
+          { error: "Email verification is unavailable for this account." },
+          403,
+        );
+      }
+      return response({
+        ok: true,
+        authenticated: true,
+        redirectTo: "/dashboard",
+      });
+    } catch {
+      await clearSession();
+      return response(
+        { error: "We could not verify this code. Please try again." },
+        503,
+      );
+    }
+  }
+
+  const { password } = parsed.data;
   if (action === "signup" && !cloudSignupEnabled())
     return response(
       {
@@ -125,19 +310,36 @@ export async function POST(request: NextRequest) {
   }
   if (!email || !password)
     return response({ error: "Email and password are required." }, 400);
-  const result =
-    action === "login"
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: new URL(
-              "/auth/callback",
-              cloudApplicationOrigin(request)!,
-            ).toString(),
-          },
-        });
+  let result;
+  try {
+    result =
+      action === "login"
+        ? await supabase.auth.signInWithPassword({ email, password })
+        : await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              emailRedirectTo: new URL(
+                "/auth/callback",
+                cloudApplicationOrigin(request)!,
+              ).toString(),
+            },
+          });
+  } catch {
+    return response(
+      { error: "We could not reach the sign-in service. Please try again." },
+      503,
+    );
+  }
+  if (action === "signup" && result.error && otpRateLimited(result.error))
+    return response(
+      {
+        error: "Please wait before requesting another code.",
+        retryAfter: OTP_RETRY_AFTER,
+      },
+      429,
+      OTP_RETRY_AFTER,
+    );
   if (result.error)
     return response(
       {
@@ -169,5 +371,8 @@ export async function POST(request: NextRequest) {
   return response({
     ok: true,
     needsEmailConfirmation: action === "signup" && !result.data.session,
+    ...(action === "signup" && !result.data.session
+      ? { retryAfter: OTP_RETRY_AFTER }
+      : {}),
   });
 }

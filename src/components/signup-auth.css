@@ -1,0 +1,392 @@
+/* Cloud access pages. Private profiles retain their existing form and layout. */
+.signup-access.login {
+  align-items: center;
+  gap: clamp(28px, 5vw, 80px);
+  padding: clamp(28px, 5vw, 64px);
+  background:
+    radial-gradient(ellipse at 6% 12%, #e3f3e8 0, transparent 49%),
+    linear-gradient(135deg, #f2f9f4, #fbfdfb 65%);
+}
+
+.signup-access .login-story {
+  width: 100%;
+  max-width: 530px;
+  min-height: min(660px, calc(100dvh - 128px));
+  padding: 18px 0;
+  overflow: visible;
+  justify-self: center;
+  background: transparent;
+}
+
+.signup-access .login-story > div {
+  margin: 40px 0 30px;
+}
+
+.signup-access .login-story h2 {
+  font-size: clamp(35px, 3.5vw, 52px);
+  letter-spacing: -1.6px;
+}
+
+.signup-access .login-story p {
+  max-width: 350px;
+  line-height: 1.8;
+}
+
+.signup-access .login-orbit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 26px 0 0 -15px;
+}
+
+.access-panda {
+  width: 150px;
+  height: 150px;
+  flex: 0 0 150px;
+  object-fit: contain;
+}
+
+.signup-access .orbit-card {
+  gap: 9px;
+  width: auto;
+  max-width: 245px;
+  padding: 20px;
+  border-color: #d2e5d8;
+  border-radius: 20px;
+  background: #ffffffb8;
+  box-shadow: 0 10px 30px #174d2d05;
+}
+
+.signup-access .orbit-card strong {
+  font-size: 15px;
+}
+
+.signup-access .login-form {
+  width: min(460px, 100%);
+  padding: 32px;
+  gap: 17px;
+  border: 1px solid #dce9e0;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 18px 65px #1d51320a;
+}
+
+.signup-access .login-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 0 1px;
+  border-radius: 15px;
+}
+
+.signup-access .login-form h1 {
+  margin: 0;
+  color: #193b2b;
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.8px;
+  text-wrap: balance;
+}
+
+.signup-access .login-form > p {
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.signup-access .login-form .field {
+  gap: 8px;
+  margin-bottom: 17px;
+}
+
+.signup-access .field > label,
+.signup-access .field > span {
+  color: #415b4c;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.signup-access .login-form input {
+  min-width: 0;
+  font-size: 16px;
+}
+
+.signup-access .password-control .password-toggle {
+  top: 50%;
+  right: 4px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  color: #5c7666;
+}
+
+.signup-access .password-control input {
+  padding-right: 52px;
+}
+
+.signup-access .access-field-hint {
+  color: #657b6c;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+}
+
+.signup-access .password-hint {
+  margin: -9px 0 18px;
+}
+
+.signup-access .access-field-error {
+  margin: -7px 0 15px;
+  color: #b03832;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.signup-access input[aria-invalid="true"] {
+  border-color: #c9746f;
+}
+
+.signup-access .button.primary {
+  min-height: 50px;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.signup-access .login-form > .text-link {
+  margin-top: -6px;
+  font-size: 13px;
+}
+
+.signup-access .login-form .access-switch {
+  margin-top: -12px;
+}
+
+.signup-access .login-form .login-note {
+  padding-top: 15px;
+  margin: 0;
+  border-top: 1px solid #e7eee9;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.signup-access .login-note svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.signup-access .login-form .login-help {
+  margin-top: -7px;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.signup-access .access-step {
+  margin-top: -5px;
+  color: #597764;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.signup-access .verification-email {
+  color: #315d43;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.signup-access .otp-field {
+  margin-top: 5px;
+}
+
+.signup-access .otp-control {
+  position: relative;
+  border-radius: 12px;
+}
+
+.signup-access .otp-slots {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  pointer-events: none;
+}
+
+.signup-access .otp-slots > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 55px;
+  border: 1px solid #d4e1d8;
+  border-radius: 11px;
+  background: #fbfdfb;
+  color: #234c35;
+  font-size: 24px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.signup-access .otp-control:focus-within .otp-slots > .is-current {
+  border-color: #24835a;
+  box-shadow: 0 0 0 3px #23875614;
+  background: #fff;
+}
+
+.signup-access .otp-control:focus-within {
+  outline: 2px solid #2f885b;
+  outline-offset: 5px;
+}
+
+.signup-access .otp-control.has-error .otp-slots > span {
+  border-color: #c9746f;
+}
+
+.signup-access .otp-control input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  -webkit-text-fill-color: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
+.signup-access .otp-control input::selection {
+  background: #b8d9c640;
+}
+
+.signup-access .otp-field > small {
+  margin-top: 7px;
+}
+
+.signup-access .verification-actions {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: -10px;
+}
+
+.signup-access .verification-actions .text-link,
+.signup-access .resend-code {
+  min-height: 44px;
+  color: #09704e;
+  font-size: 13px;
+}
+
+.signup-access .resend-code:disabled {
+  color: #657b6c;
+  opacity: 1;
+}
+
+.signup-access .login-icon.is-verified {
+  background: #dff3e6;
+  color: #197247;
+}
+
+@media (min-width: 761px) and (max-width: 1050px) {
+  .signup-access.login {
+    padding: 28px;
+    gap: 28px;
+  }
+
+  .signup-access .login-form {
+    padding: 28px;
+  }
+
+  .signup-access .login-orbit {
+    gap: 0;
+    margin-left: -10px;
+  }
+
+  .signup-access .access-panda {
+    width: 115px;
+    height: 115px;
+    flex-basis: 115px;
+  }
+
+  .signup-access .orbit-card {
+    padding: 15px;
+  }
+}
+
+@media (max-width: 760px) {
+  .signup-access.login {
+    display: flex;
+    align-items: flex-start;
+    min-height: 100dvh;
+    padding: max(24px, env(safe-area-inset-top))
+      max(18px, env(safe-area-inset-right))
+      max(24px, env(safe-area-inset-bottom))
+      max(18px, env(safe-area-inset-left));
+    background: linear-gradient(160deg, #f2f9f4, #fbfdfb 70%);
+  }
+
+  .signup-access .login-story {
+    display: none;
+  }
+
+  .signup-access .login-form {
+    width: min(440px, 100%);
+    margin: 0 auto;
+    padding: 0;
+    gap: 17px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .signup-access .access-mobile-brand {
+    margin: 0 0 12px;
+    align-self: flex-start;
+    min-height: 46px;
+    gap: 9px;
+  }
+
+  .signup-access .login-form h1 {
+    max-width: 360px;
+    font-size: 28px;
+  }
+
+  .signup-access .login-icon {
+    display: none;
+  }
+
+  .signup-access .verification-card .login-icon {
+    display: flex;
+  }
+
+  .signup-access .access-step {
+    margin-top: 0;
+  }
+
+  .signup-access .login-form .login-note {
+    margin-top: -3px;
+  }
+
+  .signup-access .otp-slots {
+    gap: 7px;
+  }
+}
+
+@media (max-width: 359px) {
+  .signup-access .login-form h1 {
+    font-size: 26px;
+  }
+
+  .signup-access .otp-slots {
+    gap: 6px;
+  }
+
+  .signup-access .otp-slots > span {
+    height: 49px;
+  }
+}

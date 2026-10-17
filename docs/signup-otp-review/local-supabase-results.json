@@ -1,0 +1,150 @@
+{
+  "scope": "Isolated local real Supabase Auth HTTP integration; no production requests or real emails",
+  "versions": {
+    "gotrue": "v2.197.0",
+    "postgres": "17-alpine",
+    "mailpit": "v1.31.3",
+    "next": "16.4.0"
+  },
+  "primaryChecks": [
+    {
+      "name": "Unauthenticated workspace remains private",
+      "passed": true,
+      "httpStatus": 401
+    },
+    {
+      "name": "Other address cannot register owner account",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "Real signup requires email confirmation",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "Mail captured locally",
+      "passed": true
+    },
+    {
+      "name": "Branded real email contains six digits and safe callback link",
+      "passed": true
+    },
+    {
+      "name": "Unconfirmed account cannot log in",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "Immediate resend is provider throttled",
+      "passed": true,
+      "httpStatus": 429
+    },
+    {
+      "name": "Real invalid code rejected",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "Real expired code rejected with safe actionable error",
+      "passed": true,
+      "httpStatus": 400,
+      "expiryTest": "Synthetic local token issuance timestamp aged past configured one-hour expiry"
+    },
+    {
+      "name": "Resend succeeds after provider interval",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "Resent email contains a different real six-digit token",
+      "passed": true
+    },
+    {
+      "name": "Real OTP creates verified authenticated app session",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "SSR writes Supabase session cookie",
+      "passed": true
+    },
+    {
+      "name": "Fresh real Auth getUser validates cookie account confirmation",
+      "passed": true
+    },
+    {
+      "name": "Authenticated cookie accepted; financial API intentionally absent",
+      "passed": true,
+      "httpStatus": 503
+    },
+    {
+      "name": "Used code cannot establish a fresh session",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "Logout succeeds",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "Logout restores private workspace gate",
+      "passed": true,
+      "httpStatus": 401
+    },
+    {
+      "name": "Existing password login preserved after OTP confirmation",
+      "passed": true,
+      "httpStatus": 200
+    }
+  ],
+  "fallbackChecks": [
+    {
+      "name": "New synthetic signup available for fresh-browser callback",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "Supplied branded fallback resolves only to configured local app",
+      "passed": true
+    },
+    {
+      "name": "Fresh-browser cross-site fallback confirms and redirects safely",
+      "passed": true,
+      "httpStatus": 307
+    },
+    {
+      "name": "Fallback response protects credential-bearing URL",
+      "passed": true
+    },
+    {
+      "name": "Fallback creates SSR authentication cookies",
+      "passed": true
+    },
+    {
+      "name": "Fallback cookies pass fresh Auth getUser verification",
+      "passed": true
+    },
+    {
+      "name": "Fallback cookie passes app gate with intentionally absent finance schema",
+      "passed": true,
+      "httpStatus": 503
+    },
+    {
+      "name": "Fallback token reuse returns explicit confirmation-error login",
+      "passed": true,
+      "httpStatus": 307
+    }
+  ],
+  "totalChecks": 27,
+  "allPassed": true,
+  "expiryMethod": "Only the synthetic local pending account confirmation_sent_at was aged beyond configured3600second expiry; server OTP expiry remained3600seconds.",
+  "limits": [
+    "No production Supabase Dashboard settings, SMTP delivery or production authentication state was exercised or changed.",
+    "Local Auth used minimal PostgreSQL and Mailpit; no finance schema, profile data or financial records were installed or read.",
+    "Authenticated /api/workspace503 with authenticated:true is expected because local finance data API/schema is deliberately absent; this proves the authentication gate, not finance persistence.",
+    "OTP and fallback flows used actual HTTP app routes, real SDK/GoTrue verification and real SSR cookies, without auth provider mocks."
+  ],
+  "cleanup": "Local test containers, network, Next server and generated credentials/mail/build files removed after checks."
+}

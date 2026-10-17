@@ -1,6 +1,7 @@
 "use client";
 import { ReceiptAISettingsPanel } from "./ai-settings";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Decimal from "decimal.js";
@@ -15,8 +16,13 @@ import {
   LockKeyhole,
   ArrowRight,
   AlertCircle,
+  Eye,
+  EyeOff,
+  MailCheck,
+  Check,
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
+import { BrandLockup } from "./brand-lockup";
 import {
   Section,
   Empty,
@@ -30,6 +36,7 @@ import { type EditorState } from "./editors";
 import { exportTransactionsCsv } from "@/lib/imports";
 import { formatMoney, formatDate, groupSummary, sumMoney } from "@/lib/finance";
 import "./profile-theme.css";
+import "./signup-auth.css";
 
 export { ImportsPage } from "./statement-import";
 export function GroupsPage({
@@ -673,10 +680,7 @@ function LoginStory() {
   return (
     <div className="login-story">
       <Link className="brand" href="/dashboard" aria-label="Money Nest home">
-        <span className="brand-icon" aria-hidden="true">
-          M
-        </span>
-        Money Nest
+        <BrandLockup />
       </Link>
       <div>
         <span className="eyebrow">MAKE ROOM FOR CLARITY</span>
@@ -691,6 +695,15 @@ function LoginStory() {
           One thoughtful space to see it all.
         </p>
         <div className="login-orbit">
+          <Image
+            src="/brand/panda-money-bag.svg"
+            width={180}
+            height={180}
+            alt=""
+            aria-hidden="true"
+            className="access-panda"
+            unoptimized
+          />
           <span className="orbit-card">
             <ShieldCheck size={25} aria-hidden="true" />
             <strong>Personal by design.</strong>
@@ -710,23 +723,116 @@ function MobileAccessBrand() {
       className="brand access-mobile-brand"
       aria-label="Money Nest home"
     >
-      <span className="brand-icon" aria-hidden="true">
-        M
-      </span>
-      Money Nest
+      <BrandLockup />
     </Link>
   );
+}
+
+type AccessStage = "login" | "signup" | "reset" | "verify" | "verified";
+
+class AccessRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+  }
+}
+
+function AccessPasswordField({
+  label,
+  name,
+  value,
+  onChange,
+  autoComplete,
+  describedBy,
+  invalid = false,
+  onBlur,
+}: {
+  label: string;
+  name: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: "new-password" | "current-password";
+  describedBy?: string;
+  invalid?: boolean;
+  onBlur?: () => void;
+}) {
+  const id = useId();
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <div className="password-control">
+        <input
+          id={id}
+          name={name}
+          type={visible ? "text" : "password"}
+          autoComplete={autoComplete}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={onBlur}
+          minLength={8}
+          maxLength={128}
+          spellCheck={false}
+          aria-describedby={describedBy}
+          aria-invalid={invalid || undefined}
+          required
+        />
+        <button
+          type="button"
+          className="password-toggle"
+          aria-label={`${visible ? "Hide" : "Show"} ${label.toLowerCase()}`}
+          aria-pressed={visible}
+          onClick={() => setVisible((current) => !current)}
+        >
+          {visible ? (
+            <EyeOff size={18} aria-hidden="true" />
+          ) : (
+            <Eye size={18} aria-hidden="true" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function maskedSignupEmail(email: string) {
+  const [local, domain] = email.split("@");
+  return `${local?.slice(0, 1) || ""}•••@${domain || ""}`;
 }
 
 export function LoginPage() {
   const { refresh, toast, signupEnabled } = useFinance();
   const router = useRouter();
-  const [signup, setSignup] = useState(false);
-  const [recovering, setRecovering] = useState(false);
+  const [stage, setStage] = useState<AccessStage>("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [confirmationTouched, setConfirmationTouched] = useState(false);
+  // Pending registration details and codes stay in memory, never in a URL or storage.
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
-  const creating = signup && signupEnabled && !recovering;
+  const [resending, setResending] = useState(false);
+  const [retryAt, setRetryAt] = useState(0);
+  const [retrySeconds, setRetrySeconds] = useState(0);
+  const passwordHintId = useId();
+  const confirmationHintId = useId();
+  const codeHintId = useId();
+  const codeInputId = useId();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const previousStage = useRef<AccessStage>("login");
+  const creating = stage === "signup" && signupEnabled;
+  const recovering = stage === "reset";
+  const verifying = stage === "verify";
+  const verified = stage === "verified";
+  const passwordMismatch =
+    creating && confirmationTouched && password !== confirmation;
+  const working = busy || resending;
+
   useEffect(() => {
     const url = new URL(window.location.href);
     const authError = url.searchParams.get("auth_error");
@@ -734,130 +840,472 @@ export function LoginPage() {
       // Synchronize the server's safe callback result, then clear it from the address.
       if (authError === "recovery") {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setRecovering(true);
+        setStage("reset");
         setError("This password-reset link has expired. Request another one.");
       } else {
         setError(
-          "This confirmation link is invalid or expired. Sign in again or create a new account.",
+          "This confirmation link is invalid or expired. Sign in again or request a new code from your signup screen.",
         );
       }
       url.searchParams.delete("auth_error");
       window.history.replaceState(null, "", url.pathname + url.search);
     }
   }, []);
-  async function submit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (busy) return;
+
+  useEffect(() => {
+    if (previousStage.current !== stage) {
+      headingRef.current?.focus();
+      previousStage.current = stage;
+    }
+  }, [stage]);
+
+  useEffect(() => {
+    if (!retryAt) return;
+    const timer = window.setInterval(() => {
+      setRetrySeconds(Math.max(0, Math.ceil((retryAt - Date.now()) / 1000)));
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [retryAt]);
+
+  function applyRetryAfter(seconds: unknown) {
+    if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0)
+      return;
+    const duration = Math.ceil(seconds);
+    setRetryAt(Date.now() + duration * 1000);
+    setRetrySeconds(duration);
+  }
+
+  function changeStage(next: AccessStage) {
+    setStage(next);
+    setPassword("");
+    setConfirmation("");
+    setConfirmationTouched(false);
+    setToken("");
     setError("");
     setSuccess("");
-    setBusy(true);
-    const f = new FormData(e.currentTarget);
+    if (next !== "verify") setPendingEmail("");
+  }
+
+  async function requestAuth(body: Record<string, string>) {
+    let response: Response;
     try {
-      sessionStorage.removeItem("finance-os:mode");
-      const res = await fetch("/api/auth", {
+      response = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: recovering ? "reset" : creating ? "signup" : "login",
-          email: f.get("email"),
-          ...(!recovering ? { password: f.get("password") } : {}),
-        }),
+        body: JSON.stringify(body),
       });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || "Unable to sign in.");
+    } catch {
+      throw new Error(
+        "We couldn’t connect. Check your connection and try again.",
+      );
+    }
+    let result: {
+      ok?: boolean;
+      authenticated?: boolean;
+      error?: string;
+      code?: string;
+      retryAfter?: number;
+      needsEmailConfirmation?: boolean;
+    };
+    try {
+      result = await response.json();
+      if (!result || typeof result !== "object") throw new Error();
+    } catch {
+      throw new Error("We couldn’t complete that request. Please try again.");
+    }
+    const headerRetry = response.headers.get("Retry-After");
+    applyRetryAfter(
+      result.retryAfter ??
+        (headerRetry && /^\d+$/.test(headerRetry)
+          ? Number(headerRetry)
+          : undefined),
+    );
+    if (!response.ok) {
+      if (verifying && result.code?.includes("expired")) {
+        throw new Error(
+          "That code is invalid or has expired. Check your latest email or resend a code.",
+        );
+      }
+      throw new AccessRequestError(
+        result.error || "We couldn’t complete that request. Please try again.",
+        result.code,
+      );
+    }
+    if (result.ok !== true) {
+      throw new AccessRequestError(
+        "We couldn’t confirm that request. Please sign in to continue.",
+        "invalid_response",
+      );
+    }
+    return result;
+  }
+
+  async function openWorkspace(message: string) {
+    if (!(await refresh())) {
+      throw new Error(
+        "Your authenticated workspace could not be opened. Please sign in to try again.",
+      );
+    }
+    toast(message);
+    router.replace("/dashboard");
+  }
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (working || verified) return;
+    setError("");
+    setSuccess("");
+    if (creating && password !== confirmation) {
+      setConfirmationTouched(true);
+      const field = event.currentTarget.elements.namedItem("confirmation");
+      if (field instanceof HTMLInputElement) field.focus();
+      return;
+    }
+    if (verifying && !/^\d{6}$/.test(token)) {
+      setError("Enter the six numbers from your email.");
+      return;
+    }
+    setBusy(true);
+    try {
+      try {
+        sessionStorage.removeItem("finance-os:mode");
+      } catch {
+        // Authentication still works when browser storage is unavailable.
+      }
+      if (verifying) {
+        const result = await requestAuth({
+          action: "verify-signup-otp",
+          email: pendingEmail,
+          token,
+        });
+        if (result.authenticated !== true) {
+          throw new AccessRequestError(
+            "Email verification did not establish an authenticated session.",
+            "session_unavailable",
+          );
+        }
+        setToken("");
+        setStage("verified");
+        setSuccess("Opening your workspace…");
+        // Show the verified server result before the provider loads the workspace.
+        await new Promise((resolve) => window.setTimeout(resolve, 450));
+        try {
+          await openWorkspace("Email verified. Welcome to MoneyNest.");
+        } catch (issue) {
+          changeStage("login");
+          setSuccess("Your email is verified. Sign in to continue.");
+          throw issue;
+        }
+        return;
+      }
+      const result = await requestAuth({
+        action: recovering ? "reset" : creating ? "signup" : "login",
+        email: email.trim(),
+        ...(!recovering ? { password } : {}),
+      });
       if (recovering) {
         setSuccess(
           "If this email can access the owner account, a reset link is on its way. Check your inbox and spam folder.",
         );
         return;
       }
-      if (result.needsEmailConfirmation) {
-        setSuccess(
-          "Account created. Check your email to confirm your account, then sign in.",
-        );
+      setPassword("");
+      setConfirmation("");
+      if (creating && result.needsEmailConfirmation) {
+        setPendingEmail(email.trim().toLowerCase());
+        setEmail("");
+        setToken("");
+        setStage("verify");
         return;
       }
-      await refresh();
-      toast(creating ? "Account created. You are signed in." : "Signed in.");
-      router.push("/dashboard");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Connection failed.");
+      await openWorkspace(
+        creating ? "Account created. You are signed in." : "Signed in.",
+      );
+    } catch (issue) {
+      if (
+        verifying &&
+        issue instanceof AccessRequestError &&
+        (issue.code === "session_unavailable" ||
+          issue.code === "invalid_response")
+      ) {
+        const signupEmail = pendingEmail;
+        changeStage("login");
+        setEmail(signupEmail);
+        setError(
+          "Email verification did not establish an authenticated session. Sign in to continue, or start signup again to request a new code.",
+        );
+      } else {
+        setError(issue instanceof Error ? issue.message : "Please try again.");
+      }
     } finally {
       setBusy(false);
     }
   }
+
+  async function resend() {
+    if (working || retrySeconds > 0 || !pendingEmail) return;
+    setResending(true);
+    setError("");
+    setSuccess("");
+    try {
+      await requestAuth({ action: "resend-signup-otp", email: pendingEmail });
+      setToken("");
+      setSuccess(
+        "If this address is eligible, a new code is on its way. Use the latest email and check your spam folder.",
+      );
+    } catch (issue) {
+      setError(issue instanceof Error ? issue.message : "Please try again.");
+    } finally {
+      setResending(false);
+    }
+  }
+
+  function updateToken(value: string) {
+    const normalized = value.replace(/[\s-]/g, "");
+    if (/^\d{0,6}$/.test(normalized)) {
+      setToken(normalized);
+      setError("");
+      setSuccess("");
+    } else {
+      setError("Use only the six numbers from your email.");
+    }
+  }
+
+  const countdown = `${String(Math.floor(retrySeconds / 60)).padStart(2, "0")}:${String(retrySeconds % 60).padStart(2, "0")}`;
+
   return (
-    <main className="login access-theme">
+    <main className="login access-theme signup-access">
       <LoginStory />
-      <div className="login-form">
+      <div
+        className={`login-form ${verifying || verified ? "verification-card" : ""}`}
+      >
         <MobileAccessBrand />
-        <span className="login-icon" aria-hidden="true">
-          <LockKeyhole size={24} />
+        <span
+          className={`login-icon ${verified ? "is-verified" : ""}`}
+          aria-hidden="true"
+        >
+          {verified ? (
+            <Check size={25} />
+          ) : verifying ? (
+            <MailCheck size={25} />
+          ) : (
+            <LockKeyhole size={24} />
+          )}
         </span>
-        <h1>
-          {recovering
-            ? "Reset your cloud password"
-            : creating
-              ? "Make yourself at home"
-              : "Welcome to your workspace"}
+        {(creating || verifying) && (
+          <span className="access-step">Step {verifying ? "2" : "1"} of 2</span>
+        )}
+        <h1 ref={headingRef} tabIndex={-1}>
+          {verified
+            ? "Email verified"
+            : verifying
+              ? "Verify your email"
+              : recovering
+                ? "Reset your cloud password"
+                : creating
+                  ? "Create your MoneyNest account"
+                  : "Welcome to your workspace"}
         </h1>
         <p>
-          {recovering
-            ? "We’ll email a secure link if this address belongs to the owner account."
-            : creating
-              ? "Create your private finance account."
-              : "A clearer picture of your finances starts here."}
+          {verified ? (
+            "Your email confirmation is complete."
+          ) : verifying ? (
+            <>
+              Enter the 6-digit code we sent to{" "}
+              <strong className="verification-email">
+                {maskedSignupEmail(pendingEmail)}
+              </strong>
+              .
+            </>
+          ) : recovering ? (
+            "We’ll email a secure link if this address belongs to the owner account."
+          ) : creating ? (
+            "Keep your accounts, spending and bills together."
+          ) : (
+            "A clearer picture of your finances starts here."
+          )}
         </p>
-        <form onSubmit={submit}>
-          <Field label="Email address">
-            <input
-              type="email"
-              name="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              required
-            />
-          </Field>
-          {!recovering && (
-            <PasswordField
-              label="Password"
-              autoComplete={creating ? "new-password" : "current-password"}
-              placeholder="At least 8 characters"
-            />
-          )}
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
-          {success && (
-            <p className="form-note" role="status">
-              {success}
-            </p>
-          )}
-          <button className="button primary" disabled={busy}>
-            {busy
-              ? recovering
-                ? "Sending…"
-                : "Connecting…"
-              : recovering
-                ? "Send reset link"
-                : creating
-                  ? "Create account"
-                  : "Sign in"}
-            <ArrowRight size={16} />
-          </button>
-        </form>
-        {!recovering && !creating && (
+        {verified ? (
+          <p className="form-note" role="status">
+            {success}
+          </p>
+        ) : (
+          <form key={stage} onSubmit={submit} aria-busy={working}>
+            {verifying ? (
+              <div className="field otp-field">
+                <label htmlFor={codeInputId}>Verification code</label>
+                <div className={`otp-control ${error ? "has-error" : ""}`}>
+                  <div className="otp-slots" aria-hidden="true">
+                    {Array.from({ length: 6 }, (_, index) => (
+                      <span
+                        key={index}
+                        className={index === token.length ? "is-current" : ""}
+                      >
+                        {token[index] || ""}
+                      </span>
+                    ))}
+                  </div>
+                  <input
+                    id={codeInputId}
+                    name="token"
+                    aria-describedby={codeHintId}
+                    aria-invalid={Boolean(error) || undefined}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={token}
+                    maxLength={11}
+                    minLength={6}
+                    pattern="[0-9]{6}"
+                    spellCheck={false}
+                    onChange={(event) => updateToken(event.target.value)}
+                    onPaste={(event) => {
+                      event.preventDefault();
+                      updateToken(event.clipboardData.getData("text"));
+                    }}
+                    required
+                  />
+                </div>
+                <small id={codeHintId} className="access-field-hint">
+                  You can paste the whole code. Use the most recent email.
+                </small>
+              </div>
+            ) : (
+              <>
+                <Field label="Email address">
+                  <input
+                    type="email"
+                    name="email"
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    maxLength={254}
+                    required
+                  />
+                </Field>
+                {!recovering && (
+                  <>
+                    <AccessPasswordField
+                      label="Password"
+                      name="password"
+                      value={password}
+                      onChange={setPassword}
+                      autoComplete={
+                        creating ? "new-password" : "current-password"
+                      }
+                      describedBy={creating ? passwordHintId : undefined}
+                    />
+                    {creating && (
+                      <>
+                        <p
+                          id={passwordHintId}
+                          className="access-field-hint password-hint"
+                        >
+                          Use at least 8 characters.
+                        </p>
+                        <AccessPasswordField
+                          label="Confirm password"
+                          name="confirmation"
+                          value={confirmation}
+                          onChange={setConfirmation}
+                          onBlur={() => setConfirmationTouched(true)}
+                          autoComplete="new-password"
+                          invalid={passwordMismatch}
+                          describedBy={
+                            passwordMismatch ? confirmationHintId : undefined
+                          }
+                        />
+                        {passwordMismatch && (
+                          <p
+                            id={confirmationHintId}
+                            className="access-field-error"
+                            role="alert"
+                          >
+                            The passwords do not match.
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+            {success && (
+              <p className="form-note" role="status">
+                {success}
+              </p>
+            )}
+            <button
+              className="button primary"
+              disabled={working || (verifying && token.length !== 6)}
+            >
+              {busy
+                ? verifying
+                  ? "Verifying…"
+                  : recovering
+                    ? "Sending…"
+                    : "Connecting…"
+                : verifying
+                  ? "Verify email"
+                  : recovering
+                    ? "Send reset link"
+                    : creating
+                      ? "Create account"
+                      : "Sign in"}
+              <ArrowRight size={17} aria-hidden="true" />
+            </button>
+          </form>
+        )}
+        {verifying && (
+          <>
+            <button
+              className="text-link resend-code"
+              type="button"
+              disabled={working || retrySeconds > 0}
+              onClick={() => void resend()}
+            >
+              {resending
+                ? "Sending code…"
+                : retrySeconds > 0
+                  ? `Resend code in ${countdown}`
+                  : "Resend code"}
+            </button>
+            <div className="verification-actions">
+              <button
+                className="text-link"
+                type="button"
+                disabled={working}
+                onClick={() => {
+                  const previousEmail = pendingEmail;
+                  changeStage(signupEnabled ? "signup" : "login");
+                  setEmail(previousEmail);
+                }}
+              >
+                Change email
+              </button>
+              <button
+                className="text-link"
+                type="button"
+                disabled={working}
+                onClick={() => changeStage("login")}
+              >
+                Back to sign in
+              </button>
+            </div>
+          </>
+        )}
+        {!recovering && !creating && !verifying && !verified && (
           <button
             className="text-link"
             type="button"
-            disabled={busy}
-            onClick={() => {
-              setRecovering(true);
-              setError("");
-              setSuccess("");
-            }}
+            disabled={working}
+            onClick={() => changeStage("reset")}
           >
             Forgot your password?
           </button>
@@ -866,44 +1314,36 @@ export function LoginPage() {
           <button
             className="text-link"
             type="button"
-            disabled={busy}
-            onClick={() => {
-              setRecovering(false);
-              setError("");
-              setSuccess("");
-            }}
+            disabled={working}
+            onClick={() => changeStage("login")}
           >
             Back to sign in
           </button>
         )}
-        {!recovering && signupEnabled && (
+        {!recovering && !verifying && !verified && signupEnabled && (
           <button
-            className="text-link"
+            className="text-link access-switch"
             type="button"
-            disabled={busy}
-            onClick={() => {
-              setSignup(!signup);
-              setError("");
-              setSuccess("");
-            }}
+            disabled={working}
+            onClick={() => changeStage(creating ? "login" : "signup")}
           >
             {creating
               ? "Already have an account? Sign in"
               : "New here? Create an account"}
           </button>
         )}
-        {!recovering && (
+        {!recovering && !verified && (
           <p className="login-note">
-            <ShieldCheck size={13} />
-            Sign-in is limited to your Money Nest account. Your workspace
-            syncs securely across your devices.
+            <ShieldCheck size={15} aria-hidden="true" />
+            Access is limited to your authorized MoneyNest account.
           </p>
         )}
-        {!recovering && !creating && (
+        {!recovering && !creating && !verifying && !verified && (
           <p className="login-help">
             Your computer-only profile password is separate from your cloud
-            password. If you haven’t made a cloud account yet, choose “New here?
-            Create an account” and confirm your email.
+            password.
+            {signupEnabled &&
+              " For a new cloud account, choose “New here? Create an account” and confirm your email."}
           </p>
         )}
       </div>
