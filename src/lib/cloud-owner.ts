@@ -59,6 +59,12 @@ export function cloudSignupEmailAllowed(email: string) {
   );
 }
 
+/** Pending owner registrations may confirm after an owner ID is configured. */
+export function cloudSignupConfirmationEmailAllowed(email: string) {
+  const expected = ownerEmail();
+  return Boolean(expected && email.trim().toLowerCase() === expected);
+}
+
 /** Public recovery requests may only send mail to the configured owner address. */
 export function cloudRecoveryEmailAllowed(email: string) {
   const expected = ownerEmail();
