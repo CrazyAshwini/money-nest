@@ -3,7 +3,8 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowUpRight, X } from "lucide-react";
 import Link from "next/link";
-import { useRef, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import { resolveSelectedAccountId } from "@/lib/account-presentation";
 import {
   accountBalance,
   billSummary,
@@ -21,6 +22,9 @@ import type { Account, Bill, Transaction, WorkspaceData } from "@/lib/types";
 import { usageSummary, type AccountUsage } from "@/lib/usage";
 import { formatUsagePercentage, UsageMeter } from "./account-summary";
 import { useFinance } from "./finance-provider";
+import { FinancialCardCarousel } from "./financial-card-carousel";
+import { VirtualAccountCard } from "./virtual-account-card";
+import { RecentAccountTransactions } from "./recent-account-transactions";
 import "./dashboard-details.css";
 
 export type DashboardFinancialSection =
@@ -100,41 +104,47 @@ function BankDetails({
   const accounts = data.accounts.filter(
     (account) => account.active && account.kind === "bank",
   );
+  const [requestedId, setRequestedId] = useState<string | null>(null);
+  const selectedId = resolveSelectedAccountId(accounts, requestedId);
+  const selectedAccount = accounts.find((account) => account.id === selectedId);
   const partial = metrics.knownBankCount < metrics.totalBankCount;
+  const balance = selectedId ? accountBalance(data, selectedId, today) : null;
+  const calculated =
+    balance &&
+    (balance.currentSource === "opening" || balance.movementsSinceSnapshot > 0);
   return (
     <>
-      <div className="financial-details-total">
-        <span>{partial ? "Known bank balance" : "Total bank balance"}</span>
-        <strong>
-          {metrics.knownBankCount
-            ? formatMoney(metrics.bankBalance)
-            : "Not reported"}
-        </strong>
-        <p>
-          {metrics.knownBankCount} of {metrics.totalBankCount} active bank
-          accounts have a known balance.
-          {partial && " The total excludes unreported accounts."}
-        </p>
-      </div>
-      <p className="financial-details-note">
-        Current reported or calculated balances, using records through{" "}
-        {date(today)}. This is not a month-end balance for {monthLabel(month)}.
-        Wallets, credit limits, Pay Later limits and fixed deposits are
-        excluded.
-      </p>
-      <div
-        className="financial-details-records"
-        aria-label="Bank balances by account"
-      >
-        {accounts.map((account) => {
-          const balance = accountBalance(data, account.id, today);
-          const calculated =
-            balance.currentSource === "opening" ||
-            balance.movementsSinceSnapshot > 0;
-          return (
-            <article className="financial-details-record" key={account.id}>
+      <FinancialCardCarousel
+        accounts={accounts}
+        selectedId={selectedId}
+        onSelect={setRequestedId}
+        label="Bank accounts"
+        emptyMessage="No active bank accounts are recorded. Add an account to track its balance."
+        renderCard={(account) => (
+          <VirtualAccountCard
+            account={account}
+            data={data}
+            today={today}
+            onNavigate={onClose}
+          />
+        )}
+      />
+      {selectedAccount && balance && (
+        <>
+          <RecentAccountTransactions
+            data={data}
+            accountId={selectedAccount.id}
+            limit={5}
+            onNavigate={onClose}
+          />
+          <details
+            className="financial-details-disclosure"
+            key={selectedAccount.id}
+          >
+            <summary>Balance source &amp; account details</summary>
+            <article className="financial-details-record">
               <div className="financial-details-record-heading">
-                <AccountIdentity account={account} />
+                <AccountIdentity account={selectedAccount} />
                 <strong>
                   {balance.current === null
                     ? "Not reported"
@@ -166,19 +176,38 @@ function BankDetails({
                       ? `Includes ${balance.movementsSinceSnapshot} posted movement${balance.movementsSinceSnapshot === 1 ? "" : "s"} after the reporting baseline.`
                       : "Last available balance report; no live bank synchronization."}
               </p>
-              <DetailLink href={`/accounts/${account.id}`} onClose={onClose}>
+              <DetailLink
+                href={`/accounts/${selectedAccount.id}`}
+                onClose={onClose}
+              >
                 View account
               </DetailLink>
             </article>
-          );
-        })}
-        {!accounts.length && (
-          <EmptyDetails>
-            No active bank accounts are recorded. Add an account to track its
-            balance.
-          </EmptyDetails>
-        )}
-      </div>
+          </details>
+        </>
+      )}
+      <details className="financial-details-disclosure">
+        <summary>All bank accounts · total &amp; coverage</summary>
+        <div className="financial-details-total">
+          <span>{partial ? "Known bank balance" : "Total bank balance"}</span>
+          <strong>
+            {metrics.knownBankCount
+              ? formatMoney(metrics.bankBalance)
+              : "Not reported"}
+          </strong>
+          <p>
+            {metrics.knownBankCount} of {metrics.totalBankCount} active bank
+            accounts have a known balance.
+            {partial && " The total excludes unreported accounts."}
+          </p>
+        </div>
+        <p className="financial-details-note">
+          Current reported or calculated balances, using records through{" "}
+          {date(today)}.{" "}
+          {`This is not a month-end balance for ${monthLabel(month)}.`} Wallets,
+          credit limits, Pay Later limits and fixed deposits are excluded.
+        </p>
+      </details>
     </>
   );
 }
@@ -370,6 +399,12 @@ function DebtDetails({
   onClose: () => void;
 }) {
   const summary = usageSummary(data, kind, today);
+  const accounts = summary.rows.map((row) => row.account);
+  const [requestedId, setRequestedId] = useState<string | null>(null);
+  const selectedId = resolveSelectedAccountId(accounts, requestedId);
+  const selectedRows = summary.rows.filter(
+    (row) => row.account.id === selectedId,
+  );
   const accountIds = new Set(summary.rows.map((row) => row.account.id));
   const outstandingRows = summary.rows.map(
     (row) => latestSnapshot(data, row.account.id, today)?.reportedOutstanding,
@@ -419,7 +454,7 @@ function DebtDetails({
         transaction.status === "posted" &&
         transaction.occurredOn &&
         transaction.occurredOn <= today &&
-        transaction.toAccountId &&
+        transaction.toAccountId === selectedId &&
         summary.rows.some(
           (row) =>
             row.account.id === transaction.toAccountId &&
@@ -432,94 +467,44 @@ function DebtDetails({
         a.id.localeCompare(b.id),
     )
     .slice(0, 5);
+  const selectedBills = bills.filter(
+    ({ bill }) => bill.accountId === selectedId,
+  );
+  const selectedRepayments = repayments.filter(
+    (transaction) => transaction.toAccountId === selectedId,
+  );
   return (
     <>
-      <div className="financial-details-total">
-        <span>
-          {exposureComplete ? "Total usage" : "Known usage · partial coverage"}
-        </span>
-        <strong>
-          {summary.knownUsageCount
-            ? `${!exposureComplete ? "At least " : ""}${formatMoney(summary.usedTotal)}`
-            : "Not reported"}
-        </strong>
-        <p>
-          {summary.knownUsageCount} of {summary.count}{" "}
-          {kind === "pay_later" ? "providers" : "cards"} have known usage ·
-          Records through {date(today)}
-        </p>
-      </div>
-      <dl className="financial-details-values financial-details-aggregate">
-        <DetailValue
-          label={
-            knownCurrentOutstanding.length === summary.count
-              ? "Current outstanding"
-              : "Known current outstanding"
-          }
-        >
-          {knownCurrentOutstanding.length
-            ? formatMoney(sumMoney(knownCurrentOutstanding))
-            : "Not available"}
-          <small>
-            {knownCurrentOutstanding.length}/{summary.count} balances known
-          </small>
-        </DetailValue>
-        <DetailValue
-          label={
-            outstandingCount === summary.count && summary.count
-              ? "Total reported outstanding"
-              : "Known reported outstanding"
-          }
-        >
-          {outstandingCount
-            ? formatMoney(sumMoney(outstandingRows))
-            : "Not reported"}
-          <small>
-            {outstandingCount}/{summary.count}{" "}
-            {kind === "pay_later" ? "providers" : "cards"} reported
-          </small>
-        </DetailValue>
-        <DetailValue
-          label={
-            summary.knownLimitCount === summary.count && summary.count
-              ? "Total credit limit"
-              : "Known credit limits"
-          }
-        >
-          {summary.knownLimitCount
-            ? formatMoney(summary.limitTotal)
-            : "Not set"}
-          <small>
-            {summary.knownLimitCount}/{summary.count} limits known
-          </small>
-        </DetailValue>
-        <DetailValue label="Available limit from known usage">
-          {availableComplete
-            ? formatMoney(sumMoney(available))
-            : "Not available"}
-        </DetailValue>
-        <DetailValue label="Overall utilization">
-          {formatUsagePercentage(summary.percentage)}
-        </DetailValue>
-      </dl>
-      <p className="financial-details-note">
-        Usage and outstanding can differ. Current figures apply posted payments
-        to each account’s report or confirmed opening balance. Reported values
-        keep their original dates.
-        {!exposureComplete &&
-          " Missing reports or bill-only exposure prevent an exact total."}
-        {!summary.complete &&
-          " Overall utilization is unknown until full usage and positive limits are known."}
-        {kind === "pay_later" &&
-          " Unpaid bills are separate from the facility limit and do not establish all account usage."}
-      </p>
+      <FinancialCardCarousel
+        accounts={accounts}
+        selectedId={selectedId}
+        onSelect={setRequestedId}
+        label={kind === "pay_later" ? "Pay Later providers" : "Credit cards"}
+        emptyMessage={`No active ${kind === "pay_later" ? "Pay Later providers" : "credit cards"} are recorded.`}
+        renderCard={(account) => (
+          <VirtualAccountCard
+            account={account}
+            data={data}
+            today={today}
+            onNavigate={onClose}
+          />
+        )}
+      />
+      {selectedId && (
+        <RecentAccountTransactions
+          data={data}
+          accountId={selectedId}
+          limit={5}
+          onNavigate={onClose}
+        />
+      )}
       <div
         className="financial-details-records"
         aria-label={
           kind === "pay_later" ? "Pay Later providers" : "Credit cards"
         }
       >
-        {summary.rows.map((row) => {
+        {selectedRows.map((row) => {
           const snapshot = latestSnapshot(data, row.account.id, today);
           const nextBill = bills.find(
             ({ bill, summary }) =>
@@ -532,7 +517,8 @@ function DebtDetails({
           const availableDisplay =
             row.availableCredit !== null
               ? `${formatMoney(row.availableCredit)} (${row.availableCreditStatus === "verified" ? "Verified" : "Estimated"})`
-              : row.estimatedAvailableCredit !== null
+              : row.estimatedAvailableCredit !== null &&
+                  row.provenance !== "partial"
                 ? `Estimated ${formatMoney(row.estimatedAvailableCredit)} (Unverified)`
                 : "Unknown";
 
@@ -546,165 +532,167 @@ function DebtDetails({
                   : "Unconfirmed";
 
           return (
-            <article className="financial-details-record" key={row.account.id}>
-              <div className="financial-details-record-heading">
-                <AccountIdentity account={row.account} />
-                <strong>
-                  {row.used === null
-                    ? "Usage unknown"
-                    : `${row.provenance === "partial" ? "At least " : ""}${formatMoney(row.used)}`}
-                </strong>
-              </div>
-              {deposit && (
+            <details
+              className="financial-details-disclosure"
+              key={row.account.id}
+            >
+              <summary>Usage source &amp; account actions</summary>
+              <article className="financial-details-record">
+                <div className="financial-details-record-heading">
+                  <AccountIdentity account={row.account} />
+                  <strong>
+                    {row.used === null
+                      ? "Usage unknown"
+                      : `${row.provenance === "partial" ? "At least " : ""}${formatMoney(row.used)}`}
+                  </strong>
+                </div>
+                {deposit && (
+                  <p className="financial-details-note">
+                    {deposit.pledged === true
+                      ? "FD backed"
+                      : "Fixed deposit linked"}{" "}
+                    · {deposit.name}
+                    {deposit.pledged === null ? " · Pledge status unknown" : ""}
+                  </p>
+                )}
+                <dl className="financial-details-values">
+                  <DetailValue label="Current outstanding">
+                    {row.currentOutstanding == null
+                      ? "Not available"
+                      : formatMoney(row.currentOutstanding)}
+                  </DetailValue>
+                  <DetailValue label="Reported outstanding">
+                    {row.issuerReportedOutstanding == null
+                      ? "Not reported"
+                      : formatMoney(row.issuerReportedOutstanding)}
+                  </DetailValue>
+                  <DetailValue label="Credit limit">
+                    {row.totalCreditLimit === null
+                      ? "Not set"
+                      : formatMoney(row.totalCreditLimit)}
+                  </DetailValue>
+                  <DetailValue label="Available credit">
+                    {availableDisplay}
+                  </DetailValue>
+                  <DetailValue label="Utilization">
+                    {formatUsagePercentage(row.creditUtilization)}
+                  </DetailValue>
+                  <DetailValue label="Amount due">
+                    {row.billedAmount !== null
+                      ? formatMoney(row.billedAmount)
+                      : "Not available"}
+                  </DetailValue>
+                  <DetailValue label="Next bill generation date">
+                    {date(
+                      row.statementGenerationDate ||
+                        snapshot?.nextStatementDate,
+                    )}
+                  </DetailValue>
+                  <DetailValue label="Payment due date">
+                    {nextBill ? date(nextBill.bill.dueDate) : "Not available"}
+                  </DetailValue>
+                  <DetailValue label="Verification status">
+                    {verificationLabel}
+                  </DetailValue>
+                  <DetailValue label="Last updated date">
+                    {date(row.asOf || row.baselineAsOf)}
+                  </DetailValue>
+                  <DetailValue label="Payment status">
+                    {nextBill?.summary.label ||
+                      (bills.some(
+                        ({ bill }) => bill.accountId === row.account.id,
+                      )
+                        ? "Recorded statements paid"
+                        : "Not available")}
+                  </DetailValue>
+                </dl>
+
+                {/* Transaction details breakdown (Part A6) */}
+                <div className="financial-details-breakdown">
+                  <div>
+                    <dt>Unbilled purchases</dt>
+                    <dd>
+                      {row.unbilledAmount == null
+                        ? "Unknown"
+                        : formatMoney(row.unbilledAmount)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Confirmed repayments</dt>
+                    <dd>{formatMoney(row.confirmedRepayments)}</dd>
+                  </div>
+                  <div>
+                    <dt>Confirmed refunds</dt>
+                    <dd>{formatMoney(row.confirmedRefunds)}</dd>
+                  </div>
+                  <div>
+                    <dt>Pending holds</dt>
+                    <dd>
+                      {row.pendingAuthorizations == null
+                        ? "Unknown"
+                        : formatMoney(row.pendingAuthorizations)}
+                    </dd>
+                  </div>
+                </div>
+
+                {/* Utilization progress bar: only render when valid utilization is known */}
+                {row.creditUtilization !== null &&
+                row.provenance !== "partial" ? (
+                  <UsageMeter
+                    {...row}
+                    label={`${row.account.name} utilization`}
+                  />
+                ) : (
+                  <p className="financial-details-note">
+                    Utilization progress bar hidden · Complete outstanding
+                    balance not verified
+                  </p>
+                )}
+
                 <p className="financial-details-note">
-                  {deposit.pledged === true
-                    ? "FD backed"
-                    : "Fixed deposit linked"}{" "}
-                  · {deposit.name}
-                  {deposit.pledged === null ? " · Pledge status unknown" : ""}
+                  {usageSource(row)}
+                  {row.asOf
+                    ? ` · As of ${date(row.asOf)}`
+                    : " · Snapshot needed"}
                 </p>
-              )}
-              <dl className="financial-details-values">
-                <DetailValue label="Current outstanding">
-                  {row.currentOutstanding == null
-                    ? "Not available"
-                    : formatMoney(row.currentOutstanding)}
-                </DetailValue>
-                <DetailValue label="Reported outstanding">
-                  {row.issuerReportedOutstanding == null
-                    ? "Not reported"
-                    : formatMoney(row.issuerReportedOutstanding)}
-                </DetailValue>
-                <DetailValue label="Credit limit">
-                  {row.totalCreditLimit === null
-                    ? "Not set"
-                    : formatMoney(row.totalCreditLimit)}
-                </DetailValue>
-                <DetailValue label="Available credit">
-                  {availableDisplay}
-                </DetailValue>
-                <DetailValue label="Utilization">
-                  {formatUsagePercentage(row.creditUtilization)}
-                </DetailValue>
-                <DetailValue label="Amount due">
-                  {row.billedAmount !== null
-                    ? formatMoney(row.billedAmount)
-                    : "Not available"}
-                </DetailValue>
-                <DetailValue label="Next bill generation date">
-                  {date(
-                    row.statementGenerationDate || snapshot?.nextStatementDate,
-                  )}
-                </DetailValue>
-                <DetailValue label="Payment due date">
-                  {nextBill
-                    ? date(nextBill.bill.dueDate)
-                    : date(row.paymentDueDate)}
-                </DetailValue>
-                <DetailValue label="Verification status">
-                  {verificationLabel}
-                </DetailValue>
-                <DetailValue label="Last updated date">
-                  {date(row.asOf || row.baselineAsOf)}
-                </DetailValue>
-                <DetailValue label="Payment status">
-                  {nextBill?.summary.label ||
-                    (bills.some(({ bill }) => bill.accountId === row.account.id)
-                      ? "Recorded statements paid"
-                      : "Not available")}
-                </DetailValue>
-              </dl>
 
-              {/* Transaction details breakdown (Part A6) */}
-              <div className="financial-details-breakdown">
-                <div>
-                  <dt>Unbilled purchases</dt>
-                  <dd>
-                    {row.unbilledAmount == null
-                      ? "Unknown"
-                      : formatMoney(row.unbilledAmount)}
-                  </dd>
+                {/* Account actions (Part A6) */}
+                <div className="financial-details-actions">
+                  <DetailLink
+                    href={`/transactions?account=${row.account.id}&period=all`}
+                    onClose={onClose}
+                  >
+                    View transactions
+                  </DetailLink>
+                  <DetailLink
+                    href={`/bills?account=${row.account.id}`}
+                    onClose={onClose}
+                  >
+                    View statement
+                  </DetailLink>
+                  <DetailLink
+                    href={`/accounts/${row.account.id}?action=repay`}
+                    onClose={onClose}
+                  >
+                    Record repayment
+                  </DetailLink>
+                  <DetailLink
+                    href={`/accounts/${row.account.id}?action=snapshot`}
+                    onClose={onClose}
+                  >
+                    Update balance
+                  </DetailLink>
+                  <DetailLink
+                    href={`/accounts/${row.account.id}`}
+                    onClose={onClose}
+                  >
+                    Reconcile account
+                  </DetailLink>
                 </div>
-                <div>
-                  <dt>Confirmed repayments</dt>
-                  <dd>{formatMoney(row.confirmedRepayments)}</dd>
-                </div>
-                <div>
-                  <dt>Confirmed refunds</dt>
-                  <dd>{formatMoney(row.confirmedRefunds)}</dd>
-                </div>
-                <div>
-                  <dt>Pending holds</dt>
-                  <dd>
-                    {row.pendingAuthorizations == null
-                      ? "Unknown"
-                      : formatMoney(row.pendingAuthorizations)}
-                  </dd>
-                </div>
-              </div>
-
-              {/* Utilization progress bar: only render when valid utilization is known */}
-              {row.creditUtilization !== null &&
-              row.provenance !== "partial" ? (
-                <UsageMeter
-                  {...row}
-                  label={`${row.account.name} utilization`}
-                />
-              ) : (
-                <p className="financial-details-note">
-                  Utilization progress bar hidden · Complete outstanding balance
-                  not verified
-                </p>
-              )}
-
-              <p className="financial-details-note">
-                {usageSource(row)}
-                {row.asOf ? ` · As of ${date(row.asOf)}` : " · Snapshot needed"}
-              </p>
-
-              {/* Account actions (Part A6) */}
-              <div className="financial-details-actions">
-                <DetailLink
-                  href={`/transactions?account=${row.account.id}`}
-                  onClose={onClose}
-                >
-                  View transactions
-                </DetailLink>
-                <DetailLink
-                  href={`/bills?account=${row.account.id}`}
-                  onClose={onClose}
-                >
-                  View statement
-                </DetailLink>
-                <DetailLink
-                  href={`/accounts/${row.account.id}?action=repay`}
-                  onClose={onClose}
-                >
-                  Record repayment
-                </DetailLink>
-                <DetailLink
-                  href={`/accounts/${row.account.id}?action=snapshot`}
-                  onClose={onClose}
-                >
-                  Update balance
-                </DetailLink>
-                <DetailLink
-                  href={`/accounts/${row.account.id}`}
-                  onClose={onClose}
-                >
-                  Reconcile account
-                </DetailLink>
-              </div>
-            </article>
+              </article>
+            </details>
           );
         })}
-        {!summary.count && (
-          <EmptyDetails>
-            No active{" "}
-            {kind === "pay_later" ? "Pay Later providers" : "credit cards"} are
-            recorded.
-          </EmptyDetails>
-        )}
       </div>
       {summary.count > 0 && (
         <section className="financial-details-section">
@@ -712,9 +700,9 @@ function DebtDetails({
           <p className="financial-details-note">
             Statement balances are shown separately from account usage.
           </p>
-          {bills.length ? (
+          {selectedBills.length ? (
             <ul className="financial-details-bills">
-              {bills.map(({ bill, summary: billState }) => (
+              {selectedBills.map(({ bill, summary: billState }) => (
                 <li key={bill.id}>
                   <div className="financial-details-transaction-heading">
                     <strong>
@@ -770,11 +758,11 @@ function DebtDetails({
             Posted bill payments do not add to spending. Payment verification is
             shown on each bill.
           </p>
-          {repayments.length ? (
-            <TransactionDetails data={data} transactions={repayments} />
+          {selectedRepayments.length ? (
+            <TransactionDetails data={data} transactions={selectedRepayments} />
           ) : (
             <EmptyDetails>
-              No posted repayments to these providers are recorded.
+              No posted repayments to this provider are recorded.
             </EmptyDetails>
           )}
           <DetailLink href="/bills" onClose={onClose}>
@@ -782,6 +770,93 @@ function DebtDetails({
           </DetailLink>
         </section>
       )}
+      <details className="financial-details-disclosure">
+        <summary>
+          All {kind === "pay_later" ? "providers" : "credit cards"} · totals
+          &amp; coverage
+        </summary>
+        <div className="financial-details-total">
+          <span>
+            {exposureComplete
+              ? "Total usage"
+              : "Known usage · partial coverage"}
+          </span>
+          <strong>
+            {summary.knownUsageCount
+              ? `${!exposureComplete ? "At least " : ""}${formatMoney(summary.usedTotal)}`
+              : "Not reported"}
+          </strong>
+          <p>
+            {summary.knownUsageCount} of {summary.count}{" "}
+            {kind === "pay_later" ? "providers" : "cards"} have known usage ·
+            Records through {date(today)}
+          </p>
+        </div>
+        <dl className="financial-details-values financial-details-aggregate">
+          <DetailValue
+            label={
+              knownCurrentOutstanding.length === summary.count
+                ? "Current outstanding"
+                : "Known current outstanding"
+            }
+          >
+            {knownCurrentOutstanding.length
+              ? formatMoney(sumMoney(knownCurrentOutstanding))
+              : "Not available"}
+            <small>
+              {knownCurrentOutstanding.length}/{summary.count} balances known
+            </small>
+          </DetailValue>
+          <DetailValue
+            label={
+              outstandingCount === summary.count && summary.count
+                ? "Total reported outstanding"
+                : "Known reported outstanding"
+            }
+          >
+            {outstandingCount
+              ? formatMoney(sumMoney(outstandingRows))
+              : "Not reported"}
+            <small>
+              {outstandingCount}/{summary.count}{" "}
+              {kind === "pay_later" ? "providers" : "cards"} reported
+            </small>
+          </DetailValue>
+          <DetailValue
+            label={
+              summary.knownLimitCount === summary.count && summary.count
+                ? "Total credit limit"
+                : "Known credit limits"
+            }
+          >
+            {summary.knownLimitCount
+              ? formatMoney(summary.limitTotal)
+              : "Not set"}
+            <small>
+              {summary.knownLimitCount}/{summary.count} limits known
+            </small>
+          </DetailValue>
+          <DetailValue label="Available limit from known usage">
+            {availableComplete
+              ? formatMoney(sumMoney(available))
+              : "Not available"}
+          </DetailValue>
+          <DetailValue label="Overall utilization">
+            {formatUsagePercentage(summary.percentage)}
+          </DetailValue>
+        </dl>
+        <p className="financial-details-note">
+          Usage and outstanding can differ. Current figures apply posted
+          payments to each account’s report or confirmed opening balance.
+          Reported values keep their original dates.
+          {!exposureComplete &&
+            " Missing reports or bill-only exposure prevent an exact total."}
+          {!summary.complete &&
+            " Overall utilization is unknown until full usage and positive limits are known."}
+          {kind === "pay_later" &&
+            " Unpaid bills are separate from the facility limit and do not establish all account usage."}
+        </p>
+      </details>
     </>
   );
 }

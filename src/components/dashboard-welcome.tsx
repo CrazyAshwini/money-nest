@@ -1,8 +1,6 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
 import {
   dashboardFirstName,
   dashboardGreeting,
@@ -36,7 +34,11 @@ function subscribeToGreeting(onChange: () => void) {
 // hydrates safely, then React reads the local clock as soon as it subscribes.
 const serverGreeting = () => null;
 
-export function DashboardWelcome() {
+export function DashboardWelcome({
+  onOpenNestBot,
+}: {
+  onOpenNestBot: (trigger: HTMLButtonElement) => void;
+}) {
   const { profile, mode } = useFinance();
   const authenticatedProfile =
     mode === "private" || mode === "cloud" ? profile : null;
@@ -60,49 +62,16 @@ export function DashboardWelcome() {
         </span>{" "}
         <span className="dashboard-greeting-name">{name}</span>
       </h1>
-      <Dialog.Root>
-        <Dialog.Trigger asChild>
-          <button
-            type="button"
-            className="nestbot-trigger"
-            aria-label="Open NestBot"
-          >
-            <NestBotAvatar />
-            <span>NestBot</span>
-          </button>
-        </Dialog.Trigger>
-        <Dialog.Portal>
-          <Dialog.Overlay className="nestbot-overlay" />
-          <Dialog.Content className="nestbot-panel" aria-modal="true">
-            <div className="nestbot-heading">
-              <div className="nestbot-title">
-                <NestBotAvatar size={32} />
-                <Dialog.Title>NestBot</Dialog.Title>
-              </div>
-              <Dialog.Close asChild>
-                <button
-                  type="button"
-                  className="nestbot-close"
-                  aria-label="Close NestBot"
-                >
-                  <X size={21} aria-hidden="true" />
-                </button>
-              </Dialog.Close>
-            </div>
-            <div className="nestbot-content">
-              <span className="nestbot-status">Assistant unavailable</span>
-              <Dialog.Description>
-                NestBot chat is not available yet. MoneyNest does not currently
-                have a connected chat assistant.
-              </Dialog.Description>
-              <p>
-                You can continue managing your accounts and transactions in your
-                workspace.
-              </p>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <button
+        type="button"
+        className="nestbot-trigger"
+        aria-label="Open Money Nest Bot"
+        aria-haspopup="dialog"
+        onClick={(event) => onOpenNestBot(event.currentTarget)}
+      >
+        <NestBotAvatar />
+        <span>NestBot</span>
+      </button>
     </div>
   );
 }
