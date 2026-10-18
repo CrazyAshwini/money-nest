@@ -23,5 +23,6 @@ export function testFixturesEnabled(
     "SUPABASE_SERVICE_ROLE_KEY",
     "FINANCE_CLOUD_OWNER_ID",
     "FINANCE_CLOUD_OWNER_EMAIL",
+    "FINANCE_CLOUD_ACCESS_MODE",
   ].some((key) => Boolean(env[key]?.trim()));
 }

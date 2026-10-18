@@ -6,7 +6,8 @@
   "git": {
     "deploymentEnabled": {
       "feat/signup-email-otp": false,
-      "feat/responsive-account-carousels": false
+      "feat/responsive-account-carousels": false,
+      "feat/public-multi-user-workspaces": false
     }
   },
   "regions": ["icn1"]

@@ -1,0 +1,31 @@
+# Real local public signup and two-user isolation verification
+
+On 18 October 2026, **91 checks passed** against actual application HTTP handlers, Supabase Auth and PostgreSQL, without mocking authentication, workspace responses or finance persistence. [Sanitized per-check outcomes](local-supabase-results.json) contain no credentials, OTP values, session cookies, user UUIDs or captured emails.
+
+The tested source was copied from the review branch into an isolated temporary directory. Only `src`, `public`, the package manifest and the Next/TypeScript/PostCSS configuration were copied; `.env`, private files, `.git` and production configuration were excluded. Installed dependencies were reused through a symlink. Next ran separately with `next dev --webpack --hostname 127.0.0.1 --port 3033`, with a separate `.next` directory. This real integration is distinct from the repository production build and browser tests recorded in the main report. A subsequent client-only stale-operation status guard was checked by the final production build and focused browser tests; server Auth/API/database source was unchanged.
+
+## Disposable infrastructure and identities
+
+- PostgreSQL 17 (`postgres:17-alpine`), Supabase GoTrue `v2.197.0`, PostgREST `v13.0.8`, and Mailpit `v1.31.3` ran in uniquely named disposable Docker containers. The PostgREST image download passed Docker's checksum verification; the other images were already cached from the previous isolated OTP integration. PostgreSQL, Auth, REST, Mailpit and the small local HTTP gateway bound only to `127.0.0.1`.
+- The database was newly initialized with standard `anon`, `authenticated`, service and Data API connection roles. GoTrue installed its actual Auth schema. All seven repository finance migrations were applied in filename order with `psql -v ON_ERROR_STOP=1`. A catalog query of that installed database confirmed RLS on all 28 public tables plus the storage objects table, `security_invoker=true` on all 22 public API views, and no security-definer public RPCs among the eight public functions. [Sanitized actual catalog inventory](local-rls-inventory.json) is retained.
+- Database passwords, the JWT signing secret and the anonymous project key were generated for this run. Restricted temporary files held this configuration; nothing was copied from a real `.env`. The app environment explicitly enabled public access, disabled private-profile persistence and test fixtures, and configured a separate synthetic operator email. No AI provider credentials were supplied.
+- GoTrue required email confirmation with a six-digit, 3600-second OTP and a 60-second email frequency limit. These settings were supplied only to the disposable local GoTrue container; no hosted setting was changed. The repository's approved branded HTML was served to GoTrue locally. Mailpit captured all messages; no real inbox or external SMTP server was used.
+- A synthetic operator C was confirmed and seeded before users A and B registered. Its existing bank opening balance (`45678.90`), posted expense (`123.45`), profile, audit/revision rows and storage metadata formed a preservation baseline. This represents pre-existing owner data in the disposable database; it is not a copy of the real owner's records.
+
+## What ran
+
+A and B each signed up through the actual `/api/auth` route while a separate operator was configured. Actual branded confirmation mail contained a real six-digit code. Unconfirmed password login, wrong codes and consumed-code reuse failed. Successful OTP verification returned `/dashboard`, wrote Supabase SSR cookies, and passed a fresh real Auth `getUser()` call with a verified nonanonymous identity. A and B started with entirely empty, distinct workspaces.
+
+Each user then saved a bank account with a decimal opening balance, a posted expense and its own profile through the real app APIs. Metadata writes used actual authenticated PostgREST requests. Each workspace contained only that user's records and retained the expected two-decimal amounts.
+
+Attacks were tested in **both directions** using actual user JWTs: forged app ownership, another user's record ID under the attacker's own owner ID, cross-owner account references, direct table and security-invoker view reads, profile reads, forged inserts, updates, deletion, owner changes, composite foreign-key references, and a forged commerce RPC payload. Cross-user reads returned no rows; forbidden writes failed or affected no rows. Actual document download routes returned 404 for the other user's document ID. Origin checks still rejected authenticated cross-origin writes. Public signup did not grant operator AI settings access.
+
+Logging out A cleared A's access while B remained signed in. A's existing password login reloaded its own persisted bank and expense. All synthetic operator public-table records, profile, audit/revision rows and storage metadata were compared before/after in a deterministic raw PostgreSQL JSON representation and were exactly unchanged. B's decimal financial values also remained unchanged after every cross-user attack.
+
+## Storage and hosted limits
+
+Storage policy tests executed the repository's actual `finance_documents_*` policies in real PostgreSQL, through authenticated PostgREST calls, against minimal standard `storage.buckets`/`storage.objects` tables. Own-folder metadata insert succeeded; reading, inserting, renaming, deleting or moving entries into another user's folder failed or affected no rows. These are **storage metadata RLS checks**. A full Supabase Storage service, file bytes, signed-URL creation and S3 delivery were not run.
+
+This local result does not certify hosted SMTP delivery, hosted redirect allowlists, production migrations, production Storage configuration or deployed public access. No hosted project, real account, production authentication setting, real financial record or deployment was contacted or changed. Production rollout still requires the separately documented owner approval and Dashboard/database verification.
+
+The temporary test services, source snapshot, generated credentials, sessions and captured mail are removed after verification; only this method, sanitized per-check results and the catalog inventory are retained in Git.

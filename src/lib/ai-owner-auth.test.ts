@@ -69,12 +69,20 @@ function request(
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("FINANCE_PRIVATE_ENABLED", "false");
+  vi.stubEnv("FINANCE_CLOUD_ACCESS_MODE", "owner");
   vi.stubEnv("APP_URL", "https://money-nest.example");
   vi.stubEnv("VERCEL_URL", "");
   vi.stubEnv("FINANCE_CLOUD_OWNER_ID", OWNER);
   mocks.client.mockResolvedValue({ auth: { getUser: mocks.getUser } });
   mocks.getUser.mockResolvedValue({
-    data: { user: { id: OWNER, is_anonymous: false } },
+    data: {
+      user: {
+        id: OWNER,
+        is_anonymous: false,
+        email: "operator@example.test",
+        email_confirmed_at: "2026-01-01T00:00:00Z",
+      },
+    },
     error: null,
   });
   mocks.authenticate.mockResolvedValue({ ownerId: OWNER });
@@ -105,6 +113,44 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("hosted owner-only receipt AI", () => {
+  it("public signup does not grant other users the operator's paid AI", async () => {
+    vi.stubEnv("FINANCE_CLOUD_ACCESS_MODE", "public");
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: OTHER,
+          email: "member@example.test",
+          is_anonymous: false,
+          email_confirmed_at: "2026-01-01T00:00:00Z",
+        },
+      },
+      error: null,
+    });
+    expect((await settingsGET(request())).status).toBe(403);
+    const denied = request("must remain unread");
+    expect((await receiptPOST(denied)).status).toBe(403);
+    expect(denied.bodyUsed).toBe(false);
+    expect(mocks.readSettings).not.toHaveBeenCalled();
+    expect(mocks.readConfiguration).not.toHaveBeenCalled();
+    expect(mocks.acquire).not.toHaveBeenCalled();
+  });
+
+  it("an operator ID without a confirmed email cannot use AI in public mode", async () => {
+    vi.stubEnv("FINANCE_CLOUD_ACCESS_MODE", "public");
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: OWNER,
+          email: "operator@example.test",
+          is_anonymous: false,
+        },
+      },
+      error: null,
+    });
+    expect((await settingsGET(request())).status).toBe(403);
+    expect(mocks.readSettings).not.toHaveBeenCalled();
+  });
+
   it("routes bot screenshots to the reviewed receipt flow before loading or posting finance data", async () => {
     const response = await botPOST(
       request(

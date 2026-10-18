@@ -51,6 +51,7 @@ beforeEach(() => {
   vi.stubEnv("APP_URL", "https://money-nest.example");
   vi.stubEnv("FINANCE_CLOUD_OWNER_EMAIL", OWNER_EMAIL);
   vi.stubEnv("FINANCE_CLOUD_OWNER_ID", "");
+  vi.stubEnv("FINANCE_CLOUD_ACCESS_MODE", "");
   vi.stubEnv("FINANCE_PRIVATE_ENABLED", "false");
   mocks.privateProfileEnabled.mockReturnValue(false);
   mocks.client.mockResolvedValue({
@@ -719,5 +720,305 @@ describe("cloud password recovery", () => {
     expect(response.status).toBe(401);
     expect(mocks.signOut).toHaveBeenCalledOnce();
     expect(mocks.updateUser).not.toHaveBeenCalled();
+  });
+});
+
+const publicUsers = [
+  ownerUser({
+    id: "20000000-0000-4000-8000-000000000002",
+    email: "alice@example.test",
+  }),
+  ownerUser({
+    id: "30000000-0000-4000-8000-000000000003",
+    email: "bob@example.test",
+  }),
+];
+
+describe("explicit public multi-user authentication", () => {
+  beforeEach(() => {
+    vi.stubEnv("FINANCE_CLOUD_ACCESS_MODE", "public");
+    // Retain legacy operator configuration to prove it is not a shared identity.
+    vi.stubEnv("FINANCE_CLOUD_OWNER_ID", OWNER_ID);
+  });
+
+  it.each(publicUsers)(
+    "starts OTP signup for $email without accepting a submitted owner identity",
+    async (user) => {
+      mocks.signUp.mockResolvedValueOnce({
+        data: {
+          user: { ...user, email_confirmed_at: undefined },
+          session: null,
+        },
+        error: null,
+      });
+      const result = await POST(
+        request({
+          action: "signup",
+          email: user.email,
+          password: "public-account-password",
+          ownerId: OWNER_ID,
+          userId: OWNER_ID,
+        }),
+      );
+
+      expect(result.status).toBe(200);
+      expect(await result.json()).toEqual({
+        ok: true,
+        needsEmailConfirmation: true,
+        retryAfter: 60,
+      });
+      expect(mocks.signUp).toHaveBeenCalledWith({
+        email: user.email,
+        password: "public-account-password",
+        options: {
+          emailRedirectTo: "https://money-nest.example/auth/callback",
+        },
+      });
+      expect(mocks.getUser).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(publicUsers)(
+    "verifies the exact new session for $email with six digits and fresh Auth",
+    async (user) => {
+      mocks.verifyOtp.mockResolvedValueOnce({
+        data: { user, session: ownerSession({ user }) },
+        error: null,
+      });
+      mocks.getUser.mockResolvedValueOnce({ data: { user }, error: null });
+      const result = await POST(verifyRequest({ email: user.email }));
+
+      expect(result.status).toBe(200);
+      expect(await result.json()).toEqual({
+        ok: true,
+        authenticated: true,
+        redirectTo: "/dashboard",
+      });
+      expect(mocks.verifyOtp).toHaveBeenCalledWith({
+        email: user.email,
+        token: "012345",
+        type: "email",
+      });
+      expect(mocks.getUser).toHaveBeenCalledOnce();
+      expect(mocks.signOut).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(publicUsers)(
+    "preserves normal password login for the confirmed identity $email",
+    async (user) => {
+      mocks.signInWithPassword.mockResolvedValueOnce({
+        data: { user, session: ownerSession({ user }) },
+        error: null,
+      });
+      mocks.getUser.mockResolvedValueOnce({ data: { user }, error: null });
+      const result = await POST(
+        request({
+          action: "login",
+          email: user.email,
+          password: "public-account-password",
+        }),
+      );
+
+      expect(result.status).toBe(200);
+      expect(await result.json()).toEqual({
+        ok: true,
+        needsEmailConfirmation: false,
+      });
+      expect(mocks.signInWithPassword).toHaveBeenCalledWith({
+        email: user.email,
+        password: "public-account-password",
+      });
+      expect(mocks.getUser).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(publicUsers)(
+    "allows resend and password recovery for $email without owner-address substitution",
+    async (user) => {
+      const resend = await POST(
+        request({ action: "resend-signup-otp", email: user.email }),
+      );
+      const reset = await POST(request({ action: "reset", email: user.email }));
+
+      expect(resend.status).toBe(200);
+      expect(reset.status).toBe(200);
+      expect(mocks.resend).toHaveBeenCalledWith({
+        type: "signup",
+        email: user.email,
+        options: {
+          emailRedirectTo: "https://money-nest.example/auth/callback",
+        },
+      });
+      expect(mocks.resetPasswordForEmail).toHaveBeenCalledWith(user.email, {
+        redirectTo:
+          "https://money-nest.example/auth/callback?next=/reset-password",
+      });
+    },
+  );
+
+  it("updates only the freshly authenticated public account's password", async () => {
+    mocks.getUser.mockResolvedValueOnce({
+      data: { user: publicUsers[1] },
+      error: null,
+    });
+    const result = await POST(
+      request({ action: "update-password", password: "new-public-password" }),
+    );
+    expect(result.status).toBe(200);
+    expect(mocks.getUser).toHaveBeenCalledOnce();
+    expect(mocks.updateUser).toHaveBeenCalledWith({
+      password: "new-public-password",
+    });
+  });
+
+  it("fails signup closed when the project bypasses email-code confirmation", async () => {
+    const user = publicUsers[0];
+    mocks.signUp.mockResolvedValueOnce({
+      data: { user, session: ownerSession({ user }) },
+      error: null,
+    });
+    const result = await POST(
+      request({
+        action: "signup",
+        email: user.email,
+        password: "public-account-password",
+      }),
+    );
+    expect(result.status).toBe(503);
+    expect(await result.json()).toMatchObject({
+      code: "email_confirmation_required",
+    });
+    expect(mocks.signOut).toHaveBeenCalledOnce();
+    expect(mocks.getUser).not.toHaveBeenCalled();
+    expect(mocks.verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { email_confirmed_at: undefined },
+    { email_confirmed_at: "" },
+    { is_anonymous: true },
+    { id: "invalid-id" },
+    { email: "another@example.test" },
+    { id: publicUsers[1].id, email: publicUsers[1].email },
+  ])(
+    "rejects an unconfirmed, anonymous or mismatched login %j",
+    async (changes) => {
+      const user = publicUsers[0];
+      mocks.signInWithPassword.mockResolvedValueOnce({
+        data: { user, session: ownerSession({ user }) },
+        error: null,
+      });
+      mocks.getUser.mockResolvedValueOnce({
+        data: { user: { ...user, ...changes } },
+        error: null,
+      });
+      const result = await POST(
+        request({
+          action: "login",
+          email: user.email,
+          password: "public-password",
+        }),
+      );
+      expect(result.status).toBe(403);
+      expect(mocks.signOut).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("clears login state if the fresh Auth check becomes unavailable", async () => {
+    const user = publicUsers[0];
+    mocks.signInWithPassword.mockResolvedValueOnce({
+      data: { user, session: ownerSession({ user }) },
+      error: null,
+    });
+    mocks.getUser.mockRejectedValueOnce(new Error("private service detail"));
+    const result = await POST(
+      request({
+        action: "login",
+        email: user.email,
+        password: "public-password",
+      }),
+    );
+    expect(result.status).toBe(503);
+    expect(mocks.signOut).toHaveBeenCalledOnce();
+    expect(await result.text()).not.toContain("private service detail");
+  });
+
+  it.each(["email_exists", "user_already_exists"])(
+    "does not disclose existing registration when Auth returns %s",
+    async (code) => {
+      mocks.signUp.mockResolvedValueOnce({
+        data: { session: null },
+        error: { code },
+      });
+      const result = await POST(
+        request({
+          action: "signup",
+          email: publicUsers[0].email,
+          password: "public-password",
+        }),
+      );
+      expect(result.status).toBe(200);
+      expect(await result.json()).toEqual({
+        ok: true,
+        needsEmailConfirmation: true,
+        retryAfter: 60,
+      });
+      expect(mocks.getUser).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not disclose missing registration through resend or recovery", async () => {
+    mocks.resend.mockResolvedValueOnce({ error: { code: "user_not_found" } });
+    mocks.resetPasswordForEmail.mockResolvedValueOnce({
+      error: { code: "user_not_found" },
+    });
+    const resend = await POST(
+      request({ action: "resend-signup-otp", email: "unknown@example.test" }),
+    );
+    const reset = await POST(
+      request({ action: "reset", email: "unknown@example.test" }),
+    );
+    expect(resend.status).toBe(200);
+    expect(await resend.json()).toEqual({ ok: true, retryAfter: 60 });
+    expect(reset.status).toBe(200);
+    expect(await reset.json()).toEqual({ ok: true });
+  });
+
+  it("public signup remains origin-protected despite the wider recipient policy", async () => {
+    const result = await POST(
+      request(
+        {
+          action: "signup",
+          email: publicUsers[0].email,
+          password: "public-password",
+        },
+        { origin: "https://untrusted.example" },
+      ),
+    );
+    expect(result.status).toBe(403);
+    expect(mocks.client).not.toHaveBeenCalled();
+  });
+
+  it("a mistyped rollout flag never opens signup or permits existing-user login", async () => {
+    vi.stubEnv("FINANCE_CLOUD_ACCESS_MODE", "PUBLIC");
+    const signup = await POST(
+      request({
+        action: "signup",
+        email: OWNER_EMAIL,
+        password: "owner-password",
+      }),
+    );
+    const login = await POST(
+      request({
+        action: "login",
+        email: OWNER_EMAIL,
+        password: "owner-password",
+      }),
+    );
+    expect(signup.status).toBe(403);
+    expect(login.status).toBe(403);
+    expect(mocks.signUp).not.toHaveBeenCalled();
+    expect(mocks.signOut).toHaveBeenCalledOnce();
   });
 });
