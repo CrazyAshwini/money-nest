@@ -1,5 +1,7 @@
 # Branding screenshot evidence — 16 October 2026
 
+Historical screenshots of `b450227`: later main changes consolidated NestBot and updated the dashboard. The [18 October integration verification](../branding-release-2026-10-18.md) records the current implementation and fresh browser checks; old minimize/floating-panel screenshots below are not current UI.
+
 These screenshots use fictional demo records and the deliberately synthetic name **Synthetic branding reviewer**, supplied by browser mocks. No real account, transaction, owner profile or AI-provider response is included. Screenshots demonstrate branding and retained UI behavior; their fictional balances are not verification of owner finance records.
 
 The final 17-test Playwright run captured these images on a credentials-free production build. Height is 1000 CSS pixels; dashboard full-page captures can be taller. Fixed navigation/launchers appear at their viewport positions within those full-page captures.

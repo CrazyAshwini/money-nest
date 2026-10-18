@@ -8,27 +8,23 @@ import {
   Bell,
   Building2,
   ChevronRight,
+  Database,
   LockKeyhole,
   LogOut,
   Settings,
+  Upload,
   UserRound,
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { BrandLogo } from "./brand-lockup";
-import { Badge, Field, PasswordField, Section } from "./ui";
+import { Badge, Field, PasswordField } from "./ui";
 import { NAV_ITEMS } from "./workspace-navigation";
 import "./profile-theme.css";
+import styles from "./private-profile.module.css";
 
 export function PrivateProfilePage() {
-  const {
-    mode,
-    backend,
-    profile,
-    needsSetup,
-    emailRequired,
-    refresh,
-    toast,
-  } = useFinance();
+  const { mode, backend, profile, needsSetup, emailRequired, refresh, toast } =
+    useFinance();
   const router = useRouter();
   const [setupToken, setSetupToken] = useState("");
   const [busy, setBusy] = useState(false);
@@ -161,108 +157,150 @@ export function PrivateProfilePage() {
   }
 
   if ((mode === "private" || mode === "cloud") && profile) {
+    const emailDomain = profile.email?.split("@")[1];
+    const maskedEmail = emailDomain
+      ? `${profile.email!.slice(0, 1)}•••@${emailDomain}`
+      : null;
+
     return (
-      <Section title="Your profile" className="profile-panel profile-theme">
-        <div className="profile-identity">
-          <span className="profile-avatar" aria-hidden="true">
+      <div className={styles.hub}>
+        <section className={styles.identity} aria-label="Signed-in profile">
+          <span className={styles.avatar} aria-hidden="true">
             {profile.displayName.slice(0, 1).toUpperCase()}
           </span>
-          <div>
+          <div className={styles.identityDetails}>
             <h2>{profile.displayName}</h2>
-            {profile.email && (
-              <a className="profile-email" href={`mailto:${profile.email}`}>
-                {profile.email}
-              </a>
-            )}
+            {maskedEmail && <p>{maskedEmail}</p>}
           </div>
           <Badge tone="green">Signed in</Badge>
-        </div>
-        <nav className="profile-shortcuts" aria-label="Profile settings">
-          <Link href="/accounts">
-            <Building2 size={19} aria-hidden="true" />
-            <span>Linked accounts</span>
-            <ChevronRight size={17} aria-hidden="true" />
-          </Link>
-          <Link href="/notifications">
-            <Bell size={19} aria-hidden="true" />
-            <span>Reminders</span>
-            <ChevronRight size={17} aria-hidden="true" />
-          </Link>
-          <Link href="/settings">
-            <Settings size={19} aria-hidden="true" />
-            <span>Workspace settings</span>
-            <ChevronRight size={17} aria-hidden="true" />
-          </Link>
-        </nav>
-        <form onSubmit={submit} className="profile-form">
-          <h3>Personal information</h3>
-          <Field label="Profile name">
-            <input
-              name="displayName"
-              defaultValue={profile.displayName}
-              maxLength={80}
-              autoComplete="nickname"
-              required
-            />
-          </Field>
-          <p className="profile-details">
-            Indian rupee (INR) · Asia/Kolkata
-          </p>
-          {mode === "private" && (
-            <div className="info-banner profile-transfer">
-              <div>
-                <strong>Use this profile on your phone</strong>
-                <p>
-                  Download a private copy of your records, then sign in to the
-                  cloud profile and import it.
+        </section>
+        <div className={styles.settingsGrid}>
+          <section
+            className={styles.card}
+            aria-labelledby="profile-account-heading"
+          >
+            <h2 id="profile-account-heading">Account</h2>
+            <form onSubmit={submit} className={styles.form}>
+              <h3>Personal information</h3>
+              <Field label="Profile name">
+                <input
+                  name="displayName"
+                  defaultValue={profile.displayName}
+                  maxLength={80}
+                  autoComplete="nickname"
+                  required
+                />
+              </Field>
+              <p className={styles.region}>Indian rupee (INR) · Asia/Kolkata</p>
+              {error && (
+                <p className="error" role="alert">
+                  {error}
                 </p>
+              )}
+              <div className={styles.sessionActions}>
+                <button
+                  className="button primary"
+                  type="submit"
+                  disabled={busy}
+                >
+                  {busy && !signingOut ? "Saving…" : "Save profile"}
+                </button>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={logout}
+                  disabled={busy}
+                >
+                  <LogOut size={15} aria-hidden="true" />
+                  {signingOut ? "Signing out…" : "Sign out"}
+                </button>
               </div>
-              <button
-                className="button"
-                type="button"
-                onClick={exportForCloud}
-                disabled={transferBusy}
-              >
-                {transferBusy ? "Preparing…" : "Download transfer file"}
-              </button>
+            </form>
+            <Link className={styles.settingLink} href="/accounts">
+              <Building2 size={19} aria-hidden="true" />
+              <span>Linked accounts</span>
+              <ChevronRight size={17} aria-hidden="true" />
+            </Link>
+          </section>
+          <div className={styles.groups}>
+            <section
+              className={styles.card}
+              aria-labelledby="profile-preferences-heading"
+            >
+              <h2 id="profile-preferences-heading">Preferences</h2>
+              <Link className={styles.settingLink} href="/notifications">
+                <Bell size={19} aria-hidden="true" />
+                <span>Reminders</span>
+                <ChevronRight size={17} aria-hidden="true" />
+              </Link>
+            </section>
+            <section
+              className={styles.card}
+              aria-labelledby="profile-data-heading"
+            >
+              <h2 id="profile-data-heading">Data &amp; support</h2>
+              <nav aria-label="Profile settings">
+                <Link className={styles.settingLink} href="/settings#data">
+                  <Database size={19} aria-hidden="true" />
+                  <span>Data &amp; privacy</span>
+                  <ChevronRight size={17} aria-hidden="true" />
+                </Link>
+                <Link className={styles.settingLink} href="/imports">
+                  <Upload size={19} aria-hidden="true" />
+                  <span>Import records</span>
+                  <ChevronRight size={17} aria-hidden="true" />
+                </Link>
+                <Link className={styles.settingLink} href="/settings">
+                  <Settings size={19} aria-hidden="true" />
+                  <span>Workspace settings</span>
+                  <ChevronRight size={17} aria-hidden="true" />
+                </Link>
+              </nav>
+            </section>
+          </div>
+        </div>
+        {mode === "private" && (
+          <section
+            className={`${styles.card} ${styles.transfer}`}
+            aria-labelledby="profile-transfer-heading"
+          >
+            <div>
+              <h2 id="profile-transfer-heading">
+                Use this profile on your phone
+              </h2>
+              <p>
+                Download a private copy of your records, then sign in to the
+                cloud profile and import it.
+              </p>
             </div>
-          )}
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
-          <div className="profile-actions">
-            <button className="button primary" type="submit" disabled={busy}>
-              {busy && !signingOut ? "Saving…" : "Save profile"}
-            </button>
             <button
               className="button"
               type="button"
-              onClick={logout}
-              disabled={busy}
+              onClick={exportForCloud}
+              disabled={transferBusy}
             >
-              <LogOut size={15} /> {signingOut ? "Signing out…" : "Sign out"}
+              {transferBusy ? "Preparing…" : "Download transfer file"}
             </button>
-          </div>
-        </form>
+          </section>
+        )}
         <nav
-          className="profile-workspace-navigation"
+          className={`profile-workspace-navigation ${styles.card} ${styles.financeNavigation}`}
           aria-labelledby="profile-workspace-heading"
         >
-          <h3 id="profile-workspace-heading">Explore Money Nest</h3>
-          <div className="profile-workspace-links">
+          <h2 id="profile-workspace-heading">Explore Money Nest</h2>
+          <div className={styles.financeLinks}>
             {NAV_ITEMS.filter(
               (item) => item.href !== "/orders" || mode === "private",
             ).map((item) => (
               <Link key={item.href} href={item.href}>
                 <item.icon size={17} aria-hidden="true" />
                 <span>{item.href === "/dashboard" ? "Home" : item.title}</span>
+                <ChevronRight size={15} aria-hidden="true" />
               </Link>
             ))}
           </div>
         </nav>
-      </Section>
+      </div>
     );
   }
 

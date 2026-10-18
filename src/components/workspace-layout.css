@@ -1,0 +1,293 @@
+/* Page-specific workspace hierarchy. Existing domain/editor styles stay scoped. */
+.workspace-page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.workspace-page-heading h1,
+.detail-heading h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(24px, 2.2vw, 30px);
+  line-height: 1.2;
+  letter-spacing: -0.8px;
+  overflow-wrap: anywhere;
+}
+.workspace-context-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: 100%;
+}
+.workspace-context-actions:empty {
+  display: none;
+}
+.workspace-context-actions .month-picker {
+  min-width: 0;
+}
+.workspace-context-actions input[type="month"] {
+  width: 143px;
+  max-width: 100%;
+  min-width: 0;
+}
+.workspace-secondary-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 12px 30px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.workspace-secondary-header > span {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.workspace-secondary-header .secondary-back,
+.detail-heading .text-link,
+.footer-nestbot,
+.overview-period {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 44px;
+}
+.workspace-secondary-header .icon-button {
+  width: 44px;
+  height: 44px;
+}
+.workspace-secondary-header .mobile-menu {
+  display: none;
+}
+.overview-period {
+  color: var(--muted);
+  font-size: 12px;
+}
+.overview-period:hover,
+.footer-nestbot:hover {
+  color: var(--lime);
+}
+.accounts-overview {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.account-kind-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  max-width: 100%;
+  padding: 2px;
+  scrollbar-width: thin;
+}
+.account-kind-tabs button {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 9px 16px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 13px;
+}
+.account-kind-tabs button.selected {
+  border-color: #cfe1d8;
+  color: #155e50;
+  background: #eaf5ef;
+  font-weight: 650;
+}
+.account-group-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  align-items: start;
+  gap: 24px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel);
+}
+.account-group-panel > * {
+  min-width: 0;
+}
+.archived-accounts {
+  min-width: 0;
+  padding: 4px 0;
+}
+.archived-accounts > summary {
+  display: list-item;
+  min-height: 44px;
+  padding: 12px 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+}
+.archived-accounts .account-group-panel {
+  margin-top: 12px;
+}
+.transaction-type-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin: 0 0 16px;
+}
+.transaction-type-tools > label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  max-width: 100%;
+  color: var(--muted);
+  font-size: 12px;
+}
+.transaction-type-tools select {
+  width: 180px;
+  max-width: 100%;
+}
+.transaction-period {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.transaction-period a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--lime);
+}
+.analytics-summary-refined {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.analytics-summary-refined .stat {
+  min-width: 0;
+  min-height: 0;
+  border-radius: 16px;
+  padding: 20px;
+}
+.analytics-summary-refined .stat > strong {
+  font-size: clamp(21px, 2.3vw, 30px);
+  overflow-wrap: anywhere;
+}
+.analytics-summary-refined .stat:first-child {
+  border-color: #c9e1d4;
+}
+.analytics-explanation {
+  margin: 12px 0 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.analytics-explanation > summary {
+  display: list-item;
+  min-height: 44px;
+  padding: 12px 0;
+  cursor: pointer;
+}
+.analytics-explanation p {
+  max-width: 800px;
+  margin: 0 0 12px;
+  line-height: 1.7;
+}
+
+@media (max-width: 1100px) {
+  .account-group-panel {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+}
+@media (max-width: 760px) {
+  .workspace-secondary-header .mobile-menu {
+    display: flex;
+  }
+  .app-main .main-content:not(.home-content) {
+    padding: 20px 16px 16px;
+  }
+  .workspace-page-heading {
+    margin-bottom: 16px;
+    gap: 10px;
+  }
+  .workspace-page-heading h1 {
+    font-size: 25px;
+  }
+  .workspace-context-actions {
+    gap: 6px;
+  }
+  .workspace-context-actions .button {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+  .workspace-context-actions .desktop-transaction-add {
+    display: none;
+  }
+  .workspace-context-actions .month-picker {
+    gap: 5px;
+    padding: 0 8px;
+  }
+  .workspace-context-actions input[type="month"] {
+    width: 132px;
+    font-size: 13px;
+  }
+  .workspace-secondary-header {
+    padding: max(8px, env(safe-area-inset-top)) 16px 8px;
+    gap: 10px;
+  }
+  .account-group-panel {
+    padding: 14px;
+    gap: 10px;
+    border-radius: 16px;
+  }
+  .accounts-overview {
+    gap: 14px;
+  }
+  .transaction-type-tools {
+    align-items: flex-start;
+    gap: 6px 12px;
+  }
+  .transaction-type-tools > label {
+    flex: 1;
+    min-width: 160px;
+  }
+  .transaction-type-tools select {
+    width: 100%;
+    min-height: 44px;
+  }
+  .transaction-period {
+    width: 100%;
+  }
+  .analytics-summary-refined {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .analytics-summary-refined .stat {
+    padding: 15px;
+  }
+  .analytics-summary-refined .stat:first-child {
+    grid-column: 1 / -1;
+  }
+  .analytics-summary-refined .stat:first-child > strong {
+    font-size: 30px;
+  }
+  .analytics-summary-refined .stat > strong {
+    font-size: 21px;
+  }
+  .main-content .list-toolbar {
+    flex-wrap: wrap;
+  }
+  .main-content .filter-row select {
+    min-width: 0;
+    max-width: 100%;
+  }
+}

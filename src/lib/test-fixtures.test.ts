@@ -44,6 +44,7 @@ describe("synthetic browser fixture isolation", () => {
     "SUPABASE_SERVICE_ROLE_KEY",
     "FINANCE_CLOUD_OWNER_ID",
     "FINANCE_CLOUD_OWNER_EMAIL",
+    "FINANCE_CLOUD_ACCESS_MODE",
   ])("blocks fixture mode whenever %s is configured", (key) => {
     expect(
       testFixturesEnabled({ ...isolated, [key]: "synthetic-config" }),

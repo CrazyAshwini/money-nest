@@ -22,93 +22,15 @@
   min-width: 44px;
   min-height: 44px;
   padding: 8px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid #b8d7c9;
   border-radius: 999px;
-  background: var(--brand-soft);
-  color: var(--lime);
+  background: #f0f8f3;
+  color: #155e50;
   font-size: 13px;
   font-weight: 600;
 }
 .nestbot-trigger:hover {
-  border-color: var(--lime);
-}
-.nestbot-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 120;
-  background: #0008;
-}
-.nestbot-panel {
-  position: fixed;
-  z-index: 121;
-  inset: 0 0 0 auto;
-  width: min(420px, 100vw);
-  height: 100dvh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-left: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  padding: max(20px, env(safe-area-inset-top, 0px)) 24px
-    max(24px, env(safe-area-inset-bottom, 0px));
-  box-shadow: -8px 0 32px #0002;
-}
-.nestbot-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-shrink: 0;
-}
-.nestbot-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.nestbot-title > svg {
-  color: var(--lime);
-  flex-shrink: 0;
-}
-.nestbot-title h2 {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 650;
-}
-.nestbot-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  min-height: 44px;
-  flex-shrink: 0;
-  border-radius: var(--radius-control);
-  background: var(--raised);
-}
-.nestbot-close:hover {
-  color: var(--lime);
-}
-.nestbot-content {
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 24px 0 4px;
-}
-.nestbot-status {
-  display: inline-flex;
-  padding: 5px 9px;
-  border-radius: 8px;
-  background: var(--raised);
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-.nestbot-content p {
-  margin: 16px 0 0;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.65;
+  border-color: #155e50;
 }
 @media (max-width: 760px) {
   .dashboard-welcome {
@@ -125,16 +47,5 @@
     font-size: 14px;
     font-weight: 500;
     letter-spacing: 0;
-  }
-  .nestbot-panel {
-    inset: auto 0 0;
-    width: 100%;
-    height: auto;
-    max-height: 85dvh;
-    border: 1px solid var(--border);
-    border-bottom: 0;
-    border-radius: var(--radius-dialog) var(--radius-dialog) 0 0;
-    padding: 18px 20px max(24px, env(safe-area-inset-bottom, 0px));
-    box-shadow: 0 -8px 32px #0002;
   }
 }

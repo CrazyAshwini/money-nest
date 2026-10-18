@@ -3,5 +3,12 @@
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "installCommand": "npm ci --include=optional --no-audit --no-fund",
+  "git": {
+    "deploymentEnabled": {
+      "feat/signup-email-otp": false,
+      "feat/responsive-account-carousels": false,
+      "feat/public-multi-user-workspaces": false
+    }
+  },
   "regions": ["icn1"]
 }
