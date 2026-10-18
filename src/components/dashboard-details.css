@@ -199,6 +199,46 @@
   margin-top: 14px;
 }
 
+.financial-details-disclosure {
+  min-width: 0;
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.financial-details-disclosure > summary {
+  min-height: 44px;
+  padding: 12px 14px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.financial-details-disclosure[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.financial-details-disclosure > .financial-details-record {
+  border: 0;
+  border-radius: 0;
+}
+
+.financial-details-disclosure > .financial-details-total {
+  margin: 12px;
+  padding: 12px;
+  background: var(--raised);
+}
+
+.financial-details-disclosure > .financial-details-note,
+.financial-details-disclosure > .financial-details-aggregate {
+  margin: 12px 14px;
+}
+
 .financial-details-link {
   display: inline-flex;
   align-items: center;
@@ -250,7 +290,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--raised);
-  min-height: 36px;
+  min-height: 44px;
   text-decoration: none;
   font-size: 11px;
 }

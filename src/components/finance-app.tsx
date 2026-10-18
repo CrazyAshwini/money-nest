@@ -2,7 +2,7 @@
 import { BrandLockup } from "./brand-lockup";
 import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
@@ -15,6 +15,14 @@ import { LoadingSkeleton } from "./loading-skeleton";
 import "./shell.css";
 import "./fintech-screens.css";
 import "./dashboard.css";
+import "./workspace-layout.css";
+import { FinancialCardCarousel } from "./financial-card-carousel";
+import { VirtualAccountCard } from "./virtual-account-card";
+import { RecentAccountTransactions } from "./recent-account-transactions";
+import {
+  maskedAccountSuffix,
+  resolveSelectedAccountId,
+} from "@/lib/account-presentation";
 import { DashboardWelcome } from "./dashboard-welcome";
 import { DashboardFinancialDetails } from "./dashboard-details";
 import Decimal from "decimal.js";
@@ -210,6 +218,11 @@ export function FinanceApp() {
     refresh,
   } = useFinance();
   const pathname = usePathname();
+  const queryKey = useSearchParams().toString();
+  const [newTransactionKind, setNewTransactionKind] =
+    useState<TransactionKind>("expense");
+  const [botOpen, setBotOpen] = useState(false);
+  const [botTrigger, setBotTrigger] = useState<HTMLButtonElement | null>(null);
   const [mobile, setMobile] = useState(false);
   const navigationTrigger = useRef<HTMLButtonElement | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -259,9 +272,39 @@ export function FinanceApp() {
         <Link href="/login">Return to sign in</Link>
       </main>
     );
-  const title = pageInfo?.title || "Money Nest";
+  const title =
+    page === "analytics"
+      ? "Analytics"
+      : page === "profile"
+        ? "Profile"
+        : pageInfo?.title || "Money Nest";
+  const mainTab =
+    !id &&
+    ["dashboard", "accounts", "analytics", "profile", "transactions"].includes(
+      page,
+    );
+  const detailRecords =
+    page === "accounts"
+      ? data.accounts
+      : page === "bills"
+        ? data.bills
+        : page === "fixed-deposits"
+          ? data.fixedDeposits
+          : page === "loans"
+            ? data.loans
+            : [];
+  const detailPage = Boolean(
+    id && detailRecords.some((record) => record.id === id),
+  );
   const metrics = dashboardMetrics(data, month);
-  const open = (e: EditorState) => setEditor(e);
+  const open = (e: EditorState) => {
+    setBotOpen(false);
+    setEditor(e);
+  };
+  const openNestBot = (trigger: HTMLButtonElement) => {
+    setBotTrigger(trigger);
+    setBotOpen(true);
+  };
   const active = NAV_ITEMS.find((n) => n.href === `/${page}`)?.title || title;
   return (
     <Dialog.Root open={mobile} onOpenChange={setMobile}>
@@ -313,22 +356,60 @@ export function FinanceApp() {
         <div
           className={`app-main ${page === "dashboard" ? "dashboard-main" : ""}`}
         >
-          <header
-            className={`topbar ${page === "dashboard" ? "dashboard-topbar" : ""}`}
-          >
-            {page === "dashboard" ? (
-              <>
+          {page === "dashboard" ? (
+            <header className="topbar dashboard-topbar">
+              <Link
+                href="/dashboard"
+                className="brand dashboard-mobile-brand"
+                aria-label="Money Nest home"
+              >
+                <BrandLockup />
+              </Link>
+              <DashboardWelcome onOpenNestBot={openNestBot} />
+              <div className="topbar-right">
                 <Link
-                  href="/dashboard"
-                  className="brand dashboard-mobile-brand"
-                  aria-label="Money Nest home"
+                  href="/transactions"
+                  className="search-shortcut"
+                  aria-label="Search transactions"
                 >
-                  <BrandLockup />
+                  <Search size={16} />
+                  <span>Search transactions</span>
                 </Link>
-                <DashboardWelcome />
-              </>
-            ) : (
-              <div className="breadcrumb">
+                <Link
+                  href="/notifications"
+                  aria-label="Notifications"
+                  className="notification-button"
+                >
+                  <Bell size={19} />
+                  {metrics.reviewCount > 0 && <i />}
+                </Link>
+                <button
+                  type="button"
+                  className="button primary dashboard-header-add"
+                  onClick={() => open({ type: "transaction" })}
+                >
+                  <Plus size={16} aria-hidden="true" /> Add transaction
+                </button>
+              </div>
+              <div className="dashboard-overview-heading">
+                <h2 id="financial-overview-title">Financial overview</h2>
+                <Link href="/analytics" className="overview-period">
+                  {monthLabel(month)}
+                </Link>
+              </div>
+            </header>
+          ) : (
+            !mainTab && (
+              <header className="workspace-secondary-header">
+                {!detailPage && (
+                  <Link
+                    href={id ? `/${page}` : "/profile"}
+                    className="text-link secondary-back"
+                  >
+                    <ChevronLeft size={18} aria-hidden="true" /> Back
+                  </Link>
+                )}
+                <span>{active}</span>
                 <Dialog.Trigger asChild>
                   <button
                     className="icon-button mobile-menu"
@@ -340,67 +421,9 @@ export function FinanceApp() {
                     <Menu size={20} />
                   </button>
                 </Dialog.Trigger>
-                <span>Workspace</span>
-                <ChevronRight size={14} />
-                <strong>{active}</strong>
-              </div>
-            )}
-            <div className="topbar-right">
-              <Link
-                href="/transactions"
-                className="search-shortcut"
-                aria-label="Search transactions"
-              >
-                <Search size={16} />
-                <span>Search transactions</span>
-              </Link>
-              <span className="topbar-divider" />
-              <Link
-                href="/notifications"
-                aria-label="Notifications"
-                className="notification-button"
-              >
-                <Bell size={19} />
-                {metrics.reviewCount > 0 && <i />}
-              </Link>
-              {page !== "dashboard" && (
-                <Link
-                  href={
-                    mode === "private" || mode === "cloud"
-                      ? "/profile"
-                      : "/settings"
-                  }
-                  className="avatar mini"
-                  aria-label="Your profile"
-                >
-                  {profile?.displayName.slice(0, 1).toUpperCase() || "P"}
-                </Link>
-              )}
-              {page === "dashboard" && (
-                <button
-                  type="button"
-                  className="button primary dashboard-header-add"
-                  onClick={() => open({ type: "transaction" })}
-                >
-                  <Plus size={16} aria-hidden="true" /> Add transaction
-                </button>
-              )}
-            </div>
-            {page === "dashboard" && (
-              <div className="dashboard-overview-heading">
-                <h2 id="financial-overview-title">Financial overview</h2>
-                <div className="month-picker">
-                  <CalendarDays size={16} aria-hidden="true" />
-                  <input
-                    aria-label="Selected month"
-                    type="month"
-                    value={month}
-                    onChange={(event) => setMonth(event.target.value || month)}
-                  />
-                </div>
-              </div>
-            )}
-          </header>
+              </header>
+            )
+          )}
           {mode === "demo" && (
             <div className="demo-strip">
               <span className="demo-dot" />
@@ -418,40 +441,51 @@ export function FinanceApp() {
             tabIndex={-1}
             className={`main-content ${page === "dashboard" ? "home-content" : ""}`}
           >
-            {page !== "dashboard" && (
-              <div className="page-heading">
-                <div>
-                  <div className="eyebrow">YOUR MONEY, IN PERSPECTIVE</div>
-                  <h1>{title}</h1>
-                  <p>
-                    {page === "imports"
-                      ? "Review every row. Keep your ledger clean."
-                      : page === "transactions"
-                        ? "Every movement, with the full story."
-                        : "The details that keep your finances in balance."}
-                  </p>
-                </div>
-                <div className="page-actions">
-                  <div className="month-picker">
-                    <CalendarDays size={16} aria-hidden="true" />
-                    <input
-                      aria-label="Selected month"
-                      type="month"
-                      value={month}
-                      onChange={(e) => setMonth(e.target.value || "2026-10")}
-                    />
-                  </div>
-                  <Link href="/imports" className="button import-button">
-                    <Upload size={15} />
-                    Import
-                  </Link>
-                  <button
-                    className="button primary"
-                    onClick={() => open({ type: "transaction" })}
-                  >
-                    <Plus size={16} />
-                    <span>Add transaction</span>
-                  </button>
+            {page !== "dashboard" && !detailPage && (
+              <div
+                className={`workspace-page-heading ${page === "profile" ? "workspace-profile-heading" : ""}`}
+              >
+                <h1>{title}</h1>
+                <div className="workspace-context-actions">
+                  {page === "analytics" && (
+                    <div className="month-picker">
+                      <CalendarDays size={16} aria-hidden="true" />
+                      <input
+                        aria-label="Selected month"
+                        type="month"
+                        value={month}
+                        onChange={(event) =>
+                          setMonth(event.target.value || month)
+                        }
+                      />
+                    </div>
+                  )}
+                  {(page === "accounts" || page === "pay-later") && (
+                    <button
+                      className="button primary"
+                      onClick={() => open({ type: "account" })}
+                    >
+                      <Plus size={16} aria-hidden="true" /> Add account
+                    </button>
+                  )}
+                  {page === "transactions" && (
+                    <>
+                      <Link href="/imports" className="button">
+                        <Upload size={16} aria-hidden="true" /> Import
+                      </Link>
+                      <button
+                        className="button primary desktop-transaction-add"
+                        onClick={() =>
+                          open({
+                            type: "transaction",
+                            kind: newTransactionKind,
+                          })
+                        }
+                      >
+                        <Plus size={16} aria-hidden="true" /> Add transaction
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -460,7 +494,12 @@ export function FinanceApp() {
             ) : page === "accounts" ? (
               <AccountsPage id={id} open={open} />
             ) : page === "transactions" ? (
-              <TransactionsPage open={open} create={id === "new"} />
+              <TransactionsPage
+                key={queryKey}
+                open={open}
+                newKind={newTransactionKind}
+                onNewKindChange={setNewTransactionKind}
+              />
             ) : page === "bills" ? (
               <BillsPage id={id} open={open} />
             ) : page === "pay-later" ? (
@@ -512,6 +551,18 @@ export function FinanceApp() {
               </span>
               <nav className="footer-links" aria-label="Footer navigation">
                 <Link href="/settings">Settings</Link>
+                {page !== "dashboard" && (
+                  <button
+                    type="button"
+                    className="text-link footer-nestbot"
+                    aria-label="Open Money Nest Bot"
+                    aria-haspopup="dialog"
+                    disabled={Boolean(editor)}
+                    onClick={(event) => openNestBot(event.currentTarget)}
+                  >
+                    NestBot
+                  </button>
+                )}
                 <Link href="/settings#data">Data & privacy</Link>
               </nav>
             </footer>
@@ -520,9 +571,19 @@ export function FinanceApp() {
         <MobileBottomBar
           page={page}
           mode={mode}
-          onAdd={() => open({ type: "transaction" })}
+          onAdd={() =>
+            open({
+              type: "transaction",
+              kind: page === "transactions" ? newTransactionKind : "expense",
+            })
+          }
         />
-        <NestBot onReceiptRequest={() => open({ type: "transaction" })} />
+        <NestBot
+          open={botOpen}
+          onOpenChange={setBotOpen}
+          trigger={botTrigger}
+          onReceiptRequest={() => open({ type: "transaction" })}
+        />
         {editor && (
           <RecordEditor editor={editor} onClose={() => setEditor(null)} />
         )}
@@ -648,7 +709,7 @@ function Kpis() {
         />
         <FinancialCard
           section="spending"
-          title="This month's spending"
+          title={`Spending · ${monthLabel(month)}`}
           value={formatMoney(metrics.monthSpending)}
           caption={
             metrics.expenseCount + " posted expenses · " + monthLabel(month)
@@ -835,146 +896,6 @@ function RecentActivity({
         {formatMoney(transaction.amount)}
       </span>
     </button>
-  );
-}
-function BankCard({
-  account,
-  index = 0,
-}: {
-  account: Account;
-  index?: number;
-}) {
-  const { data, today } = useFinance();
-  const balance = accountBalance(data, account.id, today);
-  return (
-    <Link href={`/accounts/${account.id}`} className="bank-card">
-      <div className="bank-top">
-        <div
-          className="institution-icon"
-          style={
-            {
-              "--bank-color": account.accent || tones[index % tones.length],
-            } as React.CSSProperties
-          }
-        >
-          {account.institution.slice(0, 1)}
-        </div>
-        <ArrowUpRight size={16} />
-      </div>
-      <h3>{account.name}</h3>
-      <span className="masked">
-        {kindLabel(account.kind)} · ••{account.maskedSuffix || "—"}
-      </span>
-      <strong>
-        {balance.current !== null
-          ? formatMoney(balance.current)
-          : "Not reported"}
-      </strong>
-      <div className="bank-card-footer">
-        <span>
-          <i />{" "}
-          {balance.currentAsOf
-            ? `${balance.currentSource === "opening" || balance.movementsSinceSnapshot > 0 ? "Calculated" : "Reported"} · ${formatDate(balance.currentAsOf)}`
-            : "Snapshot needed"}
-        </span>
-        <ChevronRight size={13} />
-      </div>
-    </Link>
-  );
-}
-function CreditCardItem({
-  account,
-  index = 0,
-}: {
-  account: Account;
-  index?: number;
-}) {
-  const { data, today } = useFinance();
-  const s = latestSnapshot(data, account.id, today);
-  const usage = accountUsage(data, account.id, today);
-  const used = usage.used;
-  const bill = data.bills
-    .filter(
-      (b) =>
-        b.accountId === account.id &&
-        b.userId === account.userId &&
-        b.statementDate <= today,
-    )
-    .sort((a, b) => b.statementDate.localeCompare(a.statementDate))[0];
-  return (
-    <Link href={`/accounts/${account.id}`} className="credit-card">
-      <div className="credit-card-heading">
-        <span
-          className="card-chip"
-          style={{ color: tones[index % tones.length] }}
-        >
-          <CreditCard size={22} />
-        </span>
-        <span className="credit-kind">
-          {account.kind === "pay_later" ? "PAY LATER" : "CREDIT CARD"}
-        </span>
-        <ArrowUpRight size={15} />
-      </div>
-      <h3>{account.name}</h3>
-      <span className="masked">
-        {account.institution} · ••{account.maskedSuffix || "—"}
-      </span>
-      <div className="credit-amount">
-        <strong>
-          {used != null
-            ? `${usage.provenance === "partial" ? "At least " : ""}${formatMoney(used)}`
-            : "Unknown"}
-        </strong>
-        <span>
-          /{" "}
-          {account.creditLimit
-            ? formatMoney(account.creditLimit, { decimals: 0 })
-            : "limit unknown"}
-        </span>
-      </div>
-      <div className="usage-level credit-usage-level">
-        <span>
-          {usage.percentage === null
-            ? "Percentage unknown"
-            : `${formatUsagePercentage(usage.percentage)} used`}
-        </span>
-        <UsageStatus band={usage.band} />
-      </div>
-      <UsageMeter {...usage} label={`${account.name} usage`} />
-      <div className="credit-meta">
-        <span>
-          Usage source{" "}
-          <b>
-            {usage.provenance === "partial"
-              ? "Known bill only"
-              : usage.provenance === "inferred"
-                ? "From available credit"
-                : usage.provenance === "reported"
-                  ? "Reported"
-                  : usage.provenance === "calculated"
-                    ? "Report + payments"
-                    : "Unconfirmed"}
-          </b>
-        </span>
-        <span>
-          Available{" "}
-          <b>
-            {usage.available != null
-              ? formatMoney(usage.available)
-              : "Unconfirmed"}
-          </b>
-        </span>
-      </div>
-      <div className="credit-date">
-        <CalendarDays size={12} />
-        {bill?.dueDate
-          ? `Payment due ${formatDate(bill.dueDate)}`
-          : s?.nextStatementDate
-            ? `Next statement ${formatDate(s.nextStatementDate)}`
-            : "Statement not received"}
-        <ChevronRight size={13} />
-      </div>
-    </Link>
   );
 }
 function BillRow({ bill }: { bill: Bill }) {
@@ -1289,12 +1210,13 @@ function AccountsPage({
   onlyPayLater?: boolean;
   open: Open;
 }) {
-  const { data, today } = useFinance();
+  const { data, today, userId } = useFinance();
+  const router = useRouter();
   const [kind, setKind] = useState("all");
   const [accountTxnTab, setAccountTxnTab] = useState<
     "all" | "purchases" | "repayments" | "refunds" | "pending"
   >("all");
-  const a = data.accounts.find((a) => a.id === id);
+  const a = data.accounts.find((a) => a.id === id && a.userId === userId);
   if (id && !a)
     return (
       <>
@@ -1347,7 +1269,7 @@ function AccountsPage({
       <>
         <DetailHeading
           title={a.name}
-          subtitle={`${a.institution} · ••${a.maskedSuffix} · ${kindLabel(a.kind)}`}
+          subtitle={`${a.institution} · ${maskedAccountSuffix(a.maskedSuffix)} · ${kindLabel(a.kind)}`}
           back="/accounts"
           action={
             <>
@@ -1377,6 +1299,32 @@ function AccountsPage({
               </button>
             </>
           }
+        />
+        <FinancialCardCarousel
+          accounts={data.accounts.filter(
+            (account) =>
+              account.userId === userId &&
+              account.kind === a.kind &&
+              (account.active || account.id === a.id),
+          )}
+          selectedId={a.id}
+          onSelect={(nextId) =>
+            router.replace(`/accounts/${encodeURIComponent(nextId)}`, {
+              scroll: false,
+            })
+          }
+          label={
+            a.kind === "bank"
+              ? "Bank accounts"
+              : a.kind === "credit_card"
+                ? "Credit cards"
+                : a.kind === "pay_later"
+                  ? "Pay Later accounts"
+                  : "Wallets"
+          }
+          renderCard={(account) => (
+            <VirtualAccountCard account={account} data={data} today={today} />
+          )}
         />
         {
           <div className="info-banner">
@@ -1535,60 +1483,138 @@ function AccountsPage({
       </>
     );
   }
-  const accounts = data.accounts.filter((a) =>
-    onlyPayLater ? a.kind === "pay_later" : kind === "all" || a.kind === kind,
+  const visibleAccounts = data.accounts.filter(
+    (account) =>
+      account.userId === userId &&
+      (onlyPayLater
+        ? account.kind === "pay_later"
+        : kind === "all" || account.kind === kind),
+  );
+  const groups: { kind: Account["kind"]; label: string }[] = [
+    { kind: "bank", label: "Bank accounts" },
+    { kind: "credit_card", label: "Credit cards" },
+    { kind: "pay_later", label: "Pay Later accounts" },
+    { kind: "wallet", label: "Wallets" },
+  ];
+  const activeAccounts = visibleAccounts.filter((account) => account.active);
+  const archivedAccounts = visibleAccounts.filter((account) => !account.active);
+  const shownGroups = groups.filter((group) =>
+    onlyPayLater
+      ? group.kind === "pay_later"
+      : kind === "all" || group.kind === kind,
   );
   return (
-    <>
-      <div className="list-toolbar">
-        <div className="tabs">
-          {!onlyPayLater &&
-            ["all", "bank", "credit_card", "pay_later", "wallet"].map((k) => (
-              <button
-                className={kind === k ? "selected" : ""}
-                key={k}
-                onClick={() => setKind(k)}
-              >
-                {kindLabel(k)}
-              </button>
-            ))}
+    <div className="accounts-overview">
+      {!onlyPayLater && (
+        <div
+          className="account-kind-tabs"
+          role="group"
+          aria-label="Account kind"
+        >
+          {[
+            { id: "all", label: "All" },
+            { id: "bank", label: "Bank" },
+            { id: "credit_card", label: "Cards" },
+            { id: "pay_later", label: "Pay Later" },
+            { id: "wallet", label: "Wallet" },
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              aria-pressed={kind === item.id}
+              className={kind === item.id ? "selected" : ""}
+              onClick={() => setKind(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
-        <button className="button" onClick={() => open({ type: "account" })}>
-          <Plus size={15} />
-          Add account
-        </button>
-      </div>
-      <div className="account-page-grid">
-        {accounts.map((a, i) => (
-          <div key={a.id} className={!a.active ? "archived" : ""}>
-            {a.kind === "bank" || a.kind === "wallet" ? (
-              <BankCard account={a} index={i} />
-            ) : (
-              <CreditCardItem account={a} index={i} />
+      )}
+      {shownGroups
+        .filter(
+          (group) =>
+            kind !== "all" ||
+            onlyPayLater ||
+            activeAccounts.some((account) => account.kind === group.kind),
+        )
+        .map((group) => (
+          <AccountGroup
+            key={group.kind}
+            label={group.label}
+            accounts={activeAccounts.filter(
+              (account) => account.kind === group.kind,
             )}
-            <div className="account-edit">
-              <Badge>{a.active ? "Active" : "Archived"}</Badge>
-              <button
-                className="text-link"
-                onClick={() => open({ type: "account", record: a })}
-              >
-                Edit account
-              </button>
-            </div>
-          </div>
+          />
         ))}
-      </div>
-      {accounts.length === 0 && (
+      {activeAccounts.length === 0 && kind === "all" && !onlyPayLater && (
         <Empty
-          title="No accounts yet"
-          description="Track a bank, wallet, credit card or Pay Later provider."
-          onAdd={() => open({ type: "account" })}
+          title="No active accounts"
+          description="Add a bank, wallet, credit card or Pay Later provider. Archived accounts remain available below."
         />
       )}
-    </>
+      {archivedAccounts.length > 0 && (
+        <details className="archived-accounts">
+          <summary>Archived accounts ({archivedAccounts.length})</summary>
+          {shownGroups
+            .filter((group) =>
+              archivedAccounts.some((account) => account.kind === group.kind),
+            )
+            .map((group) => (
+              <AccountGroup
+                key={group.kind}
+                label={`Archived ${group.label.toLowerCase()}`}
+                accounts={archivedAccounts.filter(
+                  (account) => account.kind === group.kind,
+                )}
+              />
+            ))}
+        </details>
+      )}
+    </div>
   );
 }
-function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
+
+function AccountGroup({
+  accounts,
+  label,
+}: {
+  accounts: Account[];
+  label: string;
+}) {
+  const { data, today } = useFinance();
+  const [selection, setSelection] = useState<string | null>(null);
+  const selectedId = resolveSelectedAccountId(accounts, selection);
+  return (
+    <div className="account-group-panel">
+      <FinancialCardCarousel
+        accounts={accounts}
+        selectedId={selectedId}
+        onSelect={setSelection}
+        label={label}
+        renderCard={(account) => (
+          <VirtualAccountCard account={account} data={data} today={today} />
+        )}
+      />
+      {selectedId && (
+        <RecentAccountTransactions
+          data={data}
+          accountId={selectedId}
+          limit={4}
+        />
+      )}
+    </div>
+  );
+}
+
+function TransactionsPage({
+  open,
+  newKind,
+  onNewKindChange,
+}: {
+  open: Open;
+  newKind: TransactionKind;
+  onNewKindChange: (kind: TransactionKind) => void;
+}) {
   const { data, month, toast } = useFinance();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
@@ -1598,10 +1624,11 @@ function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
       ? requested
       : "all";
   });
-  const [account, setAccount] = useState("all");
+  const [account, setAccount] = useState(searchParams.get("account") || "all");
   const [review, setReview] = useState(false);
-  const [allMonths, setAllMonths] = useState(false);
-  const [newKind, setNewKind] = useState<TransactionKind>("expense");
+  const [allMonths, setAllMonths] = useState(
+    searchParams.get("period") === "all",
+  );
   const txs = useMemo(
     () =>
       data.transactions
@@ -1617,8 +1644,10 @@ function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
               .toLowerCase()
               .includes(search.toLowerCase()),
         )
-        .sort((a, b) =>
-          (b.occurredOn || "9999").localeCompare(a.occurredOn || "9999"),
+        .sort(
+          (a, b) =>
+            (b.occurredOn || "").localeCompare(a.occurredOn || "") ||
+            a.id.localeCompare(b.id),
         ),
     [data.transactions, allMonths, month, kind, account, review, search],
   );
@@ -1648,27 +1677,27 @@ function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
           Export CSV
         </button>
       </div>
-      <div className="transaction-create-row">
-        <select
-          aria-label="New transaction type"
-          value={newKind}
-          onChange={(event) =>
-            setNewKind(event.target.value as TransactionKind)
-          }
-        >
-          {TRANSACTION_KINDS.map((type) => (
-            <option key={type} value={type}>
-              {kindLabel(type)}
-            </option>
-          ))}
-        </select>
-        <button
-          className="button primary"
-          onClick={() => open({ type: "transaction", kind: newKind })}
-        >
-          <Plus size={15} />{" "}
-          {create ? "Create transaction" : `Add ${kindLabel(newKind)}`}
-        </button>
+      <div className="transaction-type-tools">
+        <label>
+          New transaction type
+          <select
+            aria-label="New transaction type"
+            value={newKind}
+            onChange={(event) =>
+              onNewKindChange(event.target.value as TransactionKind)
+            }
+          >
+            {TRANSACTION_KINDS.map((type) => (
+              <option key={type} value={type}>
+                {kindLabel(type)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="transaction-period">
+          {allMonths ? "All dates" : monthLabel(month)}
+          <Link href="/analytics">Change month</Link>
+        </span>
       </div>
       <div className="filter-chips-row" role="group" aria-label="Quick filters">
         {[
@@ -1715,6 +1744,10 @@ function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
           onChange={(e) => setAccount(e.target.value)}
         >
           <option value="all">All accounts</option>
+          {account !== "all" &&
+            !data.accounts.some((item) => item.id === account) && (
+              <option value={account}>Unavailable account</option>
+            )}
           {data.accounts.map((a) => (
             <option key={a.id} value={a.id}>
               {a.name}
@@ -1741,7 +1774,7 @@ function TransactionsPage({ open, create }: { open: Open; create?: boolean }) {
       </div>
       <Section
         title={review ? "Needs review" : "Your ledger"}
-        subtitle={`${monthLabel(month)} · Transfers and repayments are not purchase expenses.`}
+        subtitle={`${allMonths ? "All dates" : monthLabel(month)} · Transfers and repayments are not purchase expenses.`}
       >
         <TransactionTable
           transactions={txs}
@@ -2268,7 +2301,13 @@ function AnalyticsPage() {
   const m = monthlySummary(data, month);
   return (
     <>
-      <div className="three-stats analytics-summary">
+      <div className="analytics-summary-refined">
+        <Stat
+          title="Net spending"
+          value={formatMoney(m.net)}
+          caption={monthLabel(month)}
+          icon={ChartNoAxesCombined}
+        />
         <Stat
           title="Gross expenses"
           value={formatMoney(m.gross)}
@@ -2278,16 +2317,18 @@ function AnalyticsPage() {
         <Stat
           title="Matched refunds"
           value={formatMoney(m.refunds)}
-          caption="Capped at original expense, excess preserved"
+          caption="Linked to original expenses"
           icon={ArrowDownLeft}
         />
-        <Stat
-          title="Net spending"
-          value={formatMoney(m.net)}
-          caption="Gross expenses less explicitly matched refunds"
-          icon={ChartNoAxesCombined}
-        />
       </div>
+      <details className="analytics-explanation">
+        <summary>How refunds affect spending</summary>
+        <p>
+          Only refunds linked to an original expense reduce net spending, capped
+          at that expense. Excess reimbursements stay recorded and are shown
+          separately below; repayments and transfers are not purchases.
+        </p>
+      </details>
       <div className="analytics-grid">
         <SpendingPanel />
         <CategoryPanel />
@@ -2345,7 +2386,7 @@ export function DetailHeading({
           <ChevronLeft size={14} />
           Back
         </Link>
-        <h2>{title}</h2>
+        <h1>{title}</h1>
         <p>{subtitle}</p>
       </div>
       <div className="page-actions">{action}</div>

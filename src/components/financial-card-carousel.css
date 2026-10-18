@@ -1,0 +1,388 @@
+.financial-carousel {
+  min-width: 0;
+  width: 100%;
+  position: relative;
+}
+.financial-carousel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.financial-carousel-heading h2 {
+  font-size: 16px;
+  font-weight: 750;
+  margin: 0;
+}
+.financial-carousel-heading > span {
+  color: var(--muted);
+  font-size: 12px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.financial-carousel-track {
+  display: flex;
+  position: relative;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y pinch-zoom;
+  scrollbar-width: none;
+  border-radius: 20px;
+}
+/* Chromium can navigate browser history at a finite deck boundary despite
+   overscroll containment. Allow only the available native horizontal direction
+   there; vertical page/sheet scrolling and pinch zoom remain native everywhere.
+   pan-right/left describe content scrolling (opposite the finger's movement). */
+.financial-carousel-track[data-edge="first"] {
+  touch-action: pan-right pan-y pinch-zoom;
+}
+.financial-carousel-track[data-edge="last"] {
+  touch-action: pan-left pan-y pinch-zoom;
+}
+.financial-carousel-track[data-edge="single"] {
+  touch-action: pan-y pinch-zoom;
+}
+.financial-carousel-track::-webkit-scrollbar {
+  display: none;
+}
+.financial-carousel-track:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+.financial-carousel-slide {
+  flex: 0 0 100%;
+  min-width: 0;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+.financial-carousel-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.financial-carousel-controls p {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 0 auto 0 0;
+}
+.financial-carousel-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: white;
+  color: var(--text);
+  cursor: pointer;
+}
+.financial-carousel-controls button:disabled {
+  color: #91a399;
+  background: #f4f7f5;
+  cursor: default;
+}
+.financial-carousel-controls button:focus-visible,
+.virtual-account-card:focus-visible,
+.recent-account-heading a:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+.virtual-account-card:focus-visible {
+  outline-color: #b4f5d7;
+  outline-offset: -5px;
+}
+.financial-carousel-empty {
+  padding: 20px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.financial-carousel-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.virtual-account-card {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  width: min(100%, 32rem);
+  min-width: 0;
+  min-height: 204px;
+  margin-inline: auto;
+  padding: 20px;
+  border-radius: 20px;
+  color: #f7fffb;
+  background:
+    radial-gradient(ellipse at 95% 0%, #258b73 0, transparent 62%), #104a3c;
+  text-decoration: none;
+  overflow: hidden;
+}
+.virtual-account-card[data-kind="credit_card"] {
+  background:
+    radial-gradient(ellipse at 95% 0%, #426d83 0, transparent 62%), #1b3545;
+}
+.virtual-account-card[data-kind="pay_later"] {
+  background:
+    radial-gradient(ellipse at 95% 0%, #75628d 0, transparent 62%), #41314f;
+}
+.virtual-account-card[data-kind="wallet"] {
+  background:
+    radial-gradient(ellipse at 95% 0%, #687e4e 0, transparent 62%), #354831;
+}
+.virtual-account-card-top {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  min-width: 0;
+}
+.virtual-account-card-top > svg {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.virtual-account-initials {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: #164f41;
+  border-radius: 11px;
+  font-weight: 800;
+  font-size: 14px;
+}
+.virtual-account-identity {
+  min-width: 0;
+}
+.virtual-account-identity > span {
+  display: block;
+  color: #d3e8e0;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.virtual-account-identity h3 {
+  margin: 3px 0 0;
+  font-size: 16px;
+  line-height: 1.3;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+.virtual-account-type {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: #d3e8e0;
+  font-size: 11px;
+}
+.virtual-account-primary {
+  min-width: 0;
+}
+.virtual-account-primary > span {
+  display: block;
+  font-size: 11px;
+  color: #d3e8e0;
+}
+.virtual-account-primary strong {
+  display: block;
+  font-size: clamp(21px, 5.7vw, 30px);
+  line-height: 1.25;
+  letter-spacing: -0.7px;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.virtual-account-credit-facts,
+.virtual-account-bill {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 5px 14px;
+  color: #d3e8e0;
+  font-size: 10px;
+}
+.virtual-account-credit-facts span,
+.virtual-account-bill span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.virtual-account-credit-facts b,
+.virtual-account-bill b {
+  color: #fff;
+  font-weight: 650;
+}
+.virtual-account-utilization {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.virtual-account-utilization .usage-meter {
+  flex: 1;
+  min-width: 0;
+  background: #ffffff38;
+  margin: 0;
+}
+.virtual-account-utilization .usage-meter > span {
+  background: #a9e8cf;
+}
+.virtual-account-utilization > span {
+  font-size: 10px;
+  color: #d3e8e0;
+  flex-shrink: 0;
+}
+.virtual-account-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 9px;
+  border-top: 1px solid #ffffff25;
+  color: #d3e8e0;
+  font-size: 10px;
+}
+.virtual-account-card-footer > span:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.recent-account-transactions {
+  min-width: 0;
+  margin-top: 17px;
+}
+.recent-account-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+.recent-account-heading > div {
+  min-width: 0;
+}
+.recent-account-heading h3 {
+  font-size: 14px;
+  margin: 0;
+}
+.recent-account-heading p {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.recent-account-heading a {
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-height: 44px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 650;
+}
+.recent-account-transactions ul {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+}
+.recent-account-transactions li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-block: 11px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+.recent-account-transactions li:last-child {
+  border-bottom: 0;
+}
+.recent-account-direction {
+  display: flex;
+  width: 31px;
+  height: 31px;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: #eef4f0;
+  color: #496256;
+}
+.recent-account-direction[data-direction="incoming"] {
+  color: #087b5a;
+  background: #e8f5ee;
+}
+.recent-account-description {
+  min-width: 0;
+  flex: 1;
+}
+.recent-account-description strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.recent-account-description > span,
+.recent-account-description small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.recent-account-description small {
+  color: #8a5c0b;
+}
+.recent-account-amount {
+  max-width: 46%;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.recent-account-amount[data-direction="incoming"] {
+  color: #087b5a;
+}
+.recent-account-transactions li[data-status="voided"] .recent-account-amount {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.recent-account-empty {
+  font-size: 12px;
+  color: var(--muted);
+  padding-block: 15px;
+}
+@media (max-width: 360px) {
+  .virtual-account-card {
+    padding: 16px;
+    gap: 11px;
+  }
+  .virtual-account-identity h3 {
+    font-size: 14px;
+  }
+  .virtual-account-primary strong {
+    font-size: 23px;
+  }
+  .recent-account-direction {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .financial-carousel-track {
+    scroll-behavior: auto;
+  }
+}

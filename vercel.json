@@ -5,7 +5,8 @@
   "installCommand": "npm ci --include=optional --no-audit --no-fund",
   "git": {
     "deploymentEnabled": {
-      "feat/signup-email-otp": false
+      "feat/signup-email-otp": false,
+      "feat/responsive-account-carousels": false
     }
   },
   "regions": ["icn1"]
