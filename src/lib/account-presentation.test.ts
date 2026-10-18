@@ -64,6 +64,25 @@ describe("stable account presentation selection", () => {
 });
 
 describe("account-specific recent ledger preview", () => {
+  it("can restrict current previews to a date without changing default full-history callers", () => {
+    const rows = [
+      transaction("future", { occurredOn: "2026-10-19" }),
+      transaction("current", { occurredOn: "2026-10-18" }),
+      transaction("older", { occurredOn: "2026-10-17" }),
+      transaction("undated", { occurredOn: null }),
+      transaction("other-account", { occurredOn: "2026-10-18", fromAccountId: "bank-b" }),
+      transaction("other-owner", { occurredOn: "2026-10-18", userId: "another-owner" }),
+    ];
+    const data = { accounts: [account], transactions: rows };
+    expect(getRecentAccountTransactions(data, account.id, 5).map((row) => row.id))
+      .toEqual(["future", "current", "older", "undated"]);
+    expect(getRecentAccountTransactions(data, account.id, 5, "2026-10-18T12:00:00Z").map((row) => row.id))
+      .toEqual(["current", "older", "undated"]);
+    expect(getRecentAccountTransactions(data, account.id, 5, "2026-10-17").map((row) => row.id))
+      .toEqual(["older", "undated"]);
+    expect(data.transactions).toEqual(rows);
+  });
+
   it("uses exact account links and owner scope, preserving repayments, refunds and review states", () => {
     const rows = [
       transaction("purchase"),

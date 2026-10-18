@@ -30,16 +30,18 @@ export function RecentAccountTransactions({
   data,
   accountId,
   limit = 4,
+  asOf,
   onNavigate,
 }: {
   data: WorkspaceData;
   accountId: string;
   limit?: 3 | 4 | 5;
+  asOf?: string;
   onNavigate?: () => void;
 }) {
   const account = data.accounts.find((item) => item.id === accountId);
   if (!account) return null;
-  const transactions = getRecentAccountTransactions(data, accountId, limit);
+  const transactions = getRecentAccountTransactions(data, accountId, limit, asOf);
   return (
     <section
       className="recent-account-transactions"
