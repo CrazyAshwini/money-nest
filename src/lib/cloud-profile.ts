@@ -11,7 +11,8 @@ export async function readCloudProfile(
     .select("user_id,display_name,created_at")
     .eq("user_id", user.id)
     .maybeSingle();
-  if (error) throw new Error("CLOUD_PROFILE_UNAVAILABLE");
+  if (error || (data && data.user_id !== user.id))
+    throw new Error("CLOUD_PROFILE_UNAVAILABLE");
   return {
     id: user.id,
     displayName:

@@ -479,7 +479,7 @@ export function SettingsPage() {
                   ? "Fictional browser-local demo. Cloud sync requires your own Supabase project."
                   : mode === "private"
                     ? "Private profile saved on this computer. Sign-in protects access to your records."
-                    : "Signed-in Supabase workspace. Records are protected by owner policies."}
+                    : "Your private cloud workspace. Only your signed-in account can access its financial records."}
               </p>
             </div>
             <Badge tone={mode === "demo" ? "amber" : "green"}>
@@ -1005,7 +1005,7 @@ export function LoginPage() {
       });
       if (recovering) {
         setSuccess(
-          "If this email can access the owner account, a reset link is on its way. Check your inbox and spam folder.",
+          "If this email has an account, a reset link is on its way. Check your inbox and spam folder.",
         );
         return;
       }
@@ -1118,7 +1118,7 @@ export function LoginPage() {
               .
             </>
           ) : recovering ? (
-            "We’ll email a secure link if this address belongs to the owner account."
+            "We’ll email a secure link if this address has an account."
           ) : creating ? (
             "Keep your accounts, spending and bills together."
           ) : (

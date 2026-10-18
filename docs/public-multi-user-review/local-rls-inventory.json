@@ -1,0 +1,317 @@
+{
+  "views": [
+    {
+      "name": "api_account_snapshots",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_accounts",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_audit_events",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_bill_payment_allocations",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_bills",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_categories",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_documents",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_emi_payment_allocations",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_emis",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_expense_groups",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_expense_shares",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_fixed_deposits",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_import_batches",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_import_candidates",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_loans",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_personal_loan_allocations",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_personal_loans",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_profiles",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_reminders",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_settlements",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_source_mappings",
+      "options": [
+        "security_invoker=true"
+      ]
+    },
+    {
+      "name": "api_transactions",
+      "options": [
+        "security_invoker=true"
+      ]
+    }
+  ],
+  "tables": [
+    {
+      "rls": true,
+      "name": "account_snapshots",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "accounts",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "audit_events",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "bill_payment_allocations",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "bills",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "categories",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "commerce_state",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "documents",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "emi_payment_allocations",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "emis",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "expense_groups",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "expense_shares",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "finance_handoff_backups",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "finance_handoff_batches",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "finance_source_observations",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "fixed_deposits",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "import_batches",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "import_candidates",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "legacy_finance_audit_state",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "loans",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "objects",
+      "schema": "storage"
+    },
+    {
+      "rls": true,
+      "name": "personal_loan_allocations",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "personal_loans",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "profiles",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "reminders",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "settlements",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "source_mappings",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "transactions",
+      "schema": "public"
+    },
+    {
+      "rls": true,
+      "name": "workspace_revisions",
+      "schema": "public"
+    }
+  ],
+  "publicFunctions": [
+    {
+      "name": "allocate_bill_payment",
+      "securityDefiner": false
+    },
+    {
+      "name": "allocate_emi_payment",
+      "securityDefiner": false
+    },
+    {
+      "name": "bootstrap_finance_cloud",
+      "securityDefiner": false
+    },
+    {
+      "name": "commit_finance_commerce",
+      "securityDefiner": false
+    },
+    {
+      "name": "commit_reviewed_import",
+      "securityDefiner": false
+    },
+    {
+      "name": "merge_finance_handoff",
+      "securityDefiner": false
+    },
+    {
+      "name": "merge_private_profile_cloud",
+      "securityDefiner": false
+    },
+    {
+      "name": "read_finance_cloud_state",
+      "securityDefiner": false
+    }
+  ]
+}

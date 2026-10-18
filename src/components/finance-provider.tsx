@@ -6,6 +6,7 @@ import {
   useState,
   useCallback,
   useRef,
+  Fragment,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cloneDemoData, DEMO_USER_ID } from "@/lib/seed";
@@ -15,6 +16,22 @@ import type { WorkspaceData, OwnedRecord } from "@/lib/types";
 import type { UserProfile } from "@/lib/profile-types";
 
 const STORAGE_KEY = "finance-os:fictional-demo:v1";
+const emptyWorkspace = (): WorkspaceData => ({
+  accounts: [],
+  snapshots: [],
+  transactions: [],
+  bills: [],
+  allocations: [],
+  fixedDeposits: [],
+  loans: [],
+  emis: [],
+  emiAllocations: [],
+  groups: [],
+  shares: [],
+  settlements: [],
+  reminders: [],
+  auditEvents: [],
+});
 type Mode = "loading" | "demo" | "cloud" | "private" | "login" | "error";
 type ContextValue = {
   data: WorkspaceData;
@@ -60,7 +77,7 @@ export function FinanceProvider({
   children: React.ReactNode;
   allowTestFixtures?: boolean;
 }) {
-  const [data, setData] = useState<WorkspaceData>(cloneDemoData);
+  const [data, setData] = useState<WorkspaceData>(emptyWorkspace);
   const currentData = useRef(data);
   const [mode, setMode] = useState<Mode>("loading");
   const [month, setMonth] = useState("2026-10");
@@ -78,6 +95,8 @@ export function FinanceProvider({
     Record<string, string[]>
   >({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshGeneration = useRef(0);
+  const activeIdentity = useRef("signed-out");
   const path = usePathname();
   const router = useRouter();
   const replaceData = useCallback((next: WorkspaceData) => {
@@ -100,6 +119,15 @@ export function FinanceProvider({
     if (timer.current) clearTimeout(timer.current);
     setMessage("");
   }, []);
+  const clearWorkspace = useCallback(() => {
+    activeIdentity.current = "signed-out";
+    replaceData(emptyWorkspace());
+    setAuthUserId("");
+    setProfile(null);
+    setTransactionSourceIds({});
+    setMonth(localDate().slice(0, 7));
+    dismissMessage();
+  }, [replaceData, dismissMessage]);
   const enterDemo = useCallback(() => {
     if (!allowTestFixtures) return;
     try {
@@ -121,9 +149,15 @@ export function FinanceProvider({
       replaceData(cloneDemoData());
     }
     setMode("demo");
+    activeIdentity.current = "demo";
+    setAuthUserId("");
+    setBackend(null);
     setProfile(null);
   }, [allowTestFixtures, replaceData]);
   const refresh = useCallback(async () => {
+    // A response belongs to the refresh that requested it. A delayed response
+    // from a previous session must never replace the next user's workspace.
+    const generation = ++refreshGeneration.current;
     // Browser storage cannot choose an authenticated workspace. Only an explicitly
     // isolated server permits this legacy flag for synthetic UI regression tests.
     try {
@@ -142,6 +176,7 @@ export function FinanceProvider({
     try {
       const res = await fetch("/api/workspace", { cache: "no-store" });
       const result = await res.json();
+      if (generation !== refreshGeneration.current) return false;
       setBackend(
         result.backend === "local"
           ? "local"
@@ -160,28 +195,38 @@ export function FinanceProvider({
         result.emailRequired === true || Boolean(result.profile?.email),
       );
       if (result.configured === false) {
-        setProfile(null);
-        setAuthUserId("");
+        clearWorkspace();
         setMode("login");
         return false;
       }
       if (!res.ok && res.status !== 401)
         throw new Error(result.error || "Your workspace could not be loaded.");
       if (!result.authenticated) {
-        replaceData(cloneDemoData());
-        setProfile(null);
-        setAuthUserId("");
+        clearWorkspace();
         setMode("login");
         return false;
       }
-      if (!res.ok || !result.workspace)
+      if (
+        !res.ok ||
+        !result.workspace ||
+        typeof result.userId !== "string" ||
+        !result.userId
+      )
         throw new Error(result.error || "Your workspace could not be loaded.");
+      const identity = `${result.backend === "local" ? "local" : "supabase"}:${result.userId}`;
+      if (identity !== activeIdentity.current) {
+        dismissMessage();
+        setMonth(localDate().slice(0, 7));
+      }
+      activeIdentity.current = identity;
       replaceData(result.workspace);
       setAuthUserId(result.userId);
       setProfile(result.profile ?? null);
       setMode(result.backend === "local" ? "private" : "cloud");
       return true;
     } catch (error) {
+      if (generation !== refreshGeneration.current) return false;
+      clearWorkspace();
       setMode("error");
       toast(
         error instanceof Error
@@ -191,12 +236,21 @@ export function FinanceProvider({
       );
       return false;
     }
-  }, [allowTestFixtures, enterDemo, toast, replaceData]);
+  }, [
+    allowTestFixtures,
+    enterDemo,
+    toast,
+    replaceData,
+    clearWorkspace,
+    dismissMessage,
+  ]);
   // Hydration loads authenticated server state, or explicitly isolated test fixtures.
   useEffect(() => {
+    const requests = refreshGeneration;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
     return () => {
+      requests.current++;
       if (timer.current) clearTimeout(timer.current);
     };
   }, [refresh]);
@@ -242,6 +296,11 @@ export function FinanceProvider({
   ) {
     if (mode !== "demo" && mode !== "cloud" && mode !== "private")
       throw new Error("Your workspace is not ready.");
+    const identity = mode === "demo" ? "demo" : `${backend}:${authUserId}`;
+    if (identity !== activeIdentity.current)
+      throw new Error(
+        "Your sign-in changed. Reopen the editor in your current workspace.",
+      );
     if (collection === "auditEvents")
       throw new Error("Audit history is recorded automatically.");
     const owner = mode === "demo" ? DEMO_USER_ID : authUserId;
@@ -254,9 +313,16 @@ export function FinanceProvider({
         body: JSON.stringify({ collection, record: checked }),
       });
       const result = await res.json();
+      if (identity !== activeIdentity.current)
+        throw new Error("Your sign-in changed. Reopen your current workspace.");
       if (!res.ok)
         throw new Error(result.error || "Changes could not be saved.");
-      if (!(await refresh())) {
+      const refreshed = await refresh();
+      if (identity !== activeIdentity.current)
+        throw new Error(
+          "Your change was saved, but your session changed. Reopen your current workspace before trying again.",
+        );
+      if (!refreshed) {
         const message =
           "Your change was saved, but balances could not be refreshed. Reload the workspace before trying again.";
         toast(message, "error");
@@ -297,6 +363,11 @@ export function FinanceProvider({
   ) {
     if (mode !== "demo" && mode !== "cloud" && mode !== "private")
       throw new Error("Your workspace is not ready.");
+    const identity = mode === "demo" ? "demo" : `${backend}:${authUserId}`;
+    if (identity !== activeIdentity.current)
+      throw new Error(
+        "Your sign-in changed. Reopen the import in your current workspace.",
+      );
     const owner = mode === "demo" ? DEMO_USER_ID : authUserId;
     const current = currentData.current;
     const checked = transactions.map((t) =>
@@ -309,9 +380,16 @@ export function FinanceProvider({
         body: JSON.stringify({ transactions: checked, inputHash, fileName }),
       });
       const result = await res.json();
+      if (identity !== activeIdentity.current)
+        throw new Error("Your sign-in changed. Reopen your current workspace.");
       if (!res.ok)
         throw new Error(result.error || "Import could not be saved.");
-      if (!(await refresh())) {
+      const refreshed = await refresh();
+      if (identity !== activeIdentity.current)
+        throw new Error(
+          "Your import was saved, but your session changed. Reopen your current workspace before trying again.",
+        );
+      if (!refreshed) {
         const message =
           "Your import was saved, but balances could not be refreshed. Reload the workspace before trying again.";
         toast(message, "error");
@@ -356,6 +434,17 @@ export function FinanceProvider({
     });
     return fresh.length;
   }
+  const identity = authUserId
+    ? `${backend}:${authUserId}`
+    : mode === "demo"
+      ? "demo"
+      : "signed-out";
+  const sessionToast = useCallback(
+    (text: string, kind?: "success" | "error" | "info") => {
+      if (activeIdentity.current === identity) toast(text, kind);
+    },
+    [identity, toast],
+  );
   return (
     <Context.Provider
       value={{
@@ -371,7 +460,7 @@ export function FinanceProvider({
         month,
         setMonth,
         today: mode === "demo" ? "2026-10-09" : localDate(),
-        toast,
+        toast: sessionToast,
         message,
         messageKind,
         dismissMessage,
@@ -381,7 +470,7 @@ export function FinanceProvider({
         commitImport,
       }}
     >
-      {children}
+      <Fragment key={identity}>{children}</Fragment>
     </Context.Provider>
   );
 }

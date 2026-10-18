@@ -7,7 +7,11 @@ import {
 import { privateRequestAllowed } from "./private-request";
 import { cloudRequestAllowed } from "./cloud-request";
 import { createSupabaseServerClient } from "./supabase/server";
-import { cloudOwnerConfigured, isCloudOwner } from "./cloud-owner";
+import {
+  cloudOwnerConfigured,
+  cloudUserAllowed,
+  isCloudOwner,
+} from "./cloud-owner";
 import { MAX_HOSTED_RECEIPT_BYTES, MAX_RECEIPT_BYTES } from "./receipt-scan";
 
 export class AIOwnerAuthenticationError extends Error {
@@ -59,7 +63,7 @@ export async function authenticateAIOwnerRequest(
       "Sign in to the owner's profile to use receipt AI.",
     );
   const { data, error } = await client.auth.getUser();
-  if (error || !data.user || !isCloudOwner(data.user))
+  if (error || !cloudUserAllowed(data.user) || !isCloudOwner(data.user))
     throw new AIOwnerAuthenticationError(
       "owner_profile_required",
       "Sign in to the owner's profile to use receipt AI.",

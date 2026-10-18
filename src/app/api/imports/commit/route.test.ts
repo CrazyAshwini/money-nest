@@ -5,47 +5,91 @@ const canonical = "https://money-nest.example";
 const preview = "https://money-nest-current.vercel.app";
 const owner = "10000000-0000-4000-8000-000000000001";
 const mocks = vi.hoisted(() => ({
-  client: vi.fn(), getUser: vi.fn(), rpc: vi.fn(),
-  privateEnabled: vi.fn(), privateImport: vi.fn(),
-  fetch: vi.fn(() => { throw new Error("Network disabled in import route tests"); }),
+  client: vi.fn(),
+  getUser: vi.fn(),
+  rpc: vi.fn(),
+  privateEnabled: vi.fn(),
+  privateImport: vi.fn(),
+  fetch: vi.fn(() => {
+    throw new Error("Network disabled in import route tests");
+  }),
 }));
 vi.mock("server-only", () => ({}));
-vi.mock("@/lib/supabase/server", () => ({ createSupabaseServerClient: mocks.client }));
-vi.mock("@/lib/private-profile-store", () => ({ privateProfileEnabled: mocks.privateEnabled }));
-vi.mock("@/lib/private-profile-http", () => ({ privateImportPOST: mocks.privateImport }));
+vi.mock("@/lib/supabase/server", () => ({
+  createSupabaseServerClient: mocks.client,
+}));
+vi.mock("@/lib/private-profile-store", () => ({
+  privateProfileEnabled: mocks.privateEnabled,
+}));
+vi.mock("@/lib/private-profile-http", () => ({
+  privateImportPOST: mocks.privateImport,
+}));
 
 import { POST } from "./route";
 
 function reviewedImport() {
   return {
-    transactions: [{
-      id: "20000000-0000-4000-8000-000000000001", userId: owner,
-      amount: "1.00", currency: "INR", kind: "expense", status: "posted",
-      occurredOn: "2026-10-14", description: "Synthetic import",
-      fromAccountId: "30000000-0000-4000-8000-000000000001", toAccountId: null,
-      sourceSystem: "csv", sourceObjectId: "synthetic-source-1",
-    }],
-    inputHash: "a".repeat(64), fileName: "synthetic.csv",
+    transactions: [
+      {
+        id: "20000000-0000-4000-8000-000000000001",
+        userId: owner,
+        amount: "1.00",
+        currency: "INR",
+        kind: "expense",
+        status: "posted",
+        occurredOn: "2026-10-14",
+        description: "Synthetic import",
+        fromAccountId: "30000000-0000-4000-8000-000000000001",
+        toAccountId: null,
+        sourceSystem: "csv",
+        sourceObjectId: "synthetic-source-1",
+      },
+    ],
+    inputHash: "a".repeat(64),
+    fileName: "synthetic.csv",
   };
 }
-function request(origin = canonical, headers: Record<string, string> = {}, body: unknown = reviewedImport()) {
+function request(
+  origin = canonical,
+  headers: Record<string, string> = {},
+  body: unknown = reviewedImport(),
+) {
   return new NextRequest(origin + "/api/imports/commit", {
     method: "POST",
-    headers: { host: new URL(origin).host, origin, "content-type": "application/json", ...headers },
+    headers: {
+      host: new URL(origin).host,
+      origin,
+      "content-type": "application/json",
+      ...headers,
+    },
     body: JSON.stringify(body),
   });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.stubEnv("FINANCE_CLOUD_ACCESS_MODE", "owner");
   vi.stubGlobal("fetch", mocks.fetch);
   vi.stubEnv("APP_URL", canonical);
   vi.stubEnv("VERCEL_URL", new URL(preview).host);
   vi.stubEnv("FINANCE_CLOUD_OWNER_EMAIL", "owner@example.test");
   vi.stubEnv("FINANCE_CLOUD_OWNER_ID", "");
   mocks.privateEnabled.mockReturnValue(false);
-  mocks.client.mockResolvedValue({ auth: { getUser: mocks.getUser }, rpc: mocks.rpc });
-  mocks.getUser.mockResolvedValue({ data: { user: { id: owner, is_anonymous: false } }, error: null });
+  mocks.client.mockResolvedValue({
+    auth: { getUser: mocks.getUser },
+    rpc: mocks.rpc,
+  });
+  mocks.getUser.mockResolvedValue({
+    data: {
+      user: {
+        id: owner,
+        is_anonymous: false,
+        email: "owner@example.test",
+        email_confirmed_at: "2026-01-01T00:00:00Z",
+      },
+    },
+    error: null,
+  });
   mocks.rpc.mockResolvedValue({ data: { count: 1 }, error: null });
 });
 afterEach(() => {
@@ -56,31 +100,46 @@ afterEach(() => {
 
 describe("reviewed cloud import request origins", () => {
   it.each([
-    ["unrelated Vercel Origin", preview, { origin: "https://other.vercel.app" }],
+    [
+      "unrelated Vercel Origin",
+      preview,
+      { origin: "https://other.vercel.app" },
+    ],
     ["mismatched Host", canonical, { host: "attacker.example" }],
-    ["cross-site Fetch Metadata", canonical, { "sec-fetch-site": "cross-site" }],
+    [
+      "cross-site Fetch Metadata",
+      canonical,
+      { "sec-fetch-site": "cross-site" },
+    ],
     ["unconfigured deployment", "https://old.vercel.app", {}],
-  ] as const)("rejects %s before authentication or reading imported records", async (_case, origin, headers) => {
-    const input = request(origin, headers);
-    expect((await POST(input)).status).toBe(403);
-    expect(input.bodyUsed).toBe(false);
-    expect(mocks.client).not.toHaveBeenCalled();
-    expect(mocks.rpc).not.toHaveBeenCalled();
-  });
+  ] as const)(
+    "rejects %s before authentication or reading imported records",
+    async (_case, origin, headers) => {
+      const input = request(origin, headers);
+      expect((await POST(input)).status).toBe(403);
+      expect(input.bodyUsed).toBe(false);
+      expect(mocks.client).not.toHaveBeenCalled();
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    },
+  );
   it("rejects a missing write Origin before authentication or parsing", async () => {
-    const input = request(); input.headers.delete("origin");
+    const input = request();
+    input.headers.delete("origin");
     expect((await POST(input)).status).toBe(403);
     expect(input.bodyUsed).toBe(false);
     expect(mocks.client).not.toHaveBeenCalled();
   });
   it.each([canonical, preview, "http://127.0.0.1:3000", "http://[::1]:3000"])(
-    "commits a reviewed owner import at its exact configured origin %s", async (origin) => {
+    "commits a reviewed owner import at its exact configured origin %s",
+    async (origin) => {
       if (origin.startsWith("http:")) vi.stubEnv("APP_URL", origin);
       const response = await POST(request(origin));
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual({ ok: true, count: 1 });
       expect(mocks.rpc).toHaveBeenCalledWith("commit_reviewed_import", {
-        p_input_hash: "a".repeat(64), p_file_name: "synthetic.csv", p_transactions: reviewedImport().transactions,
+        p_input_hash: "a".repeat(64),
+        p_file_name: "synthetic.csv",
+        p_transactions: reviewedImport().transactions,
       });
     },
   );
@@ -92,7 +151,8 @@ describe("reviewed cloud import request origins", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
   it("retains imported-record ownership validation", async () => {
-    const body = reviewedImport(); body.transactions[0].userId = "10000000-0000-4000-8000-000000000002";
+    const body = reviewedImport();
+    body.transactions[0].userId = "10000000-0000-4000-8000-000000000002";
     expect((await POST(request(canonical, {}, body))).status).toBe(403);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
@@ -104,10 +164,67 @@ describe("reviewed cloud import request origins", () => {
     mocks.privateEnabled.mockReturnValue(true);
     const delegated = NextResponse.json({ ok: true, private: true });
     mocks.privateImport.mockResolvedValue(delegated);
-    const input = request(); input.headers.delete("origin");
+    const input = request();
+    input.headers.delete("origin");
     expect(await POST(input)).toBe(delegated);
     expect(mocks.privateImport).toHaveBeenCalledWith(input);
     expect(mocks.client).not.toHaveBeenCalled();
     expect(input.bodyUsed).toBe(false);
+  });
+});
+
+describe("reviewed imports respect public workspace access", () => {
+  const other = "10000000-0000-4000-8000-000000000002";
+  it.each(["owner", "public", "invalid"])(
+    "refuses an unconfirmed session before parsing or committing in %s mode",
+    async (mode) => {
+      vi.stubEnv("FINANCE_CLOUD_ACCESS_MODE", mode);
+      mocks.getUser.mockResolvedValue({
+        data: { user: { id: owner, email: "owner@example.test" } },
+        error: null,
+      });
+      const input = request();
+      expect((await POST(input)).status).toBe(403);
+      expect(input.bodyUsed).toBe(false);
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    },
+  );
+  it("keeps another confirmed user out in owner mode", async () => {
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: other,
+          email: "other@example.test",
+          email_confirmed_at: "2026-01-01T00:00:00Z",
+        },
+      },
+      error: null,
+    });
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it("lets a confirmed public user commit only records owned by that session", async () => {
+    vi.stubEnv("FINANCE_CLOUD_ACCESS_MODE", "public");
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: other,
+          email: "other@example.test",
+          email_confirmed_at: "2026-01-01T00:00:00Z",
+        },
+      },
+      error: null,
+    });
+    const input = reviewedImport();
+    expect((await POST(request(canonical, {}, input))).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    input.transactions[0].userId = other;
+    expect((await POST(request(canonical, {}, input))).status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "commit_reviewed_import",
+      expect.objectContaining({
+        p_transactions: [expect.objectContaining({ userId: other })],
+      }),
+    );
   });
 });

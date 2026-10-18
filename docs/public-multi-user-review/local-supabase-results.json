@@ -1,0 +1,467 @@
+{
+  "scope": "Disposable loopback-only real Supabase Auth + app HTTP + PostgreSQL finance migrations + PostgREST integration; synthetic users/data only",
+  "versions": {
+    "postgres": "17-alpine",
+    "gotrue": "v2.197.0",
+    "postgrest": "v13.0.8",
+    "mailpit": "v1.31.3"
+  },
+  "checks": [
+    {
+      "name": "Local legacy operator is distinct and requires confirmation",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "Synthetic legacy operator can confirm through actual GoTrue",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "Synthetic operator baseline includes existing decimal financial rows",
+      "passed": true
+    },
+    {
+      "name": "Unauthenticated app workspace is private",
+      "passed": true,
+      "httpStatus": 401
+    },
+    {
+      "name": "Anonymous direct Data API access is denied",
+      "passed": true,
+      "httpStatus": 401
+    },
+    {
+      "name": "A: public signup succeeds despite configured separate operator",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: real captured branded confirmation email contains six-digit OTP and local fallback",
+      "passed": true
+    },
+    {
+      "name": "A: GoTrue rejects password login before email verification",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "A: pending signup has no app session or finance access",
+      "passed": true,
+      "httpStatus": 401
+    },
+    {
+      "name": "A: wrong real OTP rejected",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "A: real six-digit OTP establishes authenticated dashboard redirect",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: verification sets actual Supabase SSR session cookies",
+      "passed": true
+    },
+    {
+      "name": "A: fresh real Auth getUser confirms nonanonymous verified UUID",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: independent workspace starts empty without demo or owner records",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: consumed OTP cannot open a fresh session",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "A: actual app API saves own decimal bank opening balance",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: actual app API saves own posted expense",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: actual app API saves independent profile",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: RLS permits own document metadata",
+      "passed": true,
+      "httpStatus": 201
+    },
+    {
+      "name": "A: real PostgreSQL storage metadata policies permit own folder",
+      "passed": true,
+      "httpStatus": 201
+    },
+    {
+      "name": "B: public signup succeeds despite configured separate operator",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: real captured branded confirmation email contains six-digit OTP and local fallback",
+      "passed": true
+    },
+    {
+      "name": "B: GoTrue rejects password login before email verification",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "B: pending signup has no app session or finance access",
+      "passed": true,
+      "httpStatus": 401
+    },
+    {
+      "name": "B: wrong real OTP rejected",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "B: real six-digit OTP establishes authenticated dashboard redirect",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: verification sets actual Supabase SSR session cookies",
+      "passed": true
+    },
+    {
+      "name": "B: fresh real Auth getUser confirms nonanonymous verified UUID",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: independent workspace starts empty without demo or owner records",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: consumed OTP cannot open a fresh session",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "B: actual app API saves own decimal bank opening balance",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: actual app API saves own posted expense",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: actual app API saves independent profile",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: RLS permits own document metadata",
+      "passed": true,
+      "httpStatus": 201
+    },
+    {
+      "name": "B: real PostgreSQL storage metadata policies permit own folder",
+      "passed": true,
+      "httpStatus": 201
+    },
+    {
+      "name": "Three distinct actual Auth UUIDs preserve operator and public user identities",
+      "passed": true
+    },
+    {
+      "name": "A: app returns own account and decimal expense only",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: authenticated profile remains independent",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: forged other-user account ownership rejected by app",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "A: other account ID cannot be overwritten under own userId",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "A: other-user financial foreign key rejected by app",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "A: direct REST cannot read guessed other account ID",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: security-invoker decimal view cannot read other expense",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: direct REST cannot read other profile",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: direct REST insert with other userId denied by RLS",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "A: direct REST other-account update affects no row",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: direct REST other-expense deletion denied or affects no row",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "A: direct REST cannot move own account to another owner",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "A: real composite FK rejects cross-owner account references",
+      "passed": true,
+      "httpStatus": 409
+    },
+    {
+      "name": "A: direct ledger/commerce RPC returns only own scope",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: commerce RPC rejects forged other-user ledger payload",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "A: direct REST cannot read another user's document metadata",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: app document download rejects guessed other document ID",
+      "passed": true,
+      "httpStatus": 404
+    },
+    {
+      "name": "A: storage RLS hides other user's folder metadata",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: storage RLS rejects upload metadata into another user's folder",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "A: storage RLS prevents renaming other user's object",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: storage RLS prevents deleting other user's object",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A: storage WITH CHECK prevents moving own object into other folder",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "A: public account does not gain operator AI settings",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "A: authenticated cross-origin financial writes remain rejected",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "B: app returns own account and decimal expense only",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: authenticated profile remains independent",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: forged other-user account ownership rejected by app",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "B: other account ID cannot be overwritten under own userId",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "B: other-user financial foreign key rejected by app",
+      "passed": true,
+      "httpStatus": 400
+    },
+    {
+      "name": "B: direct REST cannot read guessed other account ID",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: security-invoker decimal view cannot read other expense",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: direct REST cannot read other profile",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: direct REST insert with other userId denied by RLS",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "B: direct REST other-account update affects no row",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: direct REST other-expense deletion denied or affects no row",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "B: direct REST cannot move own account to another owner",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "B: real composite FK rejects cross-owner account references",
+      "passed": true,
+      "httpStatus": 409
+    },
+    {
+      "name": "B: direct ledger/commerce RPC returns only own scope",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: commerce RPC rejects forged other-user ledger payload",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "B: direct REST cannot read another user's document metadata",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: app document download rejects guessed other document ID",
+      "passed": true,
+      "httpStatus": 404
+    },
+    {
+      "name": "B: storage RLS hides other user's folder metadata",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: storage RLS rejects upload metadata into another user's folder",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "B: storage RLS prevents renaming other user's object",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: storage RLS prevents deleting other user's object",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "B: storage WITH CHECK prevents moving own object into other folder",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "B: public account does not gain operator AI settings",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "B: authenticated cross-origin financial writes remain rejected",
+      "passed": true,
+      "httpStatus": 403
+    },
+    {
+      "name": "Logging out A clears only A session",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "Logged-out A cannot reload finances",
+      "passed": true,
+      "httpStatus": 401
+    },
+    {
+      "name": "B session survives A logout with own account intact",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "Existing verified password login still works for new public user",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "A login reloads own persisted account and expense",
+      "passed": true,
+      "httpStatus": 200
+    },
+    {
+      "name": "Existing synthetic operator records, profile, audits, revisions and storage metadata are byte-for-byte unchanged",
+      "passed": true
+    },
+    {
+      "name": "Cross-user attacks leave B financial decimal values unchanged",
+      "passed": true
+    }
+  ],
+  "totalChecks": 91,
+  "allPassed": true,
+  "limits": [
+    "No hosted Supabase, production auth settings, real inbox, financial record, or deployment contacted or changed.",
+    "Real Supabase Auth, actual Next routes, SSR cookies, PostgreSQL financial schema and RLS/RPCs used without provider/API/finance mocks.",
+    "Storage metadata policies execute in real PostgreSQL against minimal standard storage tables; full Supabase Storage API, object bytes, signed URLs and S3 backend are not exercised.",
+    "Production SMTP delivery, hosted migration state, hosted redirect allowlists, and deployment credentials remain unverified."
+  ],
+  "operatorPreservation": "Pre-existing synthetic operator public-table rows, revisions, audit rows, profile and storage metadata compared exactly before/after; no real operator data used."
+}

@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     const origin = cloudApplicationOrigin(request);
     if (!origin)
       return response({ error: "Email verification is not configured." }, 503);
-    // Do not reveal registration status or send mail to unrelated addresses.
+    // Do not reveal registration status; restricted mode still limits recipients.
     if (!cloudSignupConfirmationEmailAllowed(email))
       return response({ ok: true, retryAfter: OTP_RETRY_AFTER });
     try {
@@ -143,6 +143,8 @@ export async function POST(request: NextRequest) {
             429,
             OTP_RETRY_AFTER,
           );
+        if (error.code === "user_not_found")
+          return response({ ok: true, retryAfter: OTP_RETRY_AFTER });
         return response(
           { error: "We could not send a code. Please try again later." },
           503,
@@ -263,17 +265,26 @@ export async function POST(request: NextRequest) {
     if (!origin)
       return response({ error: "Password recovery is not configured." }, 503);
     if (cloudRecoveryEmailAllowed(email)) {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: new URL(
-          "/auth/callback?next=/reset-password",
-          origin,
-        ).toString(),
-      });
-      if (error)
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: new URL(
+            "/auth/callback?next=/reset-password",
+            origin,
+          ).toString(),
+        });
+        if (error && error.code !== "user_not_found")
+          return response(
+            {
+              error: "We could not send a reset email. Please try again later.",
+            },
+            429,
+          );
+      } catch {
         return response(
           { error: "We could not send a reset email. Please try again later." },
-          429,
+          503,
         );
+      }
     }
     // Keep the response the same for allowed and other email addresses.
     return response({ ok: true });
@@ -340,6 +351,16 @@ export async function POST(request: NextRequest) {
       429,
       OTP_RETRY_AFTER,
     );
+  if (
+    action === "signup" &&
+    result.error &&
+    ["email_exists", "user_already_exists"].includes(result.error.code ?? "")
+  )
+    return response({
+      ok: true,
+      needsEmailConfirmation: true,
+      retryAfter: OTP_RETRY_AFTER,
+    });
   if (result.error)
     return response(
       {
@@ -350,6 +371,24 @@ export async function POST(request: NextRequest) {
       },
       400,
     );
+  // Workspaces require the existing email-code confirmation step. A
+  // project with email confirmation disabled would return a session here;
+  // remove it instead of silently treating signup as verified onboarding.
+  if (action === "signup" && result.data.session) {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Never report successful onboarding when cookie cleanup is unavailable.
+    }
+    return response(
+      {
+        error:
+          "Email confirmation is required before signup can continue. Please contact Money Nest support.",
+        code: "email_confirmation_required",
+      },
+      503,
+    );
+  }
   if (action === "login" && !result.data.session)
     return response(
       {
@@ -359,12 +398,30 @@ export async function POST(request: NextRequest) {
       400,
     );
   if (result.data.session) {
-    const verified = await supabase.auth.getUser();
-    if (verified.error || !cloudUserAllowed(verified.data.user)) {
-      await supabase.auth.signOut();
+    try {
+      const verified = await supabase.auth.getUser();
+      const user = verified.data.user;
+      if (
+        verified.error ||
+        !cloudUserAllowed(user) ||
+        user?.id !== result.data.session.user.id ||
+        user.email?.trim().toLowerCase() !== email
+      ) {
+        await supabase.auth.signOut();
+        return response(
+          { error: "Sign-in is unavailable for this account." },
+          403,
+        );
+      }
+    } catch {
+      try {
+        await supabase.auth.signOut();
+      } catch {
+        // Authorization still fails if the Auth service cannot clear a session.
+      }
       return response(
-        { error: "Sign-in is unavailable for this account." },
-        403,
+        { error: "We could not reach the sign-in service. Please try again." },
+        503,
       );
     }
   }

@@ -1,5 +1,7 @@
 # MoneyNest email OTP signup: review and manual rollout
 
+For the separately reviewed public rollout, use [public-multi-user-rollout.md](public-multi-user-rollout.md). Its explicit server mode supersedes this historical owner-only eligibility guidance only after approval; existing OTP/template/callback requirements remain. Retain operator bindings for operator-only AI. The follow-up PR does not apply hosted settings or deploy.
+
 This change adds six-digit Supabase email confirmation to the existing owner-only email/password signup. It does not authorize public registration, deployment, hosted authentication changes, database migrations, account recreation, or changes to financial/private-profile data. The owner must approve production settings and deployment separately.
 
 ## Initial audit

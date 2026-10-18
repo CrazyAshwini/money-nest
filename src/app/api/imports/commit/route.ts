@@ -8,6 +8,7 @@ import {
 import { privateProfileEnabled } from "@/lib/private-profile-store";
 import { privateImportPOST } from "@/lib/private-profile-http";
 import { cloudRequestAllowed } from "@/lib/cloud-request";
+import { cloudUserAllowed } from "@/lib/cloud-owner";
 
 const input = z.object({
   transactions: z.array(transactionSchema).min(1).max(1000),
@@ -35,6 +36,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "Authentication required." },
       { status: 401 },
+    );
+  if (!cloudUserAllowed(user))
+    return NextResponse.json(
+      { error: "This account cannot access the workspace." },
+      { status: 403 },
     );
   if (Number(request.headers.get("content-length") || 0) > 3000000)
     return NextResponse.json(
