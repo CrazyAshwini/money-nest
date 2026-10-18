@@ -235,6 +235,7 @@ export function NestBot({
           >
             {messages.map((m) => (
               <div key={m.id} className={`nestbot-msg ${m.role}`}>
+                {m.role === "assistant" && <NestBotAvatar size={28} />}
                 <div className="nestbot-bubble">
                   <p>{m.content}</p>
 
@@ -336,6 +337,7 @@ export function NestBot({
 
             {isLoading && (
               <div className="nestbot-msg assistant">
+                <NestBotAvatar size={28} />
                 <div
                   className="nestbot-bubble"
                   role="status"

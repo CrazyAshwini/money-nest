@@ -696,7 +696,7 @@ function LoginStory() {
         </p>
         <div className="login-orbit">
           <Image
-            src="/brand/panda-money-bag.svg"
+            src="/brand/moneynest-mascot.webp"
             width={180}
             height={180}
             alt=""

@@ -8,6 +8,7 @@
 
 /* Chat Container */
 .nestbot-chat-window {
+  --nestbot-brand: #155e50;
   position: fixed;
   z-index: 151;
   top: 50%;
@@ -89,6 +90,11 @@
   background: rgb(255 255 255 / 18%);
 }
 
+.nestbot-chat-header .nestbot-icon-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+
 /* Messages Area */
 .nestbot-messages {
   flex: 1;
@@ -115,6 +121,10 @@
 
 .nestbot-msg.assistant {
   align-self: flex-start;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 100%;
 }
 
 .nestbot-bubble {
@@ -124,12 +134,14 @@
 }
 
 .nestbot-msg.user .nestbot-bubble {
-  background: var(--brand);
+  background: var(--nestbot-brand);
   color: white;
   border-bottom-right-radius: 4px;
 }
 
 .nestbot-msg.assistant .nestbot-bubble {
+  flex: 1;
+  min-width: 0;
   background: var(--panel);
   border: 1px solid var(--border);
   color: var(--text);
@@ -182,8 +194,8 @@
 
 .nestbot-quick-pill:hover {
   background: var(--brand-soft);
-  border-color: var(--brand);
-  color: var(--brand);
+  border-color: var(--nestbot-brand);
+  color: var(--nestbot-brand);
 }
 
 /* Action confirmation card */
@@ -217,7 +229,7 @@
   padding: 8px 14px;
   border: none;
   border-radius: 8px;
-  background: var(--brand);
+  background: var(--nestbot-brand);
   color: white;
   font-size: 12px;
   font-weight: 600;
@@ -274,7 +286,7 @@
 }
 
 .nestbot-input:focus {
-  border-color: var(--brand);
+  border-color: var(--nestbot-brand);
 }
 
 .nestbot-send-btn {
@@ -284,7 +296,7 @@
   height: 44px;
   border: none;
   border-radius: 50%;
-  background: var(--brand);
+  background: var(--nestbot-brand);
   color: white;
   cursor: pointer;
   flex-shrink: 0;
@@ -313,8 +325,8 @@
 }
 
 .nestbot-upload-btn:hover {
-  color: var(--brand);
-  border-color: var(--brand);
+  color: var(--nestbot-brand);
+  border-color: var(--nestbot-brand);
 }
 
 /* Keep the modal above navigation and use the available viewport with the keyboard open. */
