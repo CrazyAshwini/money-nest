@@ -14,8 +14,10 @@ import { validateWorkspaceRecord } from "@/lib/validation";
 import { resolveAppPage } from "@/lib/page-metadata";
 import type { WorkspaceData, OwnedRecord } from "@/lib/types";
 import type { UserProfile } from "@/lib/profile-types";
+import type { WorkspaceLoadingStage } from "./workspace-loading";
 
 const STORAGE_KEY = "finance-os:fictional-demo:v1";
+const WORKSPACE_LOAD_TIMEOUT_MS = 30_000;
 const emptyWorkspace = (): WorkspaceData => ({
   accounts: [],
   snapshots: [],
@@ -36,6 +38,8 @@ type Mode = "loading" | "demo" | "cloud" | "private" | "login" | "error";
 type ContextValue = {
   data: WorkspaceData;
   mode: Mode;
+  loadingStage: WorkspaceLoadingStage;
+  loadingError: string;
   backend: "local" | "supabase" | null;
   profile: UserProfile | null;
   needsSetup: boolean;
@@ -80,6 +84,9 @@ export function FinanceProvider({
   const [data, setData] = useState<WorkspaceData>(emptyWorkspace);
   const currentData = useRef(data);
   const [mode, setMode] = useState<Mode>("loading");
+  const [loadingStage, setLoadingStage] =
+    useState<WorkspaceLoadingStage>("initializing");
+  const [loadingError, setLoadingError] = useState("");
   const [month, setMonth] = useState("2026-10");
   const [message, setMessage] = useState("");
   const [messageKind, setMessageKind] = useState<"success" | "error" | "info">(
@@ -96,6 +103,12 @@ export function FinanceProvider({
   >({});
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshGeneration = useRef(0);
+  const latestRefresh = useRef<{
+    generation: number;
+    promise: Promise<boolean>;
+  } | null>(null);
+  const activeLoad = useRef<AbortController | null>(null);
+  const needsLoadingScreen = useRef(true);
   const activeIdentity = useRef("signed-out");
   const path = usePathname();
   const router = useRouter();
@@ -154,10 +167,20 @@ export function FinanceProvider({
     setBackend(null);
     setProfile(null);
   }, [allowTestFixtures, replaceData]);
-  const refresh = useCallback(async () => {
+  const requestWorkspace = useCallback(async (): Promise<boolean> => {
     // A response belongs to the refresh that requested it. A delayed response
     // from a previous session must never replace the next user's workspace.
     const generation = ++refreshGeneration.current;
+    const supersedingResult = () => {
+      const latest = latestRefresh.current;
+      return latest && latest.generation > generation ? latest.promise : false;
+    };
+    activeLoad.current?.abort();
+    if (needsLoadingScreen.current) {
+      setMode("loading");
+      setLoadingError("");
+      setLoadingStage("checking-session");
+    }
     // Browser storage cannot choose an authenticated workspace. Only an explicitly
     // isolated server permits this legacy flag for synthetic UI regression tests.
     try {
@@ -168,15 +191,30 @@ export function FinanceProvider({
         window.location.pathname !== "/login"
       ) {
         enterDemo();
+        needsLoadingScreen.current = false;
         return true;
       }
     } catch {
       // Unavailable browser storage must still fall through to server authentication.
     }
+    const controller = new AbortController();
+    activeLoad.current = controller;
+    let timedOut = false;
+    // Include response-body reading in the bound: receiving headers alone does
+    // not mean that the workspace is ready. This never changes the session.
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, WORKSPACE_LOAD_TIMEOUT_MS);
     try {
-      const res = await fetch("/api/workspace", { cache: "no-store" });
+      const res = await fetch("/api/workspace", {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (generation !== refreshGeneration.current) return supersedingResult();
+      if (needsLoadingScreen.current) setLoadingStage("loading-records");
       const result = await res.json();
-      if (generation !== refreshGeneration.current) return false;
+      if (generation !== refreshGeneration.current) return supersedingResult();
       setBackend(
         result.backend === "local"
           ? "local"
@@ -196,13 +234,15 @@ export function FinanceProvider({
       );
       if (result.configured === false) {
         clearWorkspace();
+        needsLoadingScreen.current = false;
         setMode("login");
         return false;
       }
       if (!res.ok && res.status !== 401)
-        throw new Error(result.error || "Your workspace could not be loaded.");
+        throw new Error("Workspace request failed.");
       if (!result.authenticated) {
         clearWorkspace();
+        needsLoadingScreen.current = false;
         setMode("login");
         return false;
       }
@@ -212,7 +252,8 @@ export function FinanceProvider({
         typeof result.userId !== "string" ||
         !result.userId
       )
-        throw new Error(result.error || "Your workspace could not be loaded.");
+        throw new Error("Workspace response was incomplete.");
+      if (needsLoadingScreen.current) setLoadingStage("preparing-dashboard");
       const identity = `${result.backend === "local" ? "local" : "supabase"}:${result.userId}`;
       if (identity !== activeIdentity.current) {
         dismissMessage();
@@ -222,19 +263,23 @@ export function FinanceProvider({
       replaceData(result.workspace);
       setAuthUserId(result.userId);
       setProfile(result.profile ?? null);
+      needsLoadingScreen.current = false;
       setMode(result.backend === "local" ? "private" : "cloud");
       return true;
-    } catch (error) {
-      if (generation !== refreshGeneration.current) return false;
+    } catch {
+      if (generation !== refreshGeneration.current) return supersedingResult();
       clearWorkspace();
+      needsLoadingScreen.current = true;
+      const safeMessage = timedOut
+        ? "This is taking longer than expected. Check your connection and retry."
+        : "We couldn’t load your workspace. Check your connection and try again.";
+      setLoadingError(safeMessage);
       setMode("error");
-      toast(
-        error instanceof Error
-          ? error.message
-          : "Unable to connect. Please retry.",
-        "error",
-      );
+      toast(safeMessage, "error");
       return false;
+    } finally {
+      window.clearTimeout(timeout);
+      if (activeLoad.current === controller) activeLoad.current = null;
     }
   }, [
     allowTestFixtures,
@@ -244,6 +289,14 @@ export function FinanceProvider({
     clearWorkspace,
     dismissMessage,
   ]);
+  const refresh = useCallback(() => {
+    const promise = requestWorkspace();
+    // Cancellation is not a failed balance refresh. Await the replacement so
+    // pending save/import callers check the settled session before surfacing
+    // a result belonging to the previous user.
+    latestRefresh.current = { generation: refreshGeneration.current, promise };
+    return promise;
+  }, [requestWorkspace]);
   // Hydration loads authenticated server state, or explicitly isolated test fixtures.
   useEffect(() => {
     const requests = refreshGeneration;
@@ -251,6 +304,7 @@ export function FinanceProvider({
     void refresh();
     return () => {
       requests.current++;
+      activeLoad.current?.abort();
       if (timer.current) clearTimeout(timer.current);
     };
   }, [refresh]);
@@ -450,6 +504,8 @@ export function FinanceProvider({
       value={{
         data,
         mode,
+        loadingStage,
+        loadingError,
         backend,
         profile,
         needsSetup,

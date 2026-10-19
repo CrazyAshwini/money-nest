@@ -108,7 +108,7 @@ for (const width of [320, 375, 390, 430, 768, 1024, 1440]) {
     for (const label of ["Credit cards details", "Pay Later details"]) {
       const trigger = page.getByRole("button", { name: label, exact: true });
       if (width === 390)
-        expect((await trigger.boundingBox())!.height).toBeLessThanOrEqual(260);
+        expect((await trigger.boundingBox())!.height).toBeLessThanOrEqual(320);
       await trigger.click();
       const debt = page.getByRole("dialog");
       await expect(debt).toBeVisible();
@@ -621,7 +621,7 @@ for (const item of [
     label: "partial Pay Later",
     status: "unknown",
     value: "Not available",
-    outstanding: "Not available",
+    outstanding: "At least ₹800.00",
     outstandingStatus: "partial",
     index: 2,
   },
@@ -702,6 +702,23 @@ for (const item of [
     await expect(
       faceMetric(selected, "outstanding").locator("strong"),
     ).toHaveText(item.outstanding);
+    const limits: Record<string, string> = {
+      [ids.verified]: "₹10,000.00",
+      [ids.estimated]: "₹12,000.00",
+      [ids.unknownLimit]: "Not available",
+      [ids.payVerified]: "₹6,000.00",
+      [ids.payEstimated]: "₹5,000.00",
+      [ids.partial]: "₹4,000.00",
+    };
+    await expect(selected.locator('[data-metric="limit"]')).toContainText(
+      limits[item.id],
+    );
+    const usageKnown = item.id !== ids.unknownLimit && item.id !== ids.partial;
+    await expect(
+      selected.locator(".virtual-account-face-utilization"),
+    ).toHaveAttribute("data-state", usageKnown ? "available" : "unavailable");
+    await expect(selected.getByRole("meter")).toHaveCount(usageKnown ? 1 : 0);
+    if (!usageKnown) await expect(selected).toContainText("Usage unavailable");
     expect(fixture.writes).toEqual([]);
     expect(fixture.errors).toEqual([]);
   });
@@ -780,14 +797,17 @@ for (const width of [320, 390]) {
       "₹1,76,54,321.10",
     );
     const box = (await face.boundingBox())!;
-    expect(box.width / box.height).toBeGreaterThan(1.35);
-    expect(box.width / box.height).toBeLessThan(1.7);
+    // Dense mobile fronts grow beyond the preferred physical-card ratio rather
+    // than clipping identity or shrinking required financial facts illegibly.
+    expect(box.height).toBeGreaterThanOrEqual(box.width / 1.586 - 1);
     const identity = card.locator(".virtual-account-face-bottom");
     const identityBox = (await identity.boundingBox())!;
     for (const child of [
       card.locator(".virtual-account-card-top"),
       faceMetric(card, "outstanding").locator("strong"),
       faceMetric(card, "available").locator("strong"),
+      card.locator(".virtual-account-face-limit"),
+      card.locator(".virtual-account-face-utilization"),
       identity,
     ]) {
       const childBox = (await child.boundingBox())!;
@@ -803,6 +823,18 @@ for (const width of [320, 390]) {
     for (const metric of ["outstanding", "available"] as const) {
       const metricBox = (await faceMetric(card, metric).boundingBox())!;
       expect(metricBox.y + metricBox.height).toBeLessThanOrEqual(identityBox.y);
+    }
+    const sections = [
+      card.locator(".virtual-account-card-top"),
+      card.locator(".virtual-account-face-metrics"),
+      card.locator(".virtual-account-face-limit"),
+      card.locator(".virtual-account-face-utilization"),
+      identity,
+    ];
+    for (let index = 0; index < sections.length - 1; index++) {
+      const current = (await sections[index].boundingBox())!;
+      const next = (await sections[index + 1].boundingBox())!;
+      expect(current.y + current.height).toBeLessThanOrEqual(next.y + 1);
     }
     await expect(card.locator("h3")).toHaveText(account.name);
     await expect(card.locator(".virtual-account-number")).toContainText("0222");
@@ -843,7 +875,9 @@ test("a direct availability report remains visible when separate usage is only a
     "data-status",
     "partial",
   );
-  await expect(faceMetric(card, "outstanding")).toContainText("Not available");
+  await expect(faceMetric(card, "outstanding")).toContainText(
+    "At least ₹800.00",
+  );
   await expect(card).toContainText(/minimum known|at least/i);
   await expect(card).toContainText("₹800.00");
   await expect(card).not.toContainText("₹3,200");
@@ -862,14 +896,7 @@ test("a direct availability report remains visible when separate usage is only a
     "data-selected-account-id",
     ids.partial,
   );
-  const summary = dialog.locator(".fac-summary");
-  await expect(summary.locator(".credit-availability")).toHaveAttribute(
-    "data-status",
-    "verified",
-  );
-  await expect(summary.locator(".credit-availability")).toContainText(
-    "₹300.00",
-  );
+  await expect(dialog.locator(".fac-summary")).toHaveCount(0);
   await expect(faceMetric(activeCard(carousel), "available")).toHaveAttribute(
     "data-status",
     "verified",
@@ -878,8 +905,12 @@ test("a direct availability report remains visible when separate usage is only a
     "₹300.00",
   );
   await expect(faceMetric(activeCard(carousel), "outstanding")).toContainText(
-    "Not available",
+    "At least ₹800.00",
   );
+  await expect(
+    activeCard(carousel).locator(".virtual-account-face-utilization"),
+  ).toHaveAttribute("data-state", "unavailable");
+  await expect(activeCard(carousel).getByRole("meter")).toHaveCount(0);
   expect(fixture.writes).toEqual([]);
   expect(fixture.unexpectedApis).toEqual([]);
   expect(fixture.errors).toEqual([]);
@@ -909,6 +940,16 @@ test("dashboard aggregate availability stays partial when one account is unknown
   await expect(credit.locator("#financial-credit-caption")).toHaveText(
     "3 cards",
   );
+  await expect(credit.locator(".dashboard-credit-limit")).toHaveAttribute(
+    "data-limit-status",
+    "partial",
+  );
+  await expect(credit.locator(".dashboard-credit-limit")).toContainText(
+    "₹22,000.00",
+  );
+  await expect(credit.locator(".dashboard-credit-limit")).toContainText(
+    /known limits.*partial/i,
+  );
   const payLater = page.getByRole("button", {
     name: "Pay Later details",
     exact: true,
@@ -921,6 +962,13 @@ test("dashboard aggregate availability stays partial when one account is unknown
   await expect(payLater.locator("#financial-paylater-caption")).toHaveText(
     "3 providers",
   );
+  await expect(payLater.locator(".dashboard-credit-limit")).toHaveAttribute(
+    "data-limit-status",
+    "known",
+  );
+  await expect(payLater.locator(".dashboard-credit-limit")).toContainText(
+    "₹15,000.00",
+  );
   await expect(payLater.locator("#financial-paylater-label")).toContainText(
     /known outstanding.*partial.*estimated/i,
   );
@@ -929,7 +977,7 @@ test("dashboard aggregate availability stays partial when one account is unknown
       "data-availability-status",
       "partial",
     );
-    await expect(card).not.toContainText(/total limits|usage known|smart use/i);
+    await expect(card).not.toContainText(/usage known|smart use/i);
   }
   expect(fixture.writes).toEqual([]);
   expect(fixture.unexpectedApis).toEqual([]);
@@ -955,7 +1003,17 @@ test("empty debt groups never claim verified availability", async ({
       "data-availability-status",
       "unknown",
     );
+    await expect(card.locator(".dashboard-credit-available")).toContainText(
+      name === "Pay Later details" ? "Available limit" : "Available credit",
+    );
     await expect(card).toContainText("Not available");
+    await expect(card.locator(".dashboard-credit-limit")).toHaveAttribute(
+      "data-limit-status",
+      "unknown",
+    );
+    await expect(card.locator(".dashboard-credit-limit")).toContainText(
+      "Not available",
+    );
   }
   expect(fixture.writes).toEqual([]);
   expect(fixture.unexpectedApis).toEqual([]);
@@ -1023,17 +1081,28 @@ test("outstanding verification does not certify a separate unverified usage repo
     "estimated",
   );
   await expect(faceMetric(face, "available")).toContainText("₹9,800.00");
-  const summary = dialog.locator(".fac-summary");
-  const outstandingDetail = summary
-    .locator(".fac-primary-balance")
-    .filter({ hasText: /^Current outstanding/ });
-  await expect(outstandingDetail).toContainText("₹100.00");
-  await expect(outstandingDetail).toContainText(/verified report/i);
-  const usageDetail = summary
-    .locator(".fac-primary-balance")
-    .filter({ hasText: /^Credit used/ });
-  await expect(usageDetail).toContainText("₹200.00");
-  await expect(usageDetail).not.toContainText(/verified/i);
+  await expect(dialog.locator(".fac-summary")).toHaveCount(0);
+  await expect(face.locator(".virtual-account-face-utilization")).toContainText(
+    "2%",
+  );
+  await expect(
+    face.locator(".virtual-account-face-utilization"),
+  ).not.toContainText(/verified/i);
+  await expect(face.getByRole("meter")).toHaveAttribute("aria-valuenow", "2");
+  await dialog
+    .getByRole("link", { name: "Manage account", exact: true })
+    .click();
+  const accountFacts = page.locator(".account-credit-facts");
+  await expect(
+    accountFacts
+      .locator("div")
+      .filter({ has: page.getByText("Current outstanding", { exact: true }) }),
+  ).toContainText("₹100.00");
+  await expect(
+    accountFacts
+      .locator("div")
+      .filter({ has: page.getByText("Credit used", { exact: true }) }),
+  ).toContainText("₹200.00");
   expect(fixture.writes).toEqual([]);
   expect(fixture.unexpectedApis).toEqual([]);
   expect(fixture.errors).toEqual([]);
