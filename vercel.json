@@ -9,7 +9,8 @@
       "feat/responsive-account-carousels": false,
       "feat/public-multi-user-workspaces": false,
       "feat/interactive-analytics-cards": false,
-      "feat/compact-credit-card-summaries": false
+      "feat/compact-credit-card-summaries": false,
+      "feat/final-ui-refinement": false
     }
   },
   "regions": ["icn1"]

@@ -16,6 +16,8 @@ This document records verified context. After reviewing/testing the report, the 
 
 **19 October compact debt-card follow-up:** The Analytics/card release above was subsequently approved, merged as `a3a5c03`, and deployed successfully. The owner then requested less information on dashboard Credit Card/Pay Later tiles and outstanding plus availability directly on card faces. [Follow-up verification](compact-credit-review/verification.md) records the focused presentation changes and synthetic review evidence. This new follow-up remains for review; the previous release approval does not deploy it.
 
+**19 October final UI review:** PR #8 was approved, merged as `0ca408c`, and deployed. The new [final UI audit and verification](final-ui-review/verification.md) covers the centered panda loader, honest indeterminate progress with bounded retry, Home limit totals, on-card utilization and debt dialogs focused on selected-account history. Statement/report extras remain on dedicated account pages. This new branch is for review only; do not merge or deploy it without fresh approval. Public signup activation is separate: live validation-only checks still rejected non-owner addresses, so `signupEnabled: true` must not be treated as proof of public access. Authentication settings are outside this UI task.
+
 ## Project and owner intent
 
 - Money Nest is the existing personal finance app in `CrazyAshwini/money-nest`. Keep its name, INR presentation, working features, financial semantics, and stored data.

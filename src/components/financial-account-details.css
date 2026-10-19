@@ -3,13 +3,9 @@
   color: var(--text);
 }
 
-.fac-summary,
-.fac-statements {
+.fac-summary {
   min-width: 0;
   margin-top: 20px;
-}
-
-.fac-summary {
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -44,8 +40,7 @@
   overflow-wrap: anywhere;
 }
 
-.fac-type-label,
-.fac-deposit-label {
+.fac-type-label {
   border-radius: 8px;
   background: var(--brand-soft);
   color: var(--accent);
@@ -53,16 +48,7 @@
   font-weight: 600;
   line-height: 1.5;
   padding: 4px 7px;
-}
-
-.fac-type-label {
   flex-shrink: 0;
-}
-
-.fac-deposit-label {
-  display: inline-block;
-  margin-top: 12px;
-  overflow-wrap: anywhere;
 }
 
 .fac-primary-balance {
@@ -90,19 +76,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-.fac-debt-balances,
-.fac-summary-grid,
-.fac-breakdown {
+.fac-summary-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 16px;
-}
-
-.fac-summary > .credit-availability {
-  margin-top: 16px;
-}
-
-.fac-summary-grid {
   margin: 16px 0 0;
 }
 
@@ -131,17 +108,6 @@
   color: var(--muted);
   font-size: 10px;
   font-weight: 400;
-}
-
-.fac-breakdown {
-  margin: 16px 0 12px;
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--raised);
-}
-
-.fac-utilization {
-  margin-top: 14px;
 }
 
 .fac-note {
@@ -181,42 +147,12 @@
   margin-top: 6px;
 }
 
-.fac-statement-list {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-}
-
-.fac-statement-list > li {
+.fac-account-action {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.fac-statement-list > li > div {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.fac-statement-list strong,
-.fac-statement-list > li > div > span {
-  display: block;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.fac-statement-list p {
-  margin-top: 3px;
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.fac-statement-list > li:last-child {
-  border-bottom: 0;
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }
 
 .fac-empty {
@@ -245,26 +181,22 @@
     padding: 14px;
   }
 
-  .fac-summary-grid,
-  .fac-debt-balances,
-  .fac-breakdown {
+  .fac-summary-grid {
     column-gap: 12px;
-  }
-
-  .fac-statement-list > li {
-    flex-wrap: wrap;
-    gap: 4px 12px;
   }
 }
 
 @media (min-width: 1000px) {
-  .financial-details-dialog[data-section="bank"],
-  .financial-details-dialog[data-section="credit"],
-  .financial-details-dialog[data-section="paylater"] {
+  .financial-details-dialog[data-section="bank"] {
     width: min(960px, calc(100vw - 48px));
   }
 
-  .fac-details:not(.fac-empty) {
+  .financial-details-dialog[data-section="credit"],
+  .financial-details-dialog[data-section="paylater"] {
+    width: min(620px, calc(100vw - 48px));
+  }
+
+  .fac-details[data-kind="bank"]:not(.fac-empty) {
     display: grid;
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
     align-items: start;
@@ -275,8 +207,7 @@
     margin-top: 0;
   }
 
-  .fac-details > .recent-account-transactions,
-  .fac-details > .fac-statements {
+  .fac-details[data-kind="bank"] > .recent-account-transactions {
     grid-column: 1 / -1;
     margin-top: 0;
   }

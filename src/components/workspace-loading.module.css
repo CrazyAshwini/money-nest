@@ -1,0 +1,186 @@
+.screen {
+  min-height: 100svh;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  justify-items: center;
+  padding: max(24px, env(safe-area-inset-top)) 24px
+    max(28px, env(safe-area-inset-bottom));
+  background: #f7fbf8;
+  color: #263139;
+  text-align: center;
+}
+
+.content {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(100%, 340px);
+  padding-block: 20px 30px;
+}
+
+.wordmark {
+  margin: 18px 0 0;
+  color: #263139;
+  font-size: clamp(28px, 7vw, 32px);
+  line-height: 1.2;
+  font-weight: 760;
+  letter-spacing: -1px;
+}
+
+.wordmark span {
+  color: #24814c;
+  font-weight: 820;
+}
+
+.message {
+  margin: 24px 0 0;
+  min-height: 2.8em;
+  max-width: 260px;
+  color: #52675d;
+  font-size: 15px;
+  line-height: 1.4;
+  text-wrap: balance;
+}
+
+.progress {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.progressLabel {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 650;
+  color: #155e50;
+}
+
+.track {
+  height: 6px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dfebe3;
+}
+
+.indicator {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: inherit;
+  background: #168063;
+  animation: progress 1.5s ease-in-out infinite alternate;
+}
+
+.quotes {
+  width: 100%;
+  margin-top: 30px;
+}
+
+.quote {
+  min-height: 3em;
+  margin: 0;
+  color: #52675d;
+  font-size: 15px;
+  line-height: 1.5;
+  text-wrap: balance;
+  animation: reveal 250ms ease-out;
+}
+
+.dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 8px;
+  margin-top: 18px;
+}
+
+.dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #c8d8ce;
+}
+
+.dots .activeDot {
+  background: #168063;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  max-width: 100%;
+  color: #6b7c72;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.footer svg {
+  flex-shrink: 0;
+}
+
+.failure {
+  margin-top: 28px;
+}
+
+.failure h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.3;
+}
+
+.failure p {
+  margin: 14px 0 24px;
+  color: #52675d;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.failure button {
+  min-width: 132px;
+  min-height: 44px;
+}
+
+@keyframes progress {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(164%);
+  }
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indicator,
+  .quote {
+    animation: none;
+  }
+
+  .indicator {
+    width: 100%;
+    background: repeating-linear-gradient(
+      90deg,
+      #168063 0,
+      #168063 14px,
+      #c8e2d5 14px,
+      #c8e2d5 20px
+    );
+  }
+}

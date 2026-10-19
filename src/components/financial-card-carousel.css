@@ -171,13 +171,26 @@
 .virtual-account-card[data-kind="wallet"] .virtual-account-face {
   background: #40513b;
 }
+.virtual-account-card:is([data-kind="credit_card"], [data-kind="pay_later"]) {
+  container-type: inline-size;
+}
 .virtual-account-card[data-archived="true"] .virtual-account-face {
   background: #59615c;
 }
 .virtual-account-card:is([data-kind="credit_card"], [data-kind="pay_later"])
   .virtual-account-face {
+  /* Preserve the preferred card proportion, letting dense narrow fronts grow
+     naturally so identity, suffix and financial facts never get clipped. */
+  aspect-ratio: auto;
+  min-height: calc(100cqw / 1.586);
   gap: 12px;
   padding: 18px;
+}
+.virtual-account-face-finances {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
 }
 .virtual-account-face-metrics {
   display: grid;
@@ -218,6 +231,64 @@
 .virtual-account-face-metrics [data-status="partial"] strong {
   font-size: clamp(13px, 3.5vw, 18px);
   font-weight: 600;
+}
+.virtual-account-face-limit {
+  margin: 0;
+  border-top: 1px solid #ffffff26;
+  padding-top: 10px;
+}
+.virtual-account-face-limit > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.virtual-account-face-limit dt {
+  color: #d4e1da;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.virtual-account-face-limit dd {
+  min-width: 0;
+  margin: 0;
+  color: #fff;
+  font-size: clamp(13px, 3.6vw, 16px);
+  font-weight: 650;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.virtual-account-face-utilization {
+  min-width: 0;
+  color: #d4e1da;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.virtual-account-face-utilization > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.virtual-account-face-utilization strong {
+  color: #fff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.virtual-account-face-utilization .usage-meter {
+  height: 5px;
+  margin: 6px 0 0;
+  background: #ffffff30;
+}
+.virtual-account-face-utilization .usage-meter > span {
+  background: #7ed9b1;
+}
+.virtual-account-face-utilization .usage-meter[data-band="medium"] > span {
+  background: #f0ce7b;
+}
+.virtual-account-face-utilization .usage-meter[data-band="high"] > span {
+  background: #f3aa9d;
 }
 .virtual-account-card-top {
   display: flex;
@@ -284,7 +355,8 @@
   overflow: hidden;
 }
 .virtual-account-card:is([data-kind="credit_card"], [data-kind="pay_later"])
-  .virtual-account-identity h3 {
+  .virtual-account-identity
+  h3 {
   font-size: clamp(13px, 3.5vw, 16px);
 }
 .virtual-account-number {
@@ -323,7 +395,6 @@
 }
 .virtual-account-credit-facts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 .virtual-account-credit-facts > div {
@@ -366,21 +437,6 @@
 .virtual-account-bill b {
   color: var(--text);
   font-weight: 650;
-}
-.virtual-account-utilization {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.virtual-account-utilization .usage-meter {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-}
-.virtual-account-utilization > span {
-  font-size: 10px;
-  color: var(--muted);
-  flex-shrink: 0;
 }
 .virtual-account-card-footer {
   display: flex;
@@ -523,6 +579,12 @@
   }
   .virtual-account-face-metrics {
     gap: 10px;
+  }
+  .virtual-account-face-finances {
+    gap: 9px;
+  }
+  .virtual-account-face-limit {
+    padding-top: 8px;
   }
   .virtual-account-face-metrics dt,
   .virtual-account-face-metrics small {

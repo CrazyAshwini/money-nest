@@ -46,8 +46,14 @@ async function openDetails(page: Page, section: (typeof sections)[number]) {
 
 function value(details: Locator, label: string) {
   if (label === "Available credit" || label === "Available limit")
-    return details.locator(".fac-summary > .credit-availability > strong");
-  if (["Current balance", "Current outstanding", "Credit used"].includes(label))
+    return selectedCard(details.locator(".financial-carousel")).locator(
+      '[data-metric="available"] strong',
+    );
+  if (label === "Current outstanding")
+    return selectedCard(details.locator(".financial-carousel")).locator(
+      '[data-metric="outstanding"] strong',
+    );
+  if (label === "Current balance")
     return details
       .locator(".fac-summary .fac-primary-balance")
       .filter({ hasText: new RegExp(`^${label}`) })
@@ -150,11 +156,15 @@ for (const width of [320, 390, 768, 1440]) {
         await expect(value(details, "Current outstanding")).toContainText(
           formatMoney(usage.currentOutstanding!),
         );
-        await expect(value(details, "Credit used")).toContainText(
-          formatMoney(usage.used!),
-        );
         await expect(value(details, "Available credit")).toContainText(
           formatMoney(usage.availableCredit!),
+        );
+        await expect(
+          selectedCard(carousel).locator('[data-metric="limit"]'),
+        ).toContainText(formatMoney(usage.totalCreditLimit!));
+        await expect(selectedCard(carousel).getByRole("meter")).toHaveAttribute(
+          "aria-valuenow",
+          String(usage.progress),
         );
       }
       const mark = selectedCard(carousel).getByRole("img", {
@@ -162,23 +172,34 @@ for (const width of [320, 390, 768, 1440]) {
       });
       await expect(mark).toBeVisible();
       await expect(mark).not.toHaveText("");
-      await expect(details.locator(".fac-summary")).toBeVisible();
       await expect(details.locator("details")).toHaveCount(0);
       const cardBox = (await selectedCard(carousel).boundingBox())!;
       const carouselBox = (await carousel.boundingBox())!;
-      const summaryBox = (await details.locator(".fac-summary").boundingBox())!;
       const recentBox = (await details
         .locator(".recent-account-transactions")
         .boundingBox())!;
-      if (width >= 1000) {
-        expect(carouselBox.x + carouselBox.width).toBeLessThanOrEqual(
-          summaryBox.x,
-        );
-        expect(carouselBox.y).toBeLessThan(recentBox.y);
+      if (section.kind === "bank") {
+        await expect(details.locator(".fac-summary")).toBeVisible();
+        const summaryBox = (await details
+          .locator(".fac-summary")
+          .boundingBox())!;
+        if (width >= 1000) {
+          expect(carouselBox.x + carouselBox.width).toBeLessThanOrEqual(
+            summaryBox.x,
+          );
+        } else {
+          expect(cardBox.y).toBeLessThan(summaryBox.y);
+        }
+        expect(summaryBox.y).toBeLessThan(recentBox.y);
       } else {
-        expect(cardBox.y).toBeLessThan(summaryBox.y);
+        await expect(
+          details.locator(".fac-summary, .fac-statements"),
+        ).toHaveCount(0);
+        await expect(
+          details.locator(".financial-carousel + .recent-account-transactions"),
+        ).toHaveCount(1);
       }
-      expect(summaryBox.y).toBeLessThan(recentBox.y);
+      expect(carouselBox.y).toBeLessThan(recentBox.y);
       await noOverflow(page);
       await noDialogOverflow(dialog);
       await page.screenshot({
@@ -395,7 +416,7 @@ test("unknown bank balances and bill-only Pay Later exposure stay explicitly unk
   await page.keyboard.press("End");
   await selected(payLater.details, f.partial);
   await expect(value(payLater.details, "Current outstanding")).toContainText(
-    /unknown|not reported|not available/i,
+    /At least ₹170\.00/i,
   );
   expect(
     accountUsage(ownedWorkspace(f.data), f.partial.id, TODAY).available,
@@ -499,7 +520,7 @@ test("long names, large signed balances and masked identifiers fit a narrow shee
   unchanged();
 });
 
-test("Pay Later due amount and next due date agree across unpaid, paid and future payments", async ({
+test("Pay Later dedicated account retains statement due amounts and popup keeps future payments out", async ({
   page,
 }) => {
   const f = fixture();
@@ -560,12 +581,23 @@ test("Pay Later due amount and next due date agree across unpaid, paid and futur
   const unchanged = await mockWorkspace(page, f.data);
   await dashboard(page);
   const { details } = await openDetails(page, sections[2]);
-  await expect(value(details, "Recorded amount due")).toContainText("₹120.00");
-  await expect(value(details, "Next payment due")).toContainText(
-    /20 Sep|Sep 20/,
-  );
+  await expect(details.locator(".fac-summary")).toHaveCount(0);
   await expect(
     details.locator(".recent-account-transactions"),
   ).not.toContainText("Future older-statement payment");
+  await details
+    .getByRole("link", { name: "Manage account", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Statement history", exact: true }),
+  ).toBeVisible();
+  const statementDetails = page.locator(".account-statement-details");
+  await expect(statementDetails).toBeVisible();
+  await expect(
+    statementDetails.locator('[data-field="recorded-amount-due"] dd'),
+  ).toContainText("₹120.00");
+  await expect(
+    statementDetails.locator('[data-field="next-payment-due"] dd'),
+  ).toContainText(/20 Sep|Sep 20/);
   unchanged();
 });

@@ -1,5 +1,5 @@
 "use client";
-import { AppBrandIcon, BrandLockup } from "./brand-lockup";
+import { BrandLockup } from "./brand-lockup";
 import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -11,7 +11,7 @@ import {
   MobileBottomBar,
 } from "./workspace-navigation";
 import { resolveAppPage } from "@/lib/page-metadata";
-import { LoadingSkeleton } from "./loading-skeleton";
+import { WorkspaceLoading } from "./workspace-loading";
 import "./shell.css";
 import "./fintech-screens.css";
 import "./dashboard.css";
@@ -19,6 +19,8 @@ import "./workspace-layout.css";
 import { FinancialCardCarousel } from "./financial-card-carousel";
 import { VirtualAccountCard } from "./virtual-account-card";
 import { CreditAvailability } from "./credit-availability";
+import { AccountStatementDetails } from "./account-statement-details";
+import { accountDetailView } from "@/lib/account-detail-view";
 import {
   analyticsCategoryColor as categoryColor,
   type SpendingMode,
@@ -56,7 +58,6 @@ import {
   Download,
   SlidersHorizontal,
   Check,
-  LoaderCircle,
   Clock,
   X,
   Info,
@@ -182,6 +183,8 @@ export function FinanceApp() {
     messageKind,
     dismissMessage,
     refresh,
+    loadingStage,
+    loadingError,
   } = useFinance();
   const pathname = usePathname();
   const queryKey = useSearchParams().toString();
@@ -205,40 +208,24 @@ export function FinanceApp() {
     desktop.addEventListener("change", closeOnDesktop);
     return () => desktop.removeEventListener("change", closeOnDesktop);
   }, []);
-  if (mode === "loading")
-    return (
-      <main className="loading" role="status" aria-busy="true">
-        <AppBrandIcon />
-        <LoaderCircle className="spin" aria-hidden="true" />
-        <p>Opening your finance workspace…</p>
-        <div className="workspace-skeleton">
-          <LoadingSkeleton />
-        </div>
-      </main>
-    );
+  if (mode === "loading") return <WorkspaceLoading stage={loadingStage} />;
   if (page === "reset-password") return <PasswordRecoveryPage />;
+  if (mode === "error")
+    return (
+      <WorkspaceLoading
+        stage={loadingStage}
+        error={loadingError}
+        onRetry={() => {
+          setEditor(null);
+          setMobile(false);
+          void refresh();
+        }}
+      />
+    );
   if (page === "login" || mode === "login")
     return backend === "local" ? <PrivateProfilePage /> : <LoginPage />;
   if (page === "profile" && mode !== "private" && mode !== "cloud")
     return <PrivateProfilePage />;
-  if (mode === "error")
-    return (
-      <main className="loading">
-        <h1>Unable to load your workspace</h1>
-        <p role="alert">{message}</p>
-        <button
-          className="button primary"
-          onClick={() => {
-            setEditor(null);
-            setMobile(false);
-            void refresh();
-          }}
-        >
-          Try again
-        </button>
-        <Link href="/login">Return to sign in</Link>
-      </main>
-    );
   const title =
     page === "analytics"
       ? "Analytics"
@@ -614,7 +601,7 @@ function FinancialCard({
   section: FinancialSection;
   title: string;
   value: string;
-  valueLabel?: string;
+  valueLabel?: ReactNode;
   caption: string;
   icon: ReactNode;
   active: boolean;
@@ -666,25 +653,63 @@ function creditStatusLabel(status: string, estimatedCount: number) {
         ? "Verified reports"
         : "";
 }
-function DashboardCreditAvailability({ summary }: { summary: UsageSummary }) {
+function DashboardCreditAvailability({
+  summary,
+  payLater = false,
+}: {
+  summary: UsageSummary;
+  payLater?: boolean;
+}) {
   const availability = getAggregateCreditAvailability(summary.rows);
   const status = creditStatusLabel(
     availability.status,
     availability.estimatedCount,
   );
+  const label = payLater ? "Available limit" : "Available credit";
   return (
     <span
       className="dashboard-credit-available"
       data-availability-status={availability.status}
     >
       <span>
-        {availability.status === "partial" ? "Known available" : "Available"}
+        {availability.status === "partial"
+          ? `Known ${label.toLowerCase()}`
+          : label}
         {status && <small>{status}</small>}
       </span>
       <b>
         {availability.amount === null
           ? "Not available"
           : formatMoney(availability.amount)}
+      </b>
+    </span>
+  );
+}
+function DashboardCreditLimit({
+  summary,
+  payLater = false,
+}: {
+  summary: UsageSummary;
+  payLater?: boolean;
+}) {
+  const partial = summary.knownLimitCount < summary.count;
+  const status = !summary.knownLimitCount
+    ? "unknown"
+    : partial
+      ? "partial"
+      : "known";
+  return (
+    <span className="dashboard-credit-limit" data-limit-status={status}>
+      <span>
+        {payLater ? "Total approved limit" : "Total credit limit"}
+        {partial && summary.knownLimitCount > 0 && (
+          <small>Known limits · Partial</small>
+        )}
+      </span>
+      <b>
+        {summary.knownLimitCount
+          ? formatMoney(summary.limitTotal)
+          : "Not available"}
       </b>
     </span>
   );
@@ -704,7 +729,12 @@ function Kpis() {
   const payLaterOutstanding = getAggregateCreditOutstanding(payLater.rows);
   const outstandingLabel = (value: typeof creditOutstanding) => {
     const status = creditStatusLabel(value.status, value.estimatedCount);
-    return `${value.label}${status ? ` · ${status}` : ""}`;
+    return (
+      <>
+        {value.label}
+        {status && <small>{status}</small>}
+      </>
+    );
   };
   const accountCount = (
     summary: UsageSummary,
@@ -745,7 +775,7 @@ function Kpis() {
         />
         <FinancialCard
           section="spending"
-          title={`Spending · ${monthLabel(month)}`}
+          title={`Gross spending · ${monthLabel(month)}`}
           value={formatMoney(metrics.monthSpending)}
           caption={
             metrics.expenseCount + " posted expenses · " + monthLabel(month)
@@ -769,6 +799,7 @@ function Kpis() {
           onOpen={show}
         >
           <DashboardCreditAvailability summary={credit} />
+          <DashboardCreditLimit summary={credit} />
         </FinancialCard>
         <FinancialCard
           section="paylater"
@@ -784,7 +815,8 @@ function Kpis() {
           active={details?.section === "paylater"}
           onOpen={show}
         >
-          <DashboardCreditAvailability summary={payLater} />
+          <DashboardCreditAvailability summary={payLater} payLater />
+          <DashboardCreditLimit summary={payLater} payLater />
         </FinancialCard>
       </section>
       {details && (
@@ -1137,7 +1169,7 @@ function AccountsPage({
   onlyPayLater?: boolean;
   open: Open;
 }) {
-  const { data, today, userId } = useFinance();
+  const { data, today, userId, month } = useFinance();
   const router = useRouter();
   const [kind, setKind] = useState("all");
   const [accountTxnTab, setAccountTxnTab] = useState<
@@ -1317,6 +1349,11 @@ function AccountsPage({
               </div>
             </dl>
           </section>
+        )}
+        {usage && (
+          <AccountStatementDetails
+            view={accountDetailView(data, a, month, today)}
+          />
         )}
         <div className="three-stats">
           <Stat

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { existsSync } from "node:fs";
 
 export default defineConfig({
   testDir: "./tests",
@@ -21,6 +22,11 @@ export default defineConfig({
     trace: "off",
     screenshot: "only-on-failure",
     video: "off",
+    launchOptions: {
+      executablePath:
+        process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ||
+        (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined),
+    },
   },
   webServer: {
     command:

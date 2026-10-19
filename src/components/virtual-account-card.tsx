@@ -22,7 +22,7 @@ const kindLabels = {
   pay_later: "Pay Later",
 };
 
-/** A safe front with primary debt balances and optional supporting facts below. */
+/** A safe front with selector-backed debt facts and optional statement context. */
 export function VirtualAccountCard({
   account,
   data,
@@ -41,6 +41,16 @@ export function VirtualAccountCard({
   const usage = debt ? accountUsage(data, account.id, today) : null;
   const availability = usage ? getCreditAvailabilityPresentation(usage) : null;
   const outstandingStatus = usage?.balanceVerificationStatus ?? "unconfirmed";
+  const showKnownExposure =
+    usage?.currentOutstanding === null &&
+    usage.provenance === "partial" &&
+    usage.used !== null;
+  const showUtilization =
+    usage &&
+    usage.creditUtilization !== null &&
+    usage.percentage !== null &&
+    usage.provenance !== "partial" &&
+    usage.provenance !== "unknown";
   const institution = account.institution.trim() || "Institution not available";
   const initials =
     account.institution
@@ -77,55 +87,108 @@ export function VirtualAccountCard({
           <ArrowUpRight size={17} aria-hidden="true" />
         </div>
         {usage && availability && (
-          <dl className="virtual-account-face-metrics">
-            <div data-metric="outstanding" data-status={outstandingStatus}>
-              <dt>Outstanding</dt>
-              <dd>
-                <strong>
-                  {usage.currentOutstanding === null
-                    ? "Not available"
-                    : formatMoney(usage.currentOutstanding)}
-                </strong>
-                <small>
-                  {outstandingStatus === "verified"
-                    ? "Verified report"
-                    : outstandingStatus === "estimated"
-                      ? "Estimated"
-                      : outstandingStatus === "partial"
-                        ? "Partial data"
+          <div className="virtual-account-face-finances">
+            <dl className="virtual-account-face-metrics">
+              <div data-metric="outstanding" data-status={outstandingStatus}>
+                <dt>{showKnownExposure ? "Known exposure" : "Outstanding"}</dt>
+                <dd>
+                  <strong>
+                    {showKnownExposure
+                      ? `At least ${formatMoney(usage.used!)}`
+                      : usage.currentOutstanding === null
+                        ? "Not available"
+                        : formatMoney(usage.currentOutstanding)}
+                  </strong>
+                  <small>
+                    {showKnownExposure
+                      ? "Partial · Bills only"
+                      : outstandingStatus === "verified"
+                        ? "Verified report"
+                        : outstandingStatus === "estimated"
+                          ? "Estimated"
+                          : outstandingStatus === "partial"
+                            ? "Partial data"
+                            : "Not reported"}
+                  </small>
+                </dd>
+              </div>
+              <div data-metric="available" data-status={availability.status}>
+                <dt>
+                  {account.kind === "pay_later"
+                    ? "Available limit"
+                    : "Available credit"}
+                </dt>
+                <dd>
+                  <strong>
+                    {availability.amount === null
+                      ? "Not available"
+                      : formatMoney(availability.amount)}
+                  </strong>
+                  <small>
+                    {availability.status === "verified"
+                      ? "Verified report"
+                      : availability.status === "estimated"
+                        ? "Estimated"
                         : "Not reported"}
-                </small>
-              </dd>
-            </div>
-            <div data-metric="available" data-status={availability.status}>
-              <dt>
-                {account.kind === "pay_later"
-                  ? "Available limit"
-                  : "Available credit"}
-              </dt>
-              <dd>
-                <strong>
-                  {availability.amount === null
+                  </small>
+                </dd>
+              </div>
+            </dl>
+            <dl className="virtual-account-face-limit">
+              <div
+                data-metric="limit"
+                data-status={
+                  usage.totalCreditLimit === null ? "unknown" : "known"
+                }
+              >
+                <dt>
+                  {account.kind === "pay_later"
+                    ? "Total approved limit"
+                    : "Total credit limit"}
+                </dt>
+                <dd>
+                  {usage.totalCreditLimit === null
                     ? "Not available"
-                    : formatMoney(availability.amount)}
-                </strong>
-                <small>
-                  {availability.status === "verified"
-                    ? "Verified report"
-                    : availability.status === "estimated"
-                      ? "Estimated"
-                      : "Not reported"}
-                </small>
-              </dd>
+                    : formatMoney(usage.totalCreditLimit)}
+                </dd>
+              </div>
+            </dl>
+            <div
+              className="virtual-account-face-utilization"
+              data-state={showUtilization ? "available" : "unavailable"}
+              data-provenance={usage.provenance}
+            >
+              {showUtilization ? (
+                <>
+                  <div>
+                    <span>
+                      {usage.provenance === "reported"
+                        ? "Utilization"
+                        : "Estimated utilization"}
+                    </span>
+                    <strong>
+                      {formatUsagePercentage(usage.creditUtilization)}
+                    </strong>
+                  </div>
+                  <UsageMeter
+                    {...usage}
+                    label={`${account.name} utilization`}
+                  />
+                </>
+              ) : (
+                <span>Usage unavailable</span>
+              )}
             </div>
-          </dl>
+          </div>
         )}
         <div className="virtual-account-face-bottom">
           <div className="virtual-account-identity">
-            <span>
-              {kindLabels[account.kind]}
-              {!account.active ? " · Archived" : ""}
-            </span>
+            {(!debt || !account.active) && (
+              <span>
+                {kindLabels[account.kind]}
+                {!account.active ? " · Archived" : ""}
+              </span>
+            )}
             <h3>{account.name}</h3>
           </div>
           <span className="virtual-account-number">
@@ -157,28 +220,7 @@ export function VirtualAccountCard({
                     </small>
                   )}
                 </div>
-                <div>
-                  <span>
-                    {account.kind === "pay_later"
-                      ? "Approved limit"
-                      : "Credit limit"}
-                  </span>
-                  <strong>
-                    {usage.limit === null
-                      ? "Not set"
-                      : formatMoney(usage.limit)}
-                  </strong>
-                </div>
               </div>
-              {usage.percentage !== null && usage.provenance !== "partial" && (
-                <div className="virtual-account-utilization">
-                  <UsageMeter
-                    {...usage}
-                    label={`${account.name} utilization`}
-                  />
-                  <span>{formatUsagePercentage(usage.percentage)} used</span>
-                </div>
-              )}
               {usage.latestBill && (
                 <div className="virtual-account-bill">
                   <span>
