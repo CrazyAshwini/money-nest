@@ -18,6 +18,8 @@ This document records verified context. After reviewing/testing the report, the 
 
 **19 October final UI review:** PR #8 was approved, merged as `0ca408c`, and deployed. The new [final UI audit and verification](final-ui-review/verification.md) covers the centered panda loader, honest indeterminate progress with bounded retry, Home limit totals, on-card utilization and debt dialogs focused on selected-account history. Statement/report extras remain on dedicated account pages. This new branch is for review only; do not merge or deploy it without fresh approval. Public signup activation is separate: live validation-only checks still rejected non-owner addresses, so `signupEnabled: true` must not be treated as proof of public access. Authentication settings are outside this UI task.
 
+**19 October Transactions review:** The final UI work above was subsequently approved and released in PR #9, merged as `93fb8ed`. The new [Transactions audit and verification](transactions-review/verification.md) starts from that release and introduces current-month URL filters, the exact All → Expenses → Transfer → Income order, Category → Platform history filtering, expandable search, contextual posted totals, and compact date-grouped/mobile and table/desktop history. Account/date/status drilldowns remain supported without an account dropdown. Stored data, entry categories, canonical calculations, authentication and RLS are unchanged. This new Transactions branch is for review only; do not merge or deploy without approval.
+
 ## Project and owner intent
 
 - Money Nest is the existing personal finance app in `CrazyAshwini/money-nest`. Keep its name, INR presentation, working features, financial semantics, and stored data.

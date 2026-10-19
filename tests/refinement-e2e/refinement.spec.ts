@@ -418,12 +418,17 @@ for (const item of kinds) {
       );
       await expect(
         page.getByLabel("Filter account", { exact: true }),
-      ).toHaveValue(syntheticId(item.offset + 1));
-      const rows = page.locator(".transaction-table tbody tr");
+      ).toHaveCount(0);
+      await expect(page.locator(".txw-link-context")).toContainText(
+        `Synthetic ${item.label} 2`,
+      );
+      const rows = page.locator(".txw-history [data-transaction-id]:visible");
       await expect(rows).toHaveCount(7);
       for (const row of await rows.all())
         await expect(row).toContainText(`Synthetic ${item.label} 2 activity`);
-      await expect(page.getByLabel("All dates", { exact: true })).toBeChecked();
+      await expect(
+        page.getByRole("combobox", { name: "Transaction month", exact: true }),
+      ).toHaveValue("__all__");
       expect(fixture.writes).toEqual([]);
       expect(fixture.errors).toEqual([]);
       expect(fixture.unexpectedApis).toEqual([]);
