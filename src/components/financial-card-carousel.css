@@ -96,8 +96,8 @@
   outline-offset: 3px;
 }
 .virtual-account-card:focus-visible {
-  outline-color: #b4f5d7;
-  outline-offset: -5px;
+  outline-color: var(--accent);
+  outline-offset: -3px;
 }
 .financial-carousel-empty {
   padding: 20px 0;
@@ -116,79 +116,137 @@
   border: 0;
 }
 .virtual-account-card {
-  display: flex;
-  flex-direction: column;
-  gap: 13px;
+  display: block;
   width: min(100%, 32rem);
   min-width: 0;
-  min-height: 204px;
   margin-inline: auto;
-  padding: 20px;
-  border-radius: 20px;
-  color: #f7fffb;
-  background:
-    radial-gradient(ellipse at 95% 0%, #258b73 0, transparent 62%), #104a3c;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel);
+  color: var(--text);
   text-decoration: none;
   overflow: hidden;
 }
-.virtual-account-card[data-kind="credit_card"] {
-  background:
-    radial-gradient(ellipse at 95% 0%, #426d83 0, transparent 62%), #1b3545;
+/* These neutral Money Nest fronts are a fallback, not reproductions of issuer
+   products. Use approved issuer art only when an actual verified asset exists. */
+.virtual-account-face {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  aspect-ratio: 1.586;
+  padding: 20px;
+  overflow: hidden;
+  color: #f5faf7;
+  background: #19473a;
+  border-radius: 17px;
 }
-.virtual-account-card[data-kind="pay_later"] {
-  background:
-    radial-gradient(ellipse at 95% 0%, #75628d 0, transparent 62%), #41314f;
+.virtual-account-face::before,
+.virtual-account-face::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 85%;
+  aspect-ratio: 1;
+  border: 1px solid #ffffff12;
+  border-radius: 50%;
+  pointer-events: none;
 }
-.virtual-account-card[data-kind="wallet"] {
-  background:
-    radial-gradient(ellipse at 95% 0%, #687e4e 0, transparent 62%), #354831;
+.virtual-account-face::before {
+  top: -78%;
+  right: -36%;
+}
+.virtual-account-face::after {
+  bottom: -83%;
+  left: -24%;
+}
+.virtual-account-card[data-kind="credit_card"] .virtual-account-face {
+  background: #263e47;
+}
+.virtual-account-card[data-kind="pay_later"] .virtual-account-face {
+  background: #3d4542;
+}
+.virtual-account-card[data-kind="wallet"] .virtual-account-face {
+  background: #40513b;
+}
+.virtual-account-card[data-archived="true"] .virtual-account-face {
+  background: #59615c;
 }
 .virtual-account-card-top {
   display: flex;
-  gap: 11px;
+  gap: 10px;
   align-items: center;
   min-width: 0;
 }
 .virtual-account-card-top > svg {
   flex-shrink: 0;
   margin-left: auto;
+  opacity: 0.8;
 }
 .virtual-account-initials {
   display: inline-flex;
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  background: #ffffff;
-  color: #164f41;
-  border-radius: 11px;
-  font-weight: 800;
-  font-size: 14px;
+  background: #ffffffee;
+  color: #244638;
+  border-radius: 9px;
+  font-weight: 750;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+}
+.virtual-account-issuer {
+  min-width: 0;
+  color: #edf5f0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.virtual-account-face-bottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
 }
 .virtual-account-identity {
   min-width: 0;
 }
 .virtual-account-identity > span {
   display: block;
-  color: #d3e8e0;
+  color: #d4e1da;
   font-size: 10px;
-  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
 .virtual-account-identity h3 {
-  margin: 3px 0 0;
-  font-size: 16px;
+  margin: 5px 0 0;
+  font-size: clamp(14px, 3.9vw, 18px);
+  font-weight: 600;
   line-height: 1.3;
   color: inherit;
   overflow-wrap: anywhere;
 }
-.virtual-account-type {
+.virtual-account-number {
+  flex-shrink: 0;
+  max-width: 50%;
+  color: #f4f7f5;
+  font-size: 14px;
+  line-height: 1.7;
+  letter-spacing: 1.5px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.virtual-account-facts {
   display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  color: #d3e8e0;
-  font-size: 11px;
+  flex-direction: column;
+  gap: 13px;
+  padding: 16px;
 }
 .virtual-account-primary {
   min-width: 0;
@@ -196,34 +254,61 @@
 .virtual-account-primary > span {
   display: block;
   font-size: 11px;
-  color: #d3e8e0;
+  color: var(--muted);
 }
 .virtual-account-primary strong {
   display: block;
-  font-size: clamp(21px, 5.7vw, 30px);
+  font-size: clamp(23px, 5.7vw, 30px);
   line-height: 1.25;
   letter-spacing: -0.7px;
-  margin-top: 4px;
+  margin-top: 5px;
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
-.virtual-account-credit-facts,
+.virtual-account-credit-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.virtual-account-credit-facts > div {
+  min-width: 0;
+}
+.virtual-account-credit-facts > div > span,
+.virtual-account-credit-facts small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.virtual-account-credit-facts strong {
+  display: block;
+  color: var(--text);
+  margin-top: 4px;
+  font-size: clamp(14px, 3.7vw, 18px);
+  line-height: 1.4;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.virtual-account-credit-facts small {
+  font-size: 9px;
+  margin-top: 2px;
+}
 .virtual-account-bill {
   display: flex;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 5px 14px;
-  color: #d3e8e0;
+  gap: 5px 12px;
+  color: var(--muted);
   font-size: 10px;
+  line-height: 1.5;
 }
-.virtual-account-credit-facts span,
 .virtual-account-bill span {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.virtual-account-credit-facts b,
 .virtual-account-bill b {
-  color: #fff;
+  color: var(--text);
   font-weight: 650;
 }
 .virtual-account-utilization {
@@ -234,15 +319,11 @@
 .virtual-account-utilization .usage-meter {
   flex: 1;
   min-width: 0;
-  background: #ffffff38;
   margin: 0;
-}
-.virtual-account-utilization .usage-meter > span {
-  background: #a9e8cf;
 }
 .virtual-account-utilization > span {
   font-size: 10px;
-  color: #d3e8e0;
+  color: var(--muted);
   flex-shrink: 0;
 }
 .virtual-account-card-footer {
@@ -251,11 +332,11 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: auto;
-  padding-top: 9px;
-  border-top: 1px solid #ffffff25;
-  color: #d3e8e0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
   font-size: 10px;
+  line-height: 1.5;
 }
 .virtual-account-card-footer > span:last-child {
   display: inline-flex;
@@ -367,15 +448,16 @@
   padding-block: 15px;
 }
 @media (max-width: 360px) {
-  .virtual-account-card {
+  .virtual-account-face {
     padding: 16px;
-    gap: 11px;
+    gap: 18px;
   }
-  .virtual-account-identity h3 {
-    font-size: 14px;
+  .virtual-account-facts {
+    padding: 13px;
   }
-  .virtual-account-primary strong {
-    font-size: 23px;
+  .virtual-account-number {
+    font-size: 12px;
+    letter-spacing: 1px;
   }
   .recent-account-direction {
     display: none;

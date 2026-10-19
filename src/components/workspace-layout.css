@@ -26,6 +26,80 @@
 .workspace-context-actions:empty {
   display: none;
 }
+.workspace-analytics-heading .analytics-mode-select {
+  min-height: 44px;
+  width: auto;
+  max-width: 100%;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+.account-credit-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  align-items: stretch;
+  gap: 16px;
+  margin: 16px 0;
+}
+.account-credit-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+}
+.account-credit-facts dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.account-credit-facts dd {
+  margin: 5px 0 0;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.dashboard-credit-totals {
+  display: grid;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  width: 100%;
+}
+.dashboard-credit-totals > span {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  width: 100%;
+}
+.dashboard-credit-totals b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.dashboard-credit-totals small {
+  font-size: 10px;
+  line-height: 1.5;
+}
+.transaction-analytics-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.transaction-analytics-filters > span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.transaction-analytics-filters button {
+  min-height: 44px;
+}
 .workspace-context-actions .month-picker {
   min-width: 0;
 }
@@ -209,6 +283,22 @@
   }
 }
 @media (max-width: 760px) {
+  .workspace-analytics-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .workspace-analytics-heading .workspace-context-actions {
+    display: contents;
+  }
+  .workspace-analytics-heading .analytics-mode-select {
+    grid-column: 1 / -1;
+    width: 100%;
+    font-size: 16px;
+  }
+  .account-credit-overview {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
   .workspace-secondary-header .mobile-menu {
     display: flex;
   }

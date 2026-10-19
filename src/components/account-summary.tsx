@@ -5,12 +5,18 @@ import Link from "next/link";
 import { ChevronDown } from "lucide-react";
 import type { ReactNode } from "react";
 import { accountBalance, formatDate, formatMoney } from "@/lib/finance";
+import { maskedAccountSuffix } from "@/lib/account-presentation";
+import {
+  getAggregateCreditAvailability,
+  getCreditAvailabilityPresentation,
+} from "@/lib/credit-presentation";
 import {
   usageBandLabels,
   type UsageBand,
   type UsageSummary,
 } from "@/lib/usage";
 import type { Account, WorkspaceData } from "@/lib/types";
+import "./credit-availability.css";
 
 export function AccountBreakdown({
   count,
@@ -88,7 +94,9 @@ function AccountIdentity({ account }: { account: Account }) {
       <span>{account.name}</span>
       <small>
         {account.institution}
-        {account.maskedSuffix ? ` · ••${account.maskedSuffix}` : ""}
+        {account.maskedSuffix
+          ? ` · ${maskedAccountSuffix(account.maskedSuffix)}`
+          : ""}
       </small>
     </div>
   );
@@ -148,8 +156,23 @@ export function CreditUsageSummary({
   summary: UsageSummary;
   kind: "credit_card" | "pay_later";
 }) {
+  const availability = getAggregateCreditAvailability(summary.rows);
   return (
     <div className="stat-credit-summary">
+      <div
+        className="stat-availability-total"
+        data-status={availability.status}
+      >
+        <div className="stat-limit-total">
+          <span>{availability.label}</span>
+          <b>
+            {availability.amount === null
+              ? "Not available"
+              : formatMoney(availability.amount)}
+          </b>
+        </div>
+        <small>{availability.note}</small>
+      </div>
       <div className="stat-limit-total">
         <span>
           {summary.knownLimitCount === summary.count && summary.count > 0
@@ -183,42 +206,56 @@ export function CreditUsageSummary({
           role="group"
           aria-label="Usage by account"
         >
-          {summary.rows.map((row) => (
-            <Link
-              key={row.account.id}
-              href={`/accounts/${row.account.id}`}
-              className="stat-account-row credit-summary-row"
-            >
-              <AccountIdentity account={row.account} />
-              <div className="stat-account-amount">
-                <b>
-                  {row.used === null
-                    ? "Usage unknown"
-                    : `${row.provenance === "partial" ? "At least " : ""}${formatMoney(row.used)}`}
-                </b>
-                <span>
-                  Limit{" "}
-                  {row.limit === null
-                    ? "not set"
-                    : formatMoney(row.limit, { decimals: 0 })}
-                </span>
-              </div>
-              <UsageMeter {...row} label={`${row.account.name} usage`} />
-              <div className="usage-level">
-                <span>
-                  {row.percentage === null
-                    ? "Percentage unknown"
-                    : `${formatUsagePercentage(row.percentage)} used`}
-                </span>
-                <UsageStatus band={row.band} />
-              </div>
-              <small className="stat-account-source">
-                {row.asOf
-                  ? `${row.provenance === "partial" ? "Known bill only" : row.provenance === "inferred" ? "From available credit" : row.provenance === "reported" ? "Reported" : "Usage not reported"} · ${formatDate(row.asOf)}`
-                  : "Snapshot needed"}
-              </small>
-            </Link>
-          ))}
+          {summary.rows.map((row) => {
+            const available = getCreditAvailabilityPresentation(row);
+            return (
+              <Link
+                key={row.account.id}
+                href={`/accounts/${row.account.id}`}
+                className="stat-account-row credit-summary-row"
+              >
+                <AccountIdentity account={row.account} />
+                <div
+                  className="stat-account-availability"
+                  data-status={available.status}
+                >
+                  <span>{available.label}</span>
+                  <b>
+                    {available.amount === null
+                      ? "Not available"
+                      : formatMoney(available.amount)}
+                  </b>
+                </div>
+                <div className="stat-account-amount">
+                  <b>
+                    {row.used === null
+                      ? "Usage unknown"
+                      : `${row.provenance === "partial" ? "At least " : ""}${formatMoney(row.used)}`}
+                  </b>
+                  <span>
+                    Limit{" "}
+                    {row.limit === null
+                      ? "not set"
+                      : formatMoney(row.limit, { decimals: 0 })}
+                  </span>
+                </div>
+                <UsageMeter {...row} label={`${row.account.name} usage`} />
+                <div className="usage-level">
+                  <span>
+                    {row.percentage === null
+                      ? "Percentage unknown"
+                      : `${formatUsagePercentage(row.percentage)} used`}
+                  </span>
+                  <UsageStatus band={row.band} />
+                </div>
+                <small className="stat-account-source">
+                  {row.asOf
+                    ? `${row.provenance === "partial" ? "Known bill only" : row.provenance === "inferred" ? "From available credit" : row.provenance === "reported" ? "Reported" : row.provenance === "calculated" ? "Calculated" : "Usage not reported"} · ${formatDate(row.asOf)}`
+                    : "Snapshot needed"}
+                </small>
+              </Link>
+            );
+          })}
           {summary.count === 0 && (
             <Link href="/accounts" className="stat-account-empty">
               Add an account to track usage
