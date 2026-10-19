@@ -10,7 +10,8 @@
       "feat/public-multi-user-workspaces": false,
       "feat/interactive-analytics-cards": false,
       "feat/compact-credit-card-summaries": false,
-      "feat/final-ui-refinement": false
+      "feat/final-ui-refinement": false,
+      "feat/transactions-activity": false
     }
   },
   "regions": ["icn1"]

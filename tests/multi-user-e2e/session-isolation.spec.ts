@@ -224,6 +224,13 @@ async function expectOnlyUser(page: Page, user: User) {
   ).toBe(true);
 }
 
+function historyRecord(page: Page, user: User) {
+  return page.getByRole("button", {
+    name: `View transaction: ${users[user].marker}`,
+    exact: true,
+  });
+}
+
 async function signOut(page: Page) {
   await page.locator('.desktop-sidebar a.user-card[href="/profile"]').click();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
@@ -251,7 +258,7 @@ test("A logout then B six-digit signup opens an empty private workspace, includi
 }) => {
   const state = await mockSessions(page, { initialUser: "A", emptyB: true });
   await page.goto("/transactions?period=all");
-  await expect(page.getByText(users.A.marker, { exact: true })).toBeVisible();
+  await expect(historyRecord(page, "A")).toBeVisible();
   await signOut(page);
   await expect(page.locator("body")).not.toContainText(users.A.marker);
   await page
@@ -278,7 +285,7 @@ test("A logout then B six-digit signup opens an empty private workspace, includi
   await page.locator('.desktop-sidebar a[href="/transactions"]').click();
   await expect(
     page.getByRole("heading", {
-      name: "No transactions here yet",
+      name: "No matching transactions",
       exact: true,
     }),
   ).toBeVisible();
@@ -291,7 +298,7 @@ test("A logout then B six-digit signup opens an empty private workspace, includi
   await expectOnlyUser(page, "B");
   await expect(
     page.getByRole("heading", {
-      name: "No transactions here yet",
+      name: "No matching transactions",
       exact: true,
     }),
   ).toBeVisible();
@@ -305,19 +312,19 @@ test("existing A and B keep independent records through same-browser logout/logi
 }) => {
   const state = await mockSessions(page, { initialUser: "A" });
   await page.goto("/transactions?period=all");
-  await expect(page.getByText(users.A.marker, { exact: true })).toBeVisible();
+  await expect(historyRecord(page, "A")).toBeVisible();
   await signOut(page);
   await signIn(page, "B");
   await page.locator('.desktop-sidebar a[href="/transactions"]').click();
-  await expect(page.getByText(users.B.marker, { exact: true })).toBeVisible();
+  await expect(historyRecord(page, "B")).toBeVisible();
   await expectOnlyUser(page, "B");
   await page.reload();
-  await expect(page.getByText(users.B.marker, { exact: true })).toBeVisible();
+  await expect(historyRecord(page, "B")).toBeVisible();
   await expectOnlyUser(page, "B");
   await signOut(page);
   await signIn(page, "A");
   await page.locator('.desktop-sidebar a[href="/transactions"]').click();
-  await expect(page.getByText(users.A.marker, { exact: true })).toBeVisible();
+  await expect(historyRecord(page, "A")).toBeVisible();
   await expectOnlyUser(page, "A");
   expect(state.unexpectedWrites).toEqual([]);
 });
@@ -354,14 +361,14 @@ test("an older delayed A refresh cannot replace a newer B session", async ({
 }) => {
   const state = await mockSessions(page, { initialUser: "A" });
   await page.goto("/transactions?period=all");
-  await expect(page.getByText(users.A.marker, { exact: true })).toBeVisible();
+  await expect(historyRecord(page, "A")).toBeVisible();
   state.holdNextRead = true;
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect.poll(() => state.heldReads).toBe(1);
   state.user = "B";
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expectOnlyUser(page, "B");
-  await expect(page.getByText(users.B.marker, { exact: true })).toBeVisible();
+  await expect(historyRecord(page, "B")).toBeVisible();
   state.releaseHeld();
   await expect.poll(() => state.completedHeldReads).toBe(1);
   await page.evaluate(
@@ -371,8 +378,8 @@ test("an older delayed A refresh cannot replace a newer B session", async ({
       ),
   );
   await expectOnlyUser(page, "B");
-  await expect(page.getByText(users.B.marker, { exact: true })).toBeVisible();
-  await expect(page.getByText(users.A.marker, { exact: true })).toHaveCount(0);
+  await expect(historyRecord(page, "B")).toBeVisible();
+  await expect(historyRecord(page, "A")).toHaveCount(0);
   expect(state.unexpectedWrites).toEqual([]);
 });
 
@@ -428,7 +435,7 @@ test("A's completed save and delayed refresh do not expose data or a stale error
   expect(state.unexpectedWrites).toEqual([]);
 });
 
-test("B never finds A's account through a copied deep link or ledger filter", async ({
+test("B never finds A's account through a copied deep link or category history filter", async ({
   page,
 }) => {
   const state = await mockSessions(page, { initialUser: "B" });
@@ -440,12 +447,30 @@ test("B never finds A's account through a copied deep link or ledger filter", as
   await page.goto(`/transactions?account=${users.A.accountId}&period=all`);
   await expect(
     page.getByRole("heading", {
-      name: "No transactions here yet",
+      name: "No matching transactions",
       exact: true,
     }),
   ).toBeVisible();
   await expectOnlyUser(page, "B");
-  await expect(page.getByText(users.B.marker, { exact: true })).toHaveCount(0);
+  await expect(historyRecord(page, "B")).toHaveCount(0);
+  await expect(page.getByRole("combobox", { name: /account/i })).toHaveCount(0);
+  const linkedFilters = page.getByLabel("Linked transaction filters");
+  await expect(linkedFilters).toContainText("Unavailable account");
+  await expect(page.getByLabel("Transaction activity summary")).toContainText(
+    "0 transactions",
+  );
+  await page
+    .getByRole("button", { name: "Clear linked filters", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Category", exact: true })
+    .selectOption("Food");
+  await expect(historyRecord(page, "B")).toBeVisible();
+  await expect(historyRecord(page, "A")).toHaveCount(0);
+  await expect(page.getByLabel("Transaction activity summary")).toContainText(
+    "₹67.89",
+  );
+  await expectOnlyUser(page, "B");
   expect(state.unexpectedWrites).toEqual([]);
 });
 

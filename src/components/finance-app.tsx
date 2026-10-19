@@ -1,8 +1,8 @@
 "use client";
 import { BrandLockup } from "./brand-lockup";
-import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
@@ -21,10 +21,7 @@ import { VirtualAccountCard } from "./virtual-account-card";
 import { CreditAvailability } from "./credit-availability";
 import { AccountStatementDetails } from "./account-statement-details";
 import { accountDetailView } from "@/lib/account-detail-view";
-import {
-  analyticsCategoryColor as categoryColor,
-  type SpendingMode,
-} from "@/lib/analytics-presentation";
+import { type SpendingMode } from "@/lib/analytics-presentation";
 import {
   getAggregateCreditAvailability,
   getAggregateCreditOutstanding,
@@ -42,43 +39,28 @@ import {
   ArrowLeftRight,
   CreditCard,
   CalendarDays,
-  Upload,
   ChartNoAxesCombined,
   Bell,
   Search,
   Plus,
   ArrowUpRight,
-  ArrowDownLeft,
   ChevronRight,
   ChevronLeft,
   Wallet,
   MoreHorizontal,
   Menu,
   ShieldCheck,
-  Download,
-  SlidersHorizontal,
   Check,
   Clock,
   X,
   Info,
   CircleAlert,
-  Utensils,
-  ShoppingBasket,
-  ShoppingBag,
-  NotebookPen,
-  Car,
-  GraduationCap,
-  House,
-  Zap,
-  HeartPulse,
-  Plane,
-  Clapperboard,
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { NestBot } from "./nestbot";
 import { PrivateProfilePage } from "./private-profile";
 import { OrdersPage } from "./orders-page";
-import { Section, Stat, Badge, Empty, downloadFile } from "./ui";
+import { Section, Stat, Badge, Empty } from "./ui";
 import { formatUsagePercentage } from "./account-summary";
 import { RecordEditor, type EditorState } from "./editors";
 import {
@@ -103,74 +85,16 @@ import {
   transactionDirection,
   transactionNotionUrl,
 } from "@/lib/finance";
-import { exportTransactionsCsv } from "@/lib/imports";
+import { TransactionsWorkspace } from "./transactions-workspace";
+import { TransactionIcon, transactionIconColor } from "./transaction-icon";
 import { accountUsage, usageSummary } from "@/lib/usage";
-import {
-  TRANSACTION_KINDS,
-  type Account,
-  type Bill,
-  type Transaction,
-  type TransactionKind,
-} from "@/lib/types";
+import { type Account, type Bill, type Transaction } from "@/lib/types";
 const AnalyticsWorkspace = dynamic(
   () =>
     import("./analytics-workspace").then((module) => module.AnalyticsWorkspace),
   { ssr: false, loading: () => <div role="status">Loading analytics…</div> },
 );
 const kindLabel = (s: string) => s.replaceAll("_", " ");
-const categoryIcons = {
-  food: Utensils,
-  groceries: ShoppingBasket,
-  shopping: ShoppingBag,
-  stationery: NotebookPen,
-  transport: Car,
-  education: GraduationCap,
-  housing: House,
-  utilities: Zap,
-  subscriptions: CalendarDays,
-  health: HeartPulse,
-  travel: Plane,
-  entertainment: Clapperboard,
-};
-function CategoryIcon({
-  category,
-  size = 18,
-}: {
-  category: string;
-  size?: number;
-}) {
-  const key = category.trim().toLowerCase();
-  const Icon = Object.hasOwn(categoryIcons, key)
-    ? categoryIcons[key as keyof typeof categoryIcons]
-    : Wallet;
-  return <Icon size={size} aria-hidden="true" />;
-}
-function TransactionIcon({ transaction }: { transaction: Transaction }) {
-  const direction = transactionDirection(transaction);
-  return direction === "incoming" ? (
-    <ArrowDownLeft size={18} aria-hidden="true" />
-  ) : direction === "between_accounts" ||
-    transaction.kind === "transfer" ||
-    transaction.kind === "bill_payment" ? (
-    <ArrowLeftRight size={18} aria-hidden="true" />
-  ) : direction === "unknown" ? (
-    <Info size={18} aria-hidden="true" />
-  ) : (
-    <CategoryIcon category={transaction.category || "Other"} />
-  );
-}
-function transactionIconColor(transaction: Transaction) {
-  const direction = transactionDirection(transaction);
-  return direction === "incoming"
-    ? "#087f62"
-    : direction === "between_accounts" ||
-        transaction.kind === "transfer" ||
-        transaction.kind === "bill_payment"
-      ? "#6474c5"
-      : direction === "unknown"
-        ? "#697a73"
-        : categoryColor(transaction.category || "Other");
-}
 export function FinanceApp() {
   const {
     mode,
@@ -187,9 +111,6 @@ export function FinanceApp() {
     loadingError,
   } = useFinance();
   const pathname = usePathname();
-  const queryKey = useSearchParams().toString();
-  const [newTransactionKind, setNewTransactionKind] =
-    useState<TransactionKind>("expense");
   const [analyticsMode, setAnalyticsMode] = useState<SpendingMode>("gross");
   const [botOpen, setBotOpen] = useState(false);
   const [botTrigger, setBotTrigger] = useState<HTMLButtonElement | null>(null);
@@ -395,7 +316,7 @@ export function FinanceApp() {
             tabIndex={-1}
             className={`main-content ${page === "dashboard" ? "home-content" : ""}`}
           >
-            {page !== "dashboard" && !detailPage && (
+            {page !== "dashboard" && page !== "transactions" && !detailPage && (
               <div
                 className={`workspace-page-heading ${page === "profile" ? "workspace-profile-heading" : page === "analytics" ? "workspace-analytics-heading" : ""}`}
               >
@@ -435,24 +356,6 @@ export function FinanceApp() {
                       <Plus size={16} aria-hidden="true" /> Add account
                     </button>
                   )}
-                  {page === "transactions" && (
-                    <>
-                      <Link href="/imports" className="button">
-                        <Upload size={16} aria-hidden="true" /> Import
-                      </Link>
-                      <button
-                        className="button primary desktop-transaction-add"
-                        onClick={() =>
-                          open({
-                            type: "transaction",
-                            kind: newTransactionKind,
-                          })
-                        }
-                      >
-                        <Plus size={16} aria-hidden="true" /> Add transaction
-                      </button>
-                    </>
-                  )}
                 </div>
               </div>
             )}
@@ -461,11 +364,10 @@ export function FinanceApp() {
             ) : page === "accounts" ? (
               <AccountsPage id={id} open={open} />
             ) : page === "transactions" ? (
-              <TransactionsPage
-                key={queryKey}
-                open={open}
-                newKind={newTransactionKind}
-                onNewKindChange={setNewTransactionKind}
+              <TransactionsWorkspace
+                onEdit={(transaction) =>
+                  open({ type: "transaction", record: transaction })
+                }
               />
             ) : page === "bills" ? (
               <BillsPage id={id} open={open} />
@@ -546,7 +448,7 @@ export function FinanceApp() {
           onAdd={() =>
             open({
               type: "transaction",
-              kind: page === "transactions" ? newTransactionKind : "expense",
+              kind: "expense",
             })
           }
         />
@@ -1587,274 +1489,6 @@ function AccountGroup({
   );
 }
 
-function TransactionsPage({
-  open,
-  newKind,
-  onNewKindChange,
-}: {
-  open: Open;
-  newKind: TransactionKind;
-  onNewKindChange: (kind: TransactionKind) => void;
-}) {
-  const { data, month, toast, userId } = useFinance();
-  const searchParams = useSearchParams();
-  const [search, setSearch] = useState("");
-  const [kind, setKind] = useState(() => {
-    const requested = searchParams.get("kind");
-    return requested && TRANSACTION_KINDS.includes(requested as TransactionKind)
-      ? requested
-      : "all";
-  });
-  const [account, setAccount] = useState(searchParams.get("account") || "all");
-  const [review, setReview] = useState(false);
-  const [allMonths, setAllMonths] = useState(
-    searchParams.get("period") === "all" && !searchParams.get("month"),
-  );
-  const [dateFilter, setDateFilter] = useState(searchParams.get("date") || "");
-  const [monthFilter, setMonthFilter] = useState(
-    searchParams.get("month") || "",
-  );
-  const [categoryFilter, setCategoryFilter] = useState(
-    searchParams.get("category") || "",
-  );
-  const [statusFilter, setStatusFilter] = useState(
-    searchParams.get("status") || "",
-  );
-  const validDate =
-    /^\d{4}-\d{2}-\d{2}$/.test(dateFilter) &&
-    !Number.isNaN(Date.parse(`${dateFilter}T00:00:00Z`)) &&
-    new Date(`${dateFilter}T00:00:00Z`).toISOString().slice(0, 10) ===
-      dateFilter;
-  const validMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(monthFilter);
-  const selectedMonth = monthFilter || month;
-  const periodLabel = dateFilter
-    ? validDate
-      ? formatDate(dateFilter, { year: "numeric" })
-      : "Unavailable date"
-    : monthFilter
-      ? validMonth
-        ? monthLabel(monthFilter)
-        : "Unavailable month"
-      : allMonths
-        ? "All dates"
-        : monthLabel(month);
-  const hasAnalyticsFilters = Boolean(
-    dateFilter || monthFilter || categoryFilter || statusFilter,
-  );
-  const txs = useMemo(
-    () =>
-      data.transactions
-        .filter(
-          (t) =>
-            t.userId === userId &&
-            (dateFilter
-              ? validDate && t.occurredOn === dateFilter
-              : monthFilter
-                ? validMonth &&
-                  Boolean(t.occurredOn?.startsWith(`${monthFilter}-`))
-                : allMonths ||
-                  !t.occurredOn ||
-                  t.occurredOn.startsWith(`${selectedMonth}-`)) &&
-            (!categoryFilter || (t.category || "Other") === categoryFilter) &&
-            (!statusFilter || t.status === statusFilter) &&
-            (kind === "all" || t.kind === kind) &&
-            (account === "all" ||
-              t.fromAccountId === account ||
-              t.toAccountId === account) &&
-            (!review || t.status === "pending_review") &&
-            `${t.description} ${t.merchant || ""} ${t.platform || ""} ${t.notes || ""} ${t.externalReference || ""} ${t.category || ""}`
-              .toLowerCase()
-              .includes(search.toLowerCase()),
-        )
-        .sort(
-          (a, b) =>
-            (b.occurredOn || "").localeCompare(a.occurredOn || "") ||
-            a.id.localeCompare(b.id),
-        ),
-    [
-      data.transactions,
-      userId,
-      dateFilter,
-      validDate,
-      monthFilter,
-      validMonth,
-      selectedMonth,
-      allMonths,
-      categoryFilter,
-      statusFilter,
-      kind,
-      account,
-      review,
-      search,
-    ],
-  );
-  return (
-    <>
-      <div className="list-toolbar">
-        <div className="search-input">
-          <Search size={16} />
-          <input
-            aria-label="Search transactions"
-            placeholder="Search description, category, reference…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <button
-          className="button"
-          onClick={() => {
-            downloadFile(
-              exportTransactionsCsv(txs, data.accounts),
-              `transactions-${month}.csv`,
-            );
-            toast("Filtered transactions exported.");
-          }}
-        >
-          <Download size={15} />
-          Export CSV
-        </button>
-      </div>
-      <div className="transaction-type-tools">
-        <label>
-          New transaction type
-          <select
-            aria-label="New transaction type"
-            value={newKind}
-            onChange={(event) =>
-              onNewKindChange(event.target.value as TransactionKind)
-            }
-          >
-            {TRANSACTION_KINDS.map((type) => (
-              <option key={type} value={type}>
-                {kindLabel(type)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span className="transaction-period">
-          {periodLabel}
-          <Link href="/analytics">Change month</Link>
-        </span>
-      </div>
-      {hasAnalyticsFilters && (
-        <div
-          className="transaction-analytics-filters"
-          aria-label="Analytics filters"
-        >
-          {dateFilter && <span>Date: {periodLabel}</span>}
-          {monthFilter && !dateFilter && (
-            <span>
-              Month:{" "}
-              {validMonth ? monthLabel(monthFilter) : "Unavailable month"}
-            </span>
-          )}
-          {categoryFilter && <span>Category: {categoryFilter}</span>}
-          {statusFilter && <span>Status: {kindLabel(statusFilter)}</span>}
-          <button
-            type="button"
-            className="text-link"
-            onClick={() => {
-              setDateFilter("");
-              setMonthFilter("");
-              setCategoryFilter("");
-              setStatusFilter("");
-            }}
-          >
-            Clear analytics filters
-          </button>
-        </div>
-      )}
-      <div className="filter-chips-row" role="group" aria-label="Quick filters">
-        {[
-          { id: "all", label: "All" },
-          { id: "expense", label: "Expenses" },
-          { id: "income", label: "Income" },
-          { id: "transfer", label: "Transfers" },
-        ].map((chip) => (
-          <button
-            key={chip.id}
-            type="button"
-            className={`filter-chip ${kind === chip.id ? "active" : ""}`}
-            aria-pressed={kind === chip.id}
-            onClick={() => setKind(chip.id)}
-          >
-            {chip.label}
-          </button>
-        ))}
-      </div>
-      <div className="filter-row">
-        <SlidersHorizontal size={16} />
-        <select
-          aria-label="Transaction type"
-          value={kind}
-          onChange={(e) => setKind(e.target.value)}
-        >
-          <option value="all">All types</option>
-          {[
-            "expense",
-            "income",
-            "transfer",
-            "bill_payment",
-            "refund",
-            "adjustment",
-          ].map((k) => (
-            <option key={k} value={k}>
-              {kindLabel(k)}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Filter account"
-          value={account}
-          onChange={(e) => setAccount(e.target.value)}
-        >
-          <option value="all">All accounts</option>
-          {account !== "all" &&
-            !data.accounts.some((item) => item.id === account) && (
-              <option value={account}>Unavailable account</option>
-            )}
-          {data.accounts
-            .filter((a) => a.userId === userId)
-            .map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-        </select>
-        <label className="check-row">
-          <input
-            type="checkbox"
-            checked={review}
-            onChange={(e) => setReview(e.target.checked)}
-          />
-          Needs review
-        </label>
-        <label className="check-row">
-          <input
-            type="checkbox"
-            checked={allMonths}
-            disabled={Boolean(dateFilter)}
-            onChange={(e) => {
-              setAllMonths(e.target.checked);
-              if (e.target.checked) setMonthFilter("");
-            }}
-          />
-          All dates
-        </label>
-        <span>{txs.length} transactions</span>
-      </div>
-      <Section
-        title={review ? "Needs review" : "Your ledger"}
-        subtitle={`${periodLabel} · Transfers and repayments are not purchase expenses.`}
-      >
-        <TransactionTable
-          transactions={txs}
-          onEdit={(t) => open({ type: "transaction", record: t })}
-        />
-      </Section>
-    </>
-  );
-}
 function BillsPage({ id, open }: { id?: string; open: Open }) {
   const { data, today } = useFinance();
   const [status, setStatus] = useState("all");

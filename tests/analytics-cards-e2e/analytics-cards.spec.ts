@@ -185,12 +185,12 @@ test("daily gross popup uses exact ISO date and excludes pending, voided and mov
   expect(url.pathname).toBe("/transactions");
   expect(url.searchParams.get("date")).toBe("2026-10-09");
   expect(url.searchParams.get("period")).toBe("all");
-  await expect(page.locator(".transaction-table")).toContainText("QA Lunch");
-  await expect(page.locator(".transaction-table")).not.toContainText(
+  await expect(page.locator(".txw-desktop-history")).toContainText("QA Cafe");
+  await expect(page.locator(".txw-desktop-history")).not.toContainText(
     "QA Metro",
   );
   // The saved-date ledger is intentionally complete, including pending and movement records.
-  await expect(page.locator(".transaction-table")).toContainText(
+  await expect(page.locator(".txw-desktop-history")).toContainText(
     "QA Pending excluded",
   );
   expect(fixture.writes).toEqual([]);
@@ -563,8 +563,8 @@ test("category links apply exact category, posted expense and selected-month fil
     month: "2026-10",
   }))
     expect(url.searchParams.get(key)).toBe(value);
-  await expect(page.locator(".transaction-table")).toContainText("QA Lunch");
-  await expect(page.locator(".transaction-table")).not.toContainText(
+  await expect(page.locator(".txw-desktop-history")).toContainText("QA Cafe");
+  await expect(page.locator(".txw-desktop-history")).not.toContainText(
     "QA Supplies",
   );
   expect(fixture.writes).toEqual([]);
@@ -1287,10 +1287,10 @@ for (const filter of [
       analyticsFixture(),
     );
     await page.goto(`/transactions?${filter.query}&period=all`);
-    await expect(page.locator(".transaction-table")).toHaveCount(0);
+    await expect(page.locator(".txw-desktop-history")).toHaveCount(0);
     await expect(
       page.getByRole("heading", {
-        name: "No transactions here yet",
+        name: "No matching transactions",
         exact: true,
       }),
     ).toBeVisible();
@@ -1302,9 +1302,9 @@ for (const filter of [
       `Unavailable ${filter.label}`,
     );
     await page
-      .getByRole("button", { name: "Clear analytics filters", exact: true })
+      .getByRole("button", { name: "Clear linked filters", exact: true })
       .click();
-    await expect(page.locator(".transaction-table")).toContainText("QA Lunch");
+    await expect(page.locator(".txw-desktop-history")).toContainText("QA Cafe");
     expect(fixture.writes).toEqual([]);
     expect(fixture.unexpectedApis).toEqual([]);
     expect(fixture.errors).toEqual([]);
@@ -1327,19 +1327,30 @@ test("category month links override the global month without broadening the ledg
   await page.goto(
     "/transactions?category=Shopping&kind=expense&status=posted&month=2026-09&period=month",
   );
-  await expect(page.locator(".transaction-table")).toContainText(
+  await expect(page.locator(".txw-desktop-history")).toContainText(
     "QA September equipment",
   );
-  await expect(page.locator(".transaction-table")).not.toContainText(
+  await expect(page.locator(".txw-desktop-history")).not.toContainText(
     "QA Supplies",
   );
-  await expect(page.locator(".transaction-table")).not.toContainText(
+  await expect(page.locator(".txw-desktop-history")).not.toContainText(
     "QA Pending excluded",
   );
   await page
-    .getByRole("button", { name: "Clear analytics filters", exact: true })
-    .click();
-  await expect(page.locator(".transaction-table")).toContainText("QA Supplies");
+    .getByRole("combobox", { name: "Category", exact: true })
+    .selectOption("");
+  await expect(
+    page.getByRole("combobox", { name: "Transaction month", exact: true }),
+  ).toHaveValue("2026-09");
+  await expect(page.locator(".txw-desktop-history")).toContainText(
+    "QA September equipment",
+  );
+  await page
+    .getByRole("combobox", { name: "Transaction month", exact: true })
+    .selectOption("2026-10");
+  await expect(page.locator(".txw-desktop-history")).toContainText(
+    "QA Supplies",
+  );
   expect(fixture.writes).toEqual([]);
   expect(fixture.unexpectedApis).toEqual([]);
   expect(fixture.errors).toEqual([]);
@@ -1359,29 +1370,25 @@ test("an explicit month overrides period=all until the user enables All dates", 
   await page.goto(
     "/transactions?category=Shopping&kind=expense&status=posted&month=2026-09&period=all",
   );
-  await expect(page.locator(".transaction-table")).toContainText(
+  await expect(page.locator(".txw-desktop-history")).toContainText(
     "QA September equipment",
   );
-  await expect(page.locator(".transaction-table")).not.toContainText(
+  await expect(page.locator(".txw-desktop-history")).not.toContainText(
     "QA Supplies",
   );
-  await expect(page.locator(".transaction-analytics-filters")).toContainText(
-    "Month: September 2026",
-  );
-  const allDates = page.getByRole("checkbox", {
-    name: "All dates",
+  const period = page.getByRole("combobox", {
+    name: "Transaction month",
     exact: true,
   });
-  await expect(allDates).not.toBeChecked();
-  await allDates.check();
-  await expect(page.locator(".transaction-table")).toContainText(
+  await expect(period).toHaveValue("2026-09");
+  await period.selectOption("__all__");
+  await expect(page.locator(".txw-desktop-history")).toContainText(
     "QA September equipment",
   );
-  await expect(page.locator(".transaction-table")).toContainText("QA Supplies");
-  await expect(
-    page.locator(".transaction-analytics-filters"),
-  ).not.toContainText("Month:");
-  await expect(page.locator(".transaction-period")).toContainText("All dates");
+  await expect(page.locator(".txw-desktop-history")).toContainText(
+    "QA Supplies",
+  );
+  await expect(period).toHaveValue("__all__");
   expect(fixture.writes).toEqual([]);
   expect(fixture.unexpectedApis).toEqual([]);
   expect(fixture.errors).toEqual([]);

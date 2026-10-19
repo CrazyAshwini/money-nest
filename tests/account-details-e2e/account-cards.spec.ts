@@ -373,14 +373,20 @@ for (const section of sections) {
     );
     await expect(
       page.getByRole("combobox", { name: "Filter account", exact: true }),
-    ).toHaveValue(account.id);
-    await expect(page.getByLabel("All dates", { exact: true })).toBeChecked();
+    ).toHaveCount(0);
+    await expect(page.locator(".txw-link-context")).toContainText(account.name);
     await expect(
-      page.getByRole("button", { name: `Edit ${old}`, exact: true }),
+      page.getByRole("combobox", { name: "Transaction month", exact: true }),
+    ).toHaveValue("__all__");
+    await expect(
+      page.getByRole("button", {
+        name: `View transaction: ${old}`,
+        exact: true,
+      }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", {
-        name: "Edit FOREIGN TRANSACTION MUST STAY HIDDEN",
+        name: "View transaction: FOREIGN TRANSACTION MUST STAY HIDDEN",
         exact: true,
       }),
     ).toHaveCount(0);
