@@ -16,6 +16,7 @@ import {
 } from "@/lib/finance";
 import type { WorkspaceData } from "@/lib/types";
 import { formatUsagePercentage, UsageMeter } from "./account-summary";
+import { CreditAvailability } from "./credit-availability";
 import { FinancialCardCarousel } from "./financial-card-carousel";
 import { RecentAccountTransactions } from "./recent-account-transactions";
 import { VirtualAccountCard } from "./virtual-account-card";
@@ -120,16 +121,6 @@ function DebtSummary({ view }: { view: AccountDetailView }) {
     partial: "Partial exposure · Unverified",
     unconfirmed: "Unconfirmed",
   }[usage.balanceVerificationStatus];
-  // Bill-only exposure cannot establish the facility's remaining credit.
-  const available = partial
-    ? null
-    : (usage.availableCredit ?? usage.estimatedAvailableCredit);
-  const availableNote =
-    available === null
-      ? "Credit availability is unknown"
-      : usage.availableCreditStatus === "verified"
-        ? "Verified"
-        : "Estimated";
   const nextDue = view.dues.nextDueDate
     ? date(view.dues.nextDueDate)
     : view.dues.hasUnknownDate
@@ -139,6 +130,7 @@ function DebtSummary({ view }: { view: AccountDetailView }) {
         : "Not recorded";
   return (
     <>
+      <CreditAvailability usage={usage} />
       <div className="fac-debt-balances">
         <div className="fac-primary-balance">
           <span>Current outstanding</span>
@@ -146,7 +138,7 @@ function DebtSummary({ view }: { view: AccountDetailView }) {
           <small>{verification}</small>
         </div>
         <div className="fac-primary-balance">
-          <span>Credit used</span>
+          <span>{partial ? "Minimum known outstanding" : "Credit used"}</span>
           <strong>
             {usage.used === null
               ? "Not available"
@@ -166,11 +158,8 @@ function DebtSummary({ view }: { view: AccountDetailView }) {
         </div>
       </div>
       <dl className="fac-summary-grid">
-        <Value label="Credit limit">
+        <Value label={creditCard ? "Credit limit" : "Approved limit"}>
           {money(usage.totalCreditLimit, "Not set")}
-        </Value>
-        <Value label="Available credit" note={availableNote}>
-          {money(available, "Unknown")}
         </Value>
         {view.dues.amount !== null && (
           <Value label="Recorded amount due" note="Recorded statement balances">
@@ -203,7 +192,7 @@ function DebtSummary({ view }: { view: AccountDetailView }) {
           {date(usage.asOf || usage.baselineAsOf)}
         </Value>
         <Value label="Utilization">
-          {formatUsagePercentage(usage.creditUtilization)}
+          {formatUsagePercentage(partial ? null : usage.creditUtilization)}
         </Value>
       </dl>
       {usage.creditUtilization !== null && !partial && (
@@ -305,6 +294,7 @@ export function FinancialAccountDetails({
             data={data}
             today={today}
             onNavigate={onClose}
+            showFinancialFacts={false}
           />
         )}
       />

@@ -1,0 +1,63 @@
+.spending-chart {
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chromium supplies a five-pixel SVG application outline. Replace it only on
+   this chart, preserving the accessible application and a keyboard indicator. */
+.spending-chart .recharts-surface[role="application"]:focus {
+  outline: none;
+}
+.spending-chart .recharts-surface[role="application"]:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.spending-chart[data-interactive="true"] .spending-day {
+  cursor: pointer;
+}
+.spending-day-column {
+  transition: fill 120ms ease;
+}
+.spending-chart[data-interactive="true"]
+  .spending-day:hover
+  .spending-day-column {
+  fill: #045b42;
+}
+.spending-day-focus {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 1.5px;
+}
+.spending-chart
+  .recharts-surface:focus-visible
+  .spending-day[data-keyboard-selected="true"]
+  .spending-day-focus {
+  fill: rgb(8 123 90 / 7%);
+  stroke: var(--lime);
+}
+.spending-tooltip {
+  display: grid;
+  gap: 4px;
+  max-width: 200px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 5px 18px rgb(18 42 31 / 9%);
+  font-size: 11px;
+  white-space: normal;
+}
+.spending-tooltip strong {
+  font-size: 15px;
+}
+.spending-tooltip small {
+  color: var(--muted);
+  font-size: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spending-day-column {
+    transition: none;
+  }
+}

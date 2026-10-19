@@ -1,0 +1,17 @@
+{
+  "tag": "svg",
+  "role": "application",
+  "tabindex": "0",
+  "outline": "rgb(8, 123, 90) solid 2px",
+  "box": {
+    "x": 279,
+    "y": 311.390625,
+    "width": 635,
+    "height": 228,
+    "top": 311.390625,
+    "right": 914,
+    "bottom": 539.390625,
+    "left": 279
+  },
+  "activeElement": "<svg aria-label=\"Daily spending. Use left and right arrows to choose a date, then Enter or Space to view its transactions.\" role=\"application\" tabindex=\"0\" class=\"recharts-surface\" width=\"635\" height=\"228\" viewBox=\"0 0 635 228\" style=\"width: 100%; height: 100%; display: block;\"><title></title><desc></desc><g tabindex=\"-1\" class=\"recharts-zIndex-layer_-100\"><g class=\"recharts-cartesian-grid\"><g class=\"recharts-cartesian-grid-horizontal\"><line stroke=\"var(--border)\" stroke-dasharray=\"3 5\" pointer-"
+}

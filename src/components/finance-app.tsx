@@ -18,6 +18,13 @@ import "./dashboard.css";
 import "./workspace-layout.css";
 import { FinancialCardCarousel } from "./financial-card-carousel";
 import { VirtualAccountCard } from "./virtual-account-card";
+import { CreditAvailability } from "./credit-availability";
+import {
+  analyticsCategoryColor as categoryColor,
+  type SpendingMode,
+} from "@/lib/analytics-presentation";
+import { getAggregateCreditAvailability } from "@/lib/credit-presentation";
+import type { UsageSummary } from "@/lib/usage";
 import { RecentAccountTransactions } from "./recent-account-transactions";
 import {
   maskedAccountSuffix,
@@ -25,7 +32,6 @@ import {
 } from "@/lib/account-presentation";
 import { DashboardWelcome } from "./dashboard-welcome";
 import { DashboardFinancialDetails } from "./dashboard-details";
-import Decimal from "decimal.js";
 import {
   Landmark,
   ArrowLeftRight,
@@ -93,9 +99,6 @@ import {
   latestSnapshot,
   billSummary,
   emiSummary,
-  monthlySummary,
-  spendingByCategory,
-  dailySpending,
   sumMoney,
   transactionDirection,
   transactionNotionUrl,
@@ -109,48 +112,12 @@ import {
   type Transaction,
   type TransactionKind,
 } from "@/lib/types";
-const SpendingChart = dynamic(() => import("./charts"), {
-  ssr: false,
-  loading: () => <div className="spending-chart chart-placeholder" />,
-});
-
+const AnalyticsWorkspace = dynamic(
+  () =>
+    import("./analytics-workspace").then((module) => module.AnalyticsWorkspace),
+  { ssr: false, loading: () => <div role="status">Loading analytics…</div> },
+);
 const kindLabel = (s: string) => s.replaceAll("_", " ");
-const tones = [
-  "#e47957",
-  "#159874",
-  "#8d67cc",
-  "#d8a125",
-  "#399bb7",
-  "#6474c5",
-];
-const categoryColorIndex: Readonly<Record<string, number>> = {
-  food: 0,
-  groceries: 1,
-  shopping: 2,
-  stationery: 5,
-  transport: 4,
-  education: 3,
-  housing: 5,
-  utilities: 4,
-  subscriptions: 2,
-  health: 1,
-  travel: 3,
-  entertainment: 0,
-  other: 5,
-};
-const categoryColor = (category: string) => {
-  const normalized = category.trim().toLowerCase();
-  const known = Object.hasOwn(categoryColorIndex, normalized)
-    ? categoryColorIndex[normalized]
-    : undefined;
-  const index =
-    known ??
-    Array.from(normalized).reduce(
-      (sum, character) => sum + character.codePointAt(0)!,
-      0,
-    ) % tones.length;
-  return tones[index];
-};
 const categoryIcons = {
   food: Utensils,
   groceries: ShoppingBasket,
@@ -221,6 +188,7 @@ export function FinanceApp() {
   const queryKey = useSearchParams().toString();
   const [newTransactionKind, setNewTransactionKind] =
     useState<TransactionKind>("expense");
+  const [analyticsMode, setAnalyticsMode] = useState<SpendingMode>("gross");
   const [botOpen, setBotOpen] = useState(false);
   const [botTrigger, setBotTrigger] = useState<HTMLButtonElement | null>(null);
   const [mobile, setMobile] = useState(false);
@@ -443,22 +411,35 @@ export function FinanceApp() {
           >
             {page !== "dashboard" && !detailPage && (
               <div
-                className={`workspace-page-heading ${page === "profile" ? "workspace-profile-heading" : ""}`}
+                className={`workspace-page-heading ${page === "profile" ? "workspace-profile-heading" : page === "analytics" ? "workspace-analytics-heading" : ""}`}
               >
                 <h1>{title}</h1>
                 <div className="workspace-context-actions">
                   {page === "analytics" && (
-                    <div className="month-picker">
-                      <CalendarDays size={16} aria-hidden="true" />
-                      <input
-                        aria-label="Selected month"
-                        type="month"
-                        value={month}
+                    <>
+                      <div className="month-picker">
+                        <CalendarDays size={16} aria-hidden="true" />
+                        <input
+                          aria-label="Selected month"
+                          type="month"
+                          value={month}
+                          onChange={(event) =>
+                            setMonth(event.target.value || month)
+                          }
+                        />
+                      </div>
+                      <select
+                        aria-label="Spending display"
+                        className="small-select analytics-mode-select"
+                        value={analyticsMode}
                         onChange={(event) =>
-                          setMonth(event.target.value || month)
+                          setAnalyticsMode(event.target.value as SpendingMode)
                         }
-                      />
-                    </div>
+                      >
+                        <option value="gross">Gross spending</option>
+                        <option value="net">Net after refunds</option>
+                      </select>
+                    </>
                   )}
                   {(page === "accounts" || page === "pay-later") && (
                     <button
@@ -519,7 +500,12 @@ export function FinanceApp() {
             ) : page === "orders" ? (
               <OrdersPage />
             ) : page === "analytics" ? (
-              <AnalyticsPage />
+              <AnalyticsWorkspace
+                mode={analyticsMode}
+                onOpenTransaction={(transaction) =>
+                  open({ type: "transaction", record: transaction })
+                }
+              />
             ) : page === "notifications" ? (
               <NotificationsPage />
             ) : page === "settings" ? (
@@ -660,6 +646,68 @@ function FinancialCard({
     </button>
   );
 }
+function DashboardCreditTotals({ summary }: { summary: UsageSummary }) {
+  const availability = getAggregateCreditAvailability(summary.rows);
+  const outstanding = summary.rows.filter(
+    (row) => row.currentOutstanding !== null,
+  );
+  const completeOutstanding =
+    outstanding.length === summary.count && summary.count > 0;
+  const verifiedOutstanding =
+    outstanding.length > 0 &&
+    outstanding.every((row) => row.balanceVerificationStatus === "verified");
+  return (
+    <span
+      className="dashboard-credit-totals"
+      data-availability-status={availability.status}
+    >
+      <span>
+        <span>
+          {completeOutstanding
+            ? `Outstanding · ${verifiedOutstanding ? "verified reports" : "estimated"}`
+            : outstanding.length
+              ? "Known outstanding · partial"
+              : "Outstanding"}
+        </span>
+        <b>
+          {outstanding.length
+            ? formatMoney(
+                sumMoney(outstanding.map((row) => row.currentOutstanding)),
+              )
+            : "Not available"}
+        </b>
+      </span>
+      <span>
+        <span>{availability.label}</span>
+        <b>
+          {availability.amount === null
+            ? "Not available"
+            : formatMoney(availability.amount)}
+        </b>
+      </span>
+      <small>
+        {availability.knownCount}/{availability.count} availability known
+        {availability.estimatedCount
+          ? " · Includes estimates"
+          : availability.status === "verified"
+            ? " · Verified reports"
+            : ""}
+      </small>
+      <span>
+        <span>
+          {summary.knownLimitCount === summary.count && summary.count > 0
+            ? "Total limits"
+            : "Known limits · partial"}
+        </span>
+        <b>
+          {summary.knownLimitCount
+            ? formatMoney(summary.limitTotal)
+            : "Not set"}
+        </b>
+      </span>
+    </span>
+  );
+}
 function Kpis() {
   const { data, month, today } = useFinance();
   const [details, setDetails] = useState<{
@@ -678,6 +726,18 @@ function Kpis() {
           ? "At least "
           : "") + formatMoney(summary.usedTotal)
       : "Not reported";
+  const usageCaption = (summary: UsageSummary, label: string) => {
+    if (!summary.count) return `No active ${label}`;
+    const source = summary.rows.some((row) => row.provenance === "partial")
+      ? " · Minimum known exposure"
+      : summary.rows.some(
+            (row) =>
+              row.provenance === "calculated" || row.provenance === "inferred",
+          )
+        ? " · Includes estimates"
+        : "";
+    return `${summary.count} ${label} · ${summary.knownUsageCount}/${summary.count} usage known${source}`;
+  };
   const bankCaption =
     (metrics.knownBankCount < metrics.totalBankCount
       ? `${metrics.knownBankCount}/${metrics.totalBankCount} balances known · Partial coverage`
@@ -722,18 +782,12 @@ function Kpis() {
           section="credit"
           title="Credit cards"
           value={usageValue(credit)}
-          caption={
-            credit.count +
-            " cards · " +
-            credit.knownUsageCount +
-            "/" +
-            credit.count +
-            " usage known"
-          }
+          caption={usageCaption(credit, "cards")}
           icon={<CreditCard size={19} aria-hidden="true" />}
           active={details?.section === "credit"}
           onOpen={show}
         >
+          <DashboardCreditTotals summary={credit} />
           <span className="financial-usage-label">
             <span>
               {credit.percentage === null
@@ -748,15 +802,12 @@ function Kpis() {
           section="paylater"
           title="Pay Later"
           value={usageValue(payLater)}
-          caption={
-            payLater.count +
-            " providers · " +
-            (payLater.complete ? "Known usage" : "Partial coverage")
-          }
+          caption={usageCaption(payLater, "providers")}
           icon={<Wallet size={19} aria-hidden="true" />}
           active={details?.section === "paylater"}
           onOpen={show}
         >
+          <DashboardCreditTotals summary={payLater} />
           <span className="financial-usage-label">
             <span>
               {payLater.percentage === null
@@ -944,96 +995,6 @@ function BillRow({ bill }: { bill: Bill }) {
         </Badge>
       </div>
     </Link>
-  );
-}
-function SpendingPanel() {
-  const { data, month } = useFinance();
-  const [net, setNet] = useState(false);
-  const summary = monthlySummary(data, month);
-  const points = dailySpending(data, month, { net }).map((p) => ({
-    label: p.day === 1 ? `1 ${monthLabel(month).split(" ")[0]}` : String(p.day),
-    amount: Number(p.amount),
-    amountText: p.amount,
-  }));
-  return (
-    <Section
-      title="Monthly spending"
-      subtitle="Your posted expenses, day by day."
-      className="analytics-spending-panel"
-      action={
-        <select
-          aria-label="Spending display"
-          className="small-select"
-          value={net ? "net" : "gross"}
-          onChange={(e) => setNet(e.target.value === "net")}
-        >
-          <option value="gross">Gross spending</option>
-          <option value="net">Net after refunds</option>
-        </select>
-      }
-    >
-      <div className="chart-summary">
-        <strong>{formatMoney(net ? summary.net : summary.gross)}</strong>
-        <span>
-          {net ? "After explicitly matched refunds" : "Total posted expenses"}
-        </span>
-        <span className="chart-legend">
-          <i /> {monthLabel(month)}
-        </span>
-      </div>
-      <SpendingChart points={points} />
-    </Section>
-  );
-}
-function CategoryPanel() {
-  const { data, month } = useFinance();
-  const categories = spendingByCategory(data, month);
-  const total = sumMoney(categories.map((c) => c.amount));
-  const totalLabel = formatMoney(total, { decimals: 0 });
-  let acc = 0;
-  const gradient = categories
-    .map((c) => {
-      const start = acc;
-      acc += c.percentage;
-      return `${categoryColor(c.category)} ${start}% ${acc}%`;
-    })
-    .join(",");
-  return (
-    <Section
-      title="Spending breakdown"
-      subtitle="Where your money went."
-      href="/analytics"
-      className="analytics-breakdown-panel"
-    >
-      <div className="category-chart">
-        <div
-          className={`donut${totalLabel.length > 15 ? " donut-large" : ""}`}
-          role="img"
-          aria-label={`Spending breakdown: ${categories.map((category) => `${category.category} ${formatMoney(category.amount)}`).join(", ")}`}
-          style={{
-            background: categories.length
-              ? `conic-gradient(${gradient})`
-              : "var(--border)",
-          }}
-        >
-          <div>
-            <small>Total spent</small>
-            <strong>{totalLabel}</strong>
-          </div>
-        </div>
-        <div className="category-legend">
-          {categories.map((c) => (
-            <div key={c.category}>
-              <span>
-                <i style={{ background: categoryColor(c.category) }} />
-                {c.category}
-              </span>
-              <strong>{c.percentage.toFixed(0)}%</strong>
-            </div>
-          ))}
-        </div>
-      </div>
-    </Section>
   );
 }
 export function TransactionTable({
@@ -1344,35 +1305,52 @@ function AccountsPage({
           </div>
         }
         {usage && (
-          <div className="info-banner">
-            <CreditCard size={17} aria-hidden="true" />
-            <span>
-              <strong>Credit limit:</strong>{" "}
-              {usage.totalCreditLimit
-                ? formatMoney(usage.totalCreditLimit)
-                : "Not set"}{" "}
-              · <strong>Current outstanding:</strong>{" "}
-              {usage.currentOutstanding
-                ? formatMoney(usage.currentOutstanding)
-                : "Not available"}{" "}
-              · <strong>Available credit:</strong>{" "}
-              {usage.availableCredit !== null
-                ? `${formatMoney(usage.availableCredit)} (${usage.availableCreditStatus === "verified" ? "Verified" : "Estimated"})`
-                : usage.estimatedAvailableCredit !== null
-                  ? `Estimated ${formatMoney(usage.estimatedAvailableCredit)} (Unverified)`
-                  : "Unknown until verified"}{" "}
-              · <strong>Utilization:</strong>{" "}
-              {formatUsagePercentage(usage.creditUtilization)} ·{" "}
-              <strong>Status:</strong>{" "}
-              {usage.balanceVerificationStatus === "verified"
-                ? "Verified"
-                : usage.balanceVerificationStatus === "estimated"
-                  ? "Report + payments (Estimated)"
-                  : usage.balanceVerificationStatus === "partial"
-                    ? "Partial exposure (Unverified bills only)"
-                    : "Unconfirmed"}
-            </span>
-          </div>
+          <section
+            className="account-credit-overview"
+            aria-label={`${a.name} credit summary`}
+          >
+            <CreditAvailability usage={usage} />
+            <dl className="account-credit-facts">
+              <div>
+                <dt>
+                  {a.kind === "pay_later" ? "Approved limit" : "Credit limit"}
+                </dt>
+                <dd>
+                  {usage.totalCreditLimit === null
+                    ? "Not set"
+                    : formatMoney(usage.totalCreditLimit)}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  {usage.provenance === "partial"
+                    ? "Minimum known exposure"
+                    : "Credit used"}
+                </dt>
+                <dd>
+                  {usage.used === null
+                    ? "Not available"
+                    : `${usage.provenance === "partial" ? "At least " : ""}${formatMoney(usage.used)}`}
+                </dd>
+              </div>
+              <div>
+                <dt>Current outstanding</dt>
+                <dd>
+                  {usage.currentOutstanding === null
+                    ? "Not available"
+                    : formatMoney(usage.currentOutstanding)}
+                </dd>
+              </div>
+              <div>
+                <dt>Utilization</dt>
+                <dd>
+                  {usage.provenance === "partial"
+                    ? "Unknown"
+                    : formatUsagePercentage(usage.creditUtilization)}
+                </dd>
+              </div>
+            </dl>
+          </section>
         )}
         <div className="three-stats">
           <Stat
@@ -1615,7 +1593,7 @@ function TransactionsPage({
   newKind: TransactionKind;
   onNewKindChange: (kind: TransactionKind) => void;
 }) {
-  const { data, month, toast } = useFinance();
+  const { data, month, toast, userId } = useFinance();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState(() => {
@@ -1627,14 +1605,55 @@ function TransactionsPage({
   const [account, setAccount] = useState(searchParams.get("account") || "all");
   const [review, setReview] = useState(false);
   const [allMonths, setAllMonths] = useState(
-    searchParams.get("period") === "all",
+    searchParams.get("period") === "all" && !searchParams.get("month"),
+  );
+  const [dateFilter, setDateFilter] = useState(searchParams.get("date") || "");
+  const [monthFilter, setMonthFilter] = useState(
+    searchParams.get("month") || "",
+  );
+  const [categoryFilter, setCategoryFilter] = useState(
+    searchParams.get("category") || "",
+  );
+  const [statusFilter, setStatusFilter] = useState(
+    searchParams.get("status") || "",
+  );
+  const validDate =
+    /^\d{4}-\d{2}-\d{2}$/.test(dateFilter) &&
+    !Number.isNaN(Date.parse(`${dateFilter}T00:00:00Z`)) &&
+    new Date(`${dateFilter}T00:00:00Z`).toISOString().slice(0, 10) ===
+      dateFilter;
+  const validMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(monthFilter);
+  const selectedMonth = monthFilter || month;
+  const periodLabel = dateFilter
+    ? validDate
+      ? formatDate(dateFilter, { year: "numeric" })
+      : "Unavailable date"
+    : monthFilter
+      ? validMonth
+        ? monthLabel(monthFilter)
+        : "Unavailable month"
+      : allMonths
+        ? "All dates"
+        : monthLabel(month);
+  const hasAnalyticsFilters = Boolean(
+    dateFilter || monthFilter || categoryFilter || statusFilter,
   );
   const txs = useMemo(
     () =>
       data.transactions
         .filter(
           (t) =>
-            (allMonths || !t.occurredOn || t.occurredOn.startsWith(month)) &&
+            t.userId === userId &&
+            (dateFilter
+              ? validDate && t.occurredOn === dateFilter
+              : monthFilter
+                ? validMonth &&
+                  Boolean(t.occurredOn?.startsWith(`${monthFilter}-`))
+                : allMonths ||
+                  !t.occurredOn ||
+                  t.occurredOn.startsWith(`${selectedMonth}-`)) &&
+            (!categoryFilter || (t.category || "Other") === categoryFilter) &&
+            (!statusFilter || t.status === statusFilter) &&
             (kind === "all" || t.kind === kind) &&
             (account === "all" ||
               t.fromAccountId === account ||
@@ -1649,7 +1668,22 @@ function TransactionsPage({
             (b.occurredOn || "").localeCompare(a.occurredOn || "") ||
             a.id.localeCompare(b.id),
         ),
-    [data.transactions, allMonths, month, kind, account, review, search],
+    [
+      data.transactions,
+      userId,
+      dateFilter,
+      validDate,
+      monthFilter,
+      validMonth,
+      selectedMonth,
+      allMonths,
+      categoryFilter,
+      statusFilter,
+      kind,
+      account,
+      review,
+      search,
+    ],
   );
   return (
     <>
@@ -1695,10 +1729,38 @@ function TransactionsPage({
           </select>
         </label>
         <span className="transaction-period">
-          {allMonths ? "All dates" : monthLabel(month)}
+          {periodLabel}
           <Link href="/analytics">Change month</Link>
         </span>
       </div>
+      {hasAnalyticsFilters && (
+        <div
+          className="transaction-analytics-filters"
+          aria-label="Analytics filters"
+        >
+          {dateFilter && <span>Date: {periodLabel}</span>}
+          {monthFilter && !dateFilter && (
+            <span>
+              Month:{" "}
+              {validMonth ? monthLabel(monthFilter) : "Unavailable month"}
+            </span>
+          )}
+          {categoryFilter && <span>Category: {categoryFilter}</span>}
+          {statusFilter && <span>Status: {kindLabel(statusFilter)}</span>}
+          <button
+            type="button"
+            className="text-link"
+            onClick={() => {
+              setDateFilter("");
+              setMonthFilter("");
+              setCategoryFilter("");
+              setStatusFilter("");
+            }}
+          >
+            Clear analytics filters
+          </button>
+        </div>
+      )}
       <div className="filter-chips-row" role="group" aria-label="Quick filters">
         {[
           { id: "all", label: "All" },
@@ -1748,11 +1810,13 @@ function TransactionsPage({
             !data.accounts.some((item) => item.id === account) && (
               <option value={account}>Unavailable account</option>
             )}
-          {data.accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
+          {data.accounts
+            .filter((a) => a.userId === userId)
+            .map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
         </select>
         <label className="check-row">
           <input
@@ -1766,7 +1830,11 @@ function TransactionsPage({
           <input
             type="checkbox"
             checked={allMonths}
-            onChange={(e) => setAllMonths(e.target.checked)}
+            disabled={Boolean(dateFilter)}
+            onChange={(e) => {
+              setAllMonths(e.target.checked);
+              if (e.target.checked) setMonthFilter("");
+            }}
           />
           All dates
         </label>
@@ -1774,7 +1842,7 @@ function TransactionsPage({
       </div>
       <Section
         title={review ? "Needs review" : "Your ledger"}
-        subtitle={`${allMonths ? "All dates" : monthLabel(month)} · Transfers and repayments are not purchase expenses.`}
+        subtitle={`${periodLabel} · Transfers and repayments are not purchase expenses.`}
       >
         <TransactionTable
           transactions={txs}
@@ -2291,78 +2359,6 @@ function LoansPage({
               description="Open a loan to add its confirmed repayment schedule."
             />
           )}
-        </div>
-      </Section>
-    </>
-  );
-}
-function AnalyticsPage() {
-  const { data, month } = useFinance();
-  const m = monthlySummary(data, month);
-  return (
-    <>
-      <div className="analytics-summary-refined">
-        <Stat
-          title="Net spending"
-          value={formatMoney(m.net)}
-          caption={monthLabel(month)}
-          icon={ChartNoAxesCombined}
-        />
-        <Stat
-          title="Gross expenses"
-          value={formatMoney(m.gross)}
-          caption={`${m.expenseCount} posted, dated purchases`}
-          icon={ArrowUpRight}
-        />
-        <Stat
-          title="Matched refunds"
-          value={formatMoney(m.refunds)}
-          caption="Linked to original expenses"
-          icon={ArrowDownLeft}
-        />
-      </div>
-      <details className="analytics-explanation">
-        <summary>How refunds affect spending</summary>
-        <p>
-          Only refunds linked to an original expense reduce net spending, capped
-          at that expense. Excess reimbursements stay recorded and are shown
-          separately below; repayments and transfers are not purchases.
-        </p>
-      </details>
-      <div className="analytics-grid">
-        <SpendingPanel />
-        <CategoryPanel />
-      </div>
-      {new Decimal(m.unexplainedRefunds).gt(0) && (
-        <div className="info-banner">
-          {formatMoney(m.unexplainedRefunds)} in excess matched reimbursements
-          remains unexplained. The original purchases and full receipts are
-          preserved in the ledger.
-        </div>
-      )}
-      <Section title="Category detail" className="analytics-category-detail">
-        <div className="record-list category-detail-list">
-          {spendingByCategory(data, month).map((c) => (
-            <div className="record-row" key={c.category}>
-              <span
-                className="category-icon"
-                style={
-                  {
-                    "--category-color": categoryColor(c.category),
-                  } as React.CSSProperties
-                }
-              >
-                <CategoryIcon category={c.category} />
-              </span>
-              <span className="category-detail-copy grow">
-                <strong>{c.category}</strong>
-                <small>
-                  {c.count} expenses · {c.percentage.toFixed(1)}%
-                </small>
-              </span>
-              <strong>{formatMoney(c.amount)}</strong>
-            </div>
-          ))}
         </div>
       </Section>
     </>

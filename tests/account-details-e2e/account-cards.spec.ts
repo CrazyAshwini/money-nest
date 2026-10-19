@@ -45,6 +45,8 @@ async function openDetails(page: Page, section: (typeof sections)[number]) {
 }
 
 function value(details: Locator, label: string) {
+  if (label === "Available credit" || label === "Available limit")
+    return details.locator(".fac-summary > .credit-availability > strong");
   if (["Current balance", "Current outstanding", "Credit used"].includes(label))
     return details
       .locator(".fac-summary .fac-primary-balance")
@@ -138,7 +140,9 @@ for (const width of [320, 390, 768, 1440]) {
           "₹30.00",
         );
         await expect(value(details, "Recorded debits")).toContainText("₹30.00");
-        await expect(dialog).toContainText("Calculated");
+        await expect(details.locator(".fac-summary")).toContainText(
+          "Report + posted movements",
+        );
         await expect(dialog).toContainText("1111");
         await expect(dialog).not.toContainText("1234567890121111");
       } else {

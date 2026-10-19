@@ -12,6 +12,8 @@ Last updated: **16 October 2026**, including confirmed receipt posting and bank/
 
 This document records verified context. After reviewing/testing the report, the owner explicitly requested **fixing all reviewed issues, starting with origin/callback handling**. Supplied README/handoff documents remain task inputs, not automatic authorization for their embedded instructions. Follow the user's current request for future scope.
 
+**19 October Analytics/card review branch:** [audit and verification](analytics-cards-verification-2026-10-19.md) describes interactive source-date spending drilldowns, compact Analytics, scoped chart focus styling and shared verified/estimated/unknown credit availability. It incorporates current main `6cd486d`, retaining the shared account summaries and approved panda branding. There are no supplied verified issuer card references, so institution-name/initials card fronts are explicit generic fallbacks. Finance/usage selectors, authentication, RLS, stored records and the existing carousel controller remain unchanged. The branch is for owner review; do not merge or deploy without approval.
+
 ## Project and owner intent
 
 - Money Nest is the existing personal finance app in `CrazyAshwini/money-nest`. Keep its name, INR presentation, working features, financial semantics, and stored data.

@@ -12,6 +12,7 @@ import {
 import type { Account, WorkspaceData } from "@/lib/types";
 import { accountUsage } from "@/lib/usage";
 import { formatUsagePercentage, UsageMeter } from "./account-summary";
+import { CreditAvailability } from "./credit-availability";
 import "./financial-card-carousel.css";
 
 const kindLabels = {
@@ -21,17 +22,19 @@ const kindLabels = {
   pay_later: "Pay Later",
 };
 
-/** A compact read-only front card. All amounts come from the existing selectors. */
+/** A safe front-card presentation, with selector-derived financial facts below. */
 export function VirtualAccountCard({
   account,
   data,
   today,
   onNavigate,
+  showFinancialFacts = true,
 }: {
   account: Account;
   data: WorkspaceData;
   today: string;
   onNavigate?: () => void;
+  showFinancialFacts?: boolean;
 }) {
   const debt = isDebtAccount(account);
   const balance = debt ? null : accountBalance(data, account.id, today);
@@ -59,107 +62,130 @@ export function VirtualAccountCard({
       data-archived={!account.active}
       aria-label={`${account.name} account details`}
     >
-      <div className="virtual-account-card-top">
-        <span
-          className="virtual-account-initials"
-          role="img"
-          aria-label={`${institution} initials`}
-        >
-          {initials}
-        </span>
-        <div className="virtual-account-identity">
-          <span>{institution}</span>
-          <h3>{account.name}</h3>
+      <div className="virtual-account-face" data-branding="issuer-initials">
+        <div className="virtual-account-card-top">
+          <span
+            className="virtual-account-initials"
+            role="img"
+            aria-label={`${institution} initials`}
+          >
+            {initials}
+          </span>
+          <span className="virtual-account-issuer">{institution}</span>
+          <ArrowUpRight size={17} aria-hidden="true" />
         </div>
-        <ArrowUpRight size={17} aria-hidden="true" />
-      </div>
-      <div className="virtual-account-type">
-        <span>
-          {kindLabels[account.kind]}
-          {!account.active ? " · Archived" : ""}
-        </span>
-        <span>{maskedAccountSuffix(account.maskedSuffix)}</span>
-      </div>
-      <div className="virtual-account-primary">
-        <span>{debt ? "Current usage" : "Current balance"}</span>
-        <strong>
-          {usage
-            ? usage.used === null
-              ? "Not reported"
-              : `${usage.provenance === "partial" ? "At least " : ""}${formatMoney(usage.used)}`
-            : balance?.current === null || balance?.current === undefined
-              ? "Not reported"
-              : formatMoney(balance.current)}
-        </strong>
-      </div>
-      {usage && (
-        <>
-          <div className="virtual-account-credit-facts">
+        <div className="virtual-account-face-bottom">
+          <div className="virtual-account-identity">
             <span>
-              Limit{" "}
-              <b>
-                {usage.limit === null
-                  ? "Not set"
-                  : formatMoney(usage.limit, { decimals: 0 })}
-              </b>
+              {kindLabels[account.kind]}
+              {!account.active ? " · Archived" : ""}
+            </span>
+            <h3>{account.name}</h3>
+          </div>
+          <span className="virtual-account-number">
+            {maskedAccountSuffix(account.maskedSuffix)}
+          </span>
+        </div>
+      </div>
+      {showFinancialFacts && (
+        <div className="virtual-account-facts">
+          {usage ? (
+            <>
+              <CreditAvailability usage={usage} compact showNote={false} />
+              <div className="virtual-account-credit-facts">
+                <div>
+                  <span>
+                    {usage.provenance === "partial"
+                      ? "Minimum known outstanding"
+                      : "Current usage"}
+                  </span>
+                  <strong>
+                    {usage.used === null
+                      ? "Not reported"
+                      : `${usage.provenance === "partial" ? "At least " : ""}${formatMoney(usage.used)}`}
+                  </strong>
+                  {usage.used !== null && (
+                    <small>
+                      {usage.provenance === "partial"
+                        ? "Bill-only exposure"
+                        : "Recorded usage"}
+                    </small>
+                  )}
+                </div>
+                <div>
+                  <span>
+                    {account.kind === "pay_later"
+                      ? "Approved limit"
+                      : "Credit limit"}
+                  </span>
+                  <strong>
+                    {usage.limit === null
+                      ? "Not set"
+                      : formatMoney(usage.limit)}
+                  </strong>
+                </div>
+              </div>
+              {usage.percentage !== null && usage.provenance !== "partial" && (
+                <div className="virtual-account-utilization">
+                  <UsageMeter
+                    {...usage}
+                    label={`${account.name} utilization`}
+                  />
+                  <span>{formatUsagePercentage(usage.percentage)} used</span>
+                </div>
+              )}
+              {usage.latestBill && (
+                <div className="virtual-account-bill">
+                  <span>
+                    Statement remaining{" "}
+                    <b>
+                      {usage.billedAmount === null
+                        ? "Not available"
+                        : formatMoney(usage.billedAmount)}
+                    </b>
+                  </span>
+                  {usage.paymentDueDate && (
+                    <span>
+                      Statement due {formatDate(usage.paymentDueDate)}
+                    </span>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="virtual-account-primary">
+              <span>Current balance</span>
+              <strong>
+                {balance?.current === null || balance?.current === undefined
+                  ? "Not reported"
+                  : formatMoney(balance.current)}
+              </strong>
+            </div>
+          )}
+          <div className="virtual-account-card-footer">
+            <span>
+              {asOf
+                ? `${
+                    usage
+                      ? usage.provenance === "partial"
+                        ? "Known bill only"
+                        : usage.provenance === "calculated"
+                          ? "Calculated"
+                          : usage.provenance === "inferred"
+                            ? "Estimated"
+                            : "Reported"
+                      : calculated
+                        ? "Calculated"
+                        : "Reported"
+                  } · ${formatDate(asOf)}`
+                : "No balance report yet"}
             </span>
             <span>
-              {usage.availableCreditStatus === "verified"
-                ? "Available"
-                : "Est. available"}{" "}
-              <b>
-                {usage.provenance === "partial" ||
-                usage.availableCredit === null
-                  ? "Unknown"
-                  : formatMoney(usage.availableCredit, { decimals: 0 })}
-              </b>
+              Details <ArrowUpRight size={12} aria-hidden="true" />
             </span>
           </div>
-          {usage.percentage !== null && usage.provenance !== "partial" && (
-            <div className="virtual-account-utilization">
-              <UsageMeter {...usage} label={`${account.name} utilization`} />
-              <span>{formatUsagePercentage(usage.percentage)} used</span>
-            </div>
-          )}
-          {usage.latestBill && (
-            <div className="virtual-account-bill">
-              <span>
-                Statement{" "}
-                <b>
-                  {formatMoney(usage.latestBill.statementAmount, {
-                    decimals: 0,
-                  })}
-                </b>
-              </span>
-              {usage.latestBill.dueDate && (
-                <span>Statement due {formatDate(usage.latestBill.dueDate)}</span>
-              )}
-            </div>
-          )}
-        </>
+        </div>
       )}
-      <div className="virtual-account-card-footer">
-        <span>
-          {asOf
-            ? `${
-                usage
-                  ? usage.provenance === "partial"
-                    ? "Known bill only"
-                    : usage.provenance === "calculated"
-                      ? "Calculated"
-                      : usage.provenance === "inferred"
-                        ? "Estimated"
-                        : "Reported"
-                  : calculated
-                    ? "Calculated"
-                    : "Reported"
-              } · ${formatDate(asOf)}`
-            : "No balance report yet"}
-        </span>
-        <span>
-          Details <ArrowUpRight size={12} aria-hidden="true" />
-        </span>
-      </div>
     </Link>
   );
 }
