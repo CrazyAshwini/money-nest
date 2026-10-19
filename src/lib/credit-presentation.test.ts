@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getAggregateCreditAvailability,
+  getAggregateCreditOutstanding,
   getCreditAvailabilityPresentation,
 } from "./credit-presentation";
 import type { Account, AccountSnapshot, WorkspaceData } from "./types";
@@ -228,6 +229,107 @@ describe("credit availability presentation from existing selectors", () => {
       amount: null,
       status: "unknown",
       label: "Available credit",
+    });
+  });
+});
+
+describe("outstanding summary stays separate from utilization", () => {
+  it("uses outstanding rather than a distinct reported utilization", () => {
+    const data = fixture();
+    const card = account(data);
+    report(data, card.id, { reportedOutstanding: "100.00" });
+    report(data, card.id, {
+      reportedUtilized: "200.00",
+      verifiedByUser: false,
+    });
+    const usage = accountUsage(data, card.id, TODAY);
+    expect(usage.used).toBe("200.00");
+    expect(getAggregateCreditOutstanding([usage])).toMatchObject({
+      amount: "100.00",
+      label: "Outstanding",
+      status: "verified",
+      knownCount: 1,
+      complete: true,
+    });
+    expect(getAggregateCreditAvailability([usage]).status).toBe("estimated");
+  });
+
+  it("marks mixed coverage partial and does not add bill-only exposure to outstanding", () => {
+    const data = fixture();
+    const card = account(data, { kind: "pay_later" });
+    const partial = account(data, { kind: "pay_later" });
+    report(data, card.id, {
+      asOf: "2026-10-18",
+      reportedOutstanding: "100.25",
+    });
+    bill(data, partial.id);
+    expect(accountUsage(data, partial.id, TODAY)).toMatchObject({
+      provenance: "partial",
+      used: "170.00",
+      currentOutstanding: null,
+    });
+    const before = structuredClone(data);
+    expect(
+      getAggregateCreditOutstanding(
+        data.accounts.map((item) => accountUsage(data, item.id, TODAY)),
+      ),
+    ).toMatchObject({
+      amount: "100.25",
+      label: "Known outstanding",
+      status: "partial",
+      estimatedCount: 1,
+      knownCount: 1,
+      count: 2,
+      complete: false,
+    });
+    expect(data).toEqual(before);
+  });
+
+  it("retains a zero outstanding report and downgrades stale or unverified reports", () => {
+    const data = fixture();
+    const verified = account(data);
+    const estimated = account(data);
+    report(data, verified.id, { reportedOutstanding: "0.00" });
+    report(data, estimated.id, {
+      reportedOutstanding: "12.15",
+      verifiedByUser: false,
+    });
+    expect(
+      getAggregateCreditOutstanding(
+        data.accounts.map((item) => accountUsage(data, item.id, TODAY)),
+      ),
+    ).toMatchObject({
+      amount: "12.15",
+      status: "estimated",
+      knownCount: 2,
+      estimatedCount: 1,
+      complete: true,
+    });
+    expect(
+      getAggregateCreditOutstanding([accountUsage(data, verified.id, TODAY)]),
+    ).toMatchObject({ amount: "0.00", status: "verified" });
+  });
+
+  it("keeps entirely unknown or absent outstanding unavailable", () => {
+    const data = fixture();
+    const card = account(data, { kind: "pay_later", creditLimit: null });
+    report(data, card.id, { reportedAvailable: "300.00" });
+    bill(data, card.id);
+    const usage = accountUsage(data, card.id, TODAY);
+    expect(getAggregateCreditOutstanding([usage])).toMatchObject({
+      amount: null,
+      status: "unknown",
+      knownCount: 0,
+      count: 1,
+    });
+    expect(getAggregateCreditAvailability([usage])).toMatchObject({
+      amount: "300.00",
+      status: "verified",
+    });
+    expect(getAggregateCreditOutstanding([])).toMatchObject({
+      amount: null,
+      status: "unknown",
+      count: 0,
     });
   });
 });

@@ -3,6 +3,7 @@
 import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import { maskedAccountSuffix } from "@/lib/account-presentation";
+import { getCreditAvailabilityPresentation } from "@/lib/credit-presentation";
 import {
   accountBalance,
   formatDate,
@@ -12,7 +13,6 @@ import {
 import type { Account, WorkspaceData } from "@/lib/types";
 import { accountUsage } from "@/lib/usage";
 import { formatUsagePercentage, UsageMeter } from "./account-summary";
-import { CreditAvailability } from "./credit-availability";
 import "./financial-card-carousel.css";
 
 const kindLabels = {
@@ -22,7 +22,7 @@ const kindLabels = {
   pay_later: "Pay Later",
 };
 
-/** A safe front-card presentation, with selector-derived financial facts below. */
+/** A safe front with primary debt balances and optional supporting facts below. */
 export function VirtualAccountCard({
   account,
   data,
@@ -39,6 +39,8 @@ export function VirtualAccountCard({
   const debt = isDebtAccount(account);
   const balance = debt ? null : accountBalance(data, account.id, today);
   const usage = debt ? accountUsage(data, account.id, today) : null;
+  const availability = usage ? getCreditAvailabilityPresentation(usage) : null;
+  const outstandingStatus = usage?.balanceVerificationStatus ?? "unconfirmed";
   const institution = account.institution.trim() || "Institution not available";
   const initials =
     account.institution
@@ -74,6 +76,50 @@ export function VirtualAccountCard({
           <span className="virtual-account-issuer">{institution}</span>
           <ArrowUpRight size={17} aria-hidden="true" />
         </div>
+        {usage && availability && (
+          <dl className="virtual-account-face-metrics">
+            <div data-metric="outstanding" data-status={outstandingStatus}>
+              <dt>Outstanding</dt>
+              <dd>
+                <strong>
+                  {usage.currentOutstanding === null
+                    ? "Not available"
+                    : formatMoney(usage.currentOutstanding)}
+                </strong>
+                <small>
+                  {outstandingStatus === "verified"
+                    ? "Verified report"
+                    : outstandingStatus === "estimated"
+                      ? "Estimated"
+                      : outstandingStatus === "partial"
+                        ? "Partial data"
+                        : "Not reported"}
+                </small>
+              </dd>
+            </div>
+            <div data-metric="available" data-status={availability.status}>
+              <dt>
+                {account.kind === "pay_later"
+                  ? "Available limit"
+                  : "Available credit"}
+              </dt>
+              <dd>
+                <strong>
+                  {availability.amount === null
+                    ? "Not available"
+                    : formatMoney(availability.amount)}
+                </strong>
+                <small>
+                  {availability.status === "verified"
+                    ? "Verified report"
+                    : availability.status === "estimated"
+                      ? "Estimated"
+                      : "Not reported"}
+                </small>
+              </dd>
+            </div>
+          </dl>
+        )}
         <div className="virtual-account-face-bottom">
           <div className="virtual-account-identity">
             <span>
@@ -91,7 +137,6 @@ export function VirtualAccountCard({
         <div className="virtual-account-facts">
           {usage ? (
             <>
-              <CreditAvailability usage={usage} compact showNote={false} />
               <div className="virtual-account-credit-facts">
                 <div>
                   <span>

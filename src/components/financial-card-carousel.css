@@ -174,6 +174,51 @@
 .virtual-account-card[data-archived="true"] .virtual-account-face {
   background: #59615c;
 }
+.virtual-account-card:is([data-kind="credit_card"], [data-kind="pay_later"])
+  .virtual-account-face {
+  gap: 12px;
+  padding: 18px;
+}
+.virtual-account-face-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.virtual-account-face-metrics > div {
+  min-width: 0;
+}
+.virtual-account-face-metrics dt {
+  color: #d4e1da;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.virtual-account-face-metrics dd {
+  margin: 3px 0 0;
+}
+.virtual-account-face-metrics strong {
+  display: block;
+  color: #fff;
+  font-size: clamp(14px, 4.4vw, 24px);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.4px;
+  overflow-wrap: anywhere;
+}
+.virtual-account-face-metrics small {
+  display: block;
+  margin-top: 3px;
+  color: #d4e1da;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.virtual-account-face-metrics [data-status="unknown"] strong,
+.virtual-account-face-metrics [data-status="unconfirmed"] strong,
+.virtual-account-face-metrics [data-status="partial"] strong {
+  font-size: clamp(13px, 3.5vw, 18px);
+  font-weight: 600;
+}
 .virtual-account-card-top {
   display: flex;
   gap: 10px;
@@ -230,6 +275,17 @@
   line-height: 1.3;
   color: inherit;
   overflow-wrap: anywhere;
+}
+.virtual-account-card:is([data-kind="credit_card"], [data-kind="pay_later"])
+  :is(.virtual-account-issuer, .virtual-account-identity h3) {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.virtual-account-card:is([data-kind="credit_card"], [data-kind="pay_later"])
+  .virtual-account-identity h3 {
+  font-size: clamp(13px, 3.5vw, 16px);
 }
 .virtual-account-number {
   flex-shrink: 0;
@@ -454,6 +510,23 @@
   }
   .virtual-account-facts {
     padding: 13px;
+  }
+  .virtual-account-card:is([data-kind="credit_card"], [data-kind="pay_later"])
+    .virtual-account-face {
+    gap: 8px;
+    padding: 14px;
+  }
+  .virtual-account-card:is([data-kind="credit_card"], [data-kind="pay_later"])
+    .virtual-account-initials {
+    width: 28px;
+    height: 28px;
+  }
+  .virtual-account-face-metrics {
+    gap: 10px;
+  }
+  .virtual-account-face-metrics dt,
+  .virtual-account-face-metrics small {
+    font-size: 9px;
   }
   .virtual-account-number {
     font-size: 12px;
