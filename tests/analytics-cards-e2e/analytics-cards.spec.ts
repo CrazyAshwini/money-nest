@@ -27,6 +27,12 @@ function activeCard(carousel: Locator) {
   return carousel.locator('[data-selected="true"] .virtual-account-card');
 }
 
+function faceMetric(card: Locator, metric: "outstanding" | "available") {
+  return card.locator(
+    `.virtual-account-face-metrics [data-metric="${metric}"]`,
+  );
+}
+
 async function swipe(page: Page, target: Locator) {
   await target.scrollIntoViewIfNeeded();
   const box = (await target.boundingBox())!;
@@ -96,8 +102,14 @@ for (const width of [320, 375, 390, 430, 768, 1024, 1440]) {
       await page.evaluate(() => document.documentElement.scrollWidth),
     ).toBeLessThanOrEqual(width + 1);
     await page.goto("/dashboard");
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(width + 1);
     for (const label of ["Credit cards details", "Pay Later details"]) {
-      await page.getByRole("button", { name: label, exact: true }).click();
+      const trigger = page.getByRole("button", { name: label, exact: true });
+      if (width === 390)
+        expect((await trigger.boundingBox())!.height).toBeLessThanOrEqual(260);
+      await trigger.click();
       const debt = page.getByRole("dialog");
       await expect(debt).toBeVisible();
       const debtBox = (await debt.boundingBox())!;
@@ -106,6 +118,25 @@ for (const width of [320, 375, 390, 430, 768, 1024, 1440]) {
       expect(
         await debt.evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
       ).toBe(true);
+      const face = activeCard(debt.locator(".financial-carousel"));
+      await expect(faceMetric(face, "outstanding")).toBeVisible();
+      await expect(faceMetric(face, "available")).toBeVisible();
+      const faceBox = (await face
+        .locator(".virtual-account-face")
+        .boundingBox())!;
+      const identityBox = (await face
+        .locator(".virtual-account-face-bottom")
+        .boundingBox())!;
+      for (const metric of ["outstanding", "available"] as const) {
+        const metricBox = (await faceMetric(face, metric).boundingBox())!;
+        expect(metricBox.x).toBeGreaterThanOrEqual(faceBox.x);
+        expect(metricBox.x + metricBox.width).toBeLessThanOrEqual(
+          faceBox.x + faceBox.width + 1,
+        );
+        expect(metricBox.y + metricBox.height).toBeLessThanOrEqual(
+          identityBox.y + 1,
+        );
+      }
       await page.keyboard.press("Escape");
     }
     expect(fixture.writes).toEqual([]);
@@ -545,36 +576,54 @@ for (const item of [
     label: "verified card",
     status: "verified",
     value: "₹8,190.60",
+    outstanding: "₹1,809.40",
+    outstandingStatus: "verified",
+    index: 0,
   },
   {
     id: ids.estimated,
     label: "estimated card",
     status: "estimated",
     value: "₹10,000.00",
+    outstanding: "₹2,000.00",
+    outstandingStatus: "estimated",
+    index: 1,
   },
   {
     id: ids.unknownLimit,
     label: "unknown card limit",
     status: "unknown",
     value: "Not available",
+    outstanding: "₹750.00",
+    outstandingStatus: "verified",
+    index: 2,
   },
   {
     id: ids.payVerified,
     label: "verified Pay Later",
     status: "verified",
     value: "₹4,500.00",
+    outstanding: "₹1,500.00",
+    outstandingStatus: "verified",
+    index: 0,
   },
   {
     id: ids.payEstimated,
     label: "estimated Pay Later",
     status: "estimated",
     value: "₹4,000.00",
+    outstanding: "₹1,000.00",
+    outstandingStatus: "estimated",
+    index: 1,
   },
   {
     id: ids.partial,
     label: "partial Pay Later",
     status: "unknown",
     value: "Not available",
+    outstanding: "Not available",
+    outstandingStatus: "partial",
+    index: 2,
   },
 ]) {
   test(`${item.label} preserves selector availability and provenance on its virtual card`, async ({
@@ -593,11 +642,18 @@ for (const item of [
       `.financial-carousel-slide[data-account-id="${item.id}"] .virtual-account-card`,
     );
     await expect(card).toBeVisible();
-    const available = card.locator(".credit-availability");
+    const available = faceMetric(card, "available");
     await expect(available).toHaveAttribute("data-status", item.status);
-    await expect(available).toContainText(item.value);
+    await expect(available.locator("strong")).toHaveText(item.value);
     if (item.status === "estimated")
-      await expect(available).toContainText(/Estimated available/i);
+      await expect(available).toContainText("Estimated");
+    await expect(faceMetric(card, "outstanding")).toHaveAttribute(
+      "data-status",
+      item.outstandingStatus,
+    );
+    await expect(faceMetric(card, "outstanding").locator("strong")).toHaveText(
+      item.outstanding,
+    );
     if (item.id === ids.partial) {
       await expect(card).toContainText(/minimum known|at least/i);
       await expect(card).not.toContainText("₹3,200");
@@ -609,6 +665,43 @@ for (const item of [
     const face = (await card.locator(".virtual-account-face").boundingBox())!;
     expect(face.width / face.height).toBeGreaterThan(1.45);
     expect(face.width / face.height).toBeLessThan(1.7);
+    await page.goto("/dashboard");
+    const isPayLater = [
+      ids.payVerified,
+      ids.payEstimated,
+      ids.partial,
+    ].includes(item.id);
+    await page
+      .getByRole("button", {
+        name: isPayLater ? "Pay Later details" : "Credit cards details",
+        exact: true,
+      })
+      .click();
+    const dialog = page.getByRole("dialog");
+    const carousel = dialog.locator(".financial-carousel");
+    await carousel.locator(".financial-carousel-track").focus();
+    await page.keyboard.press("Home");
+    for (let index = 0; index < item.index; index++)
+      await page.keyboard.press("ArrowRight");
+    await expect(carousel).toHaveAttribute("data-selected-account-id", item.id);
+    const selected = activeCard(carousel);
+    await expect(selected.locator(".virtual-account-facts")).toHaveCount(0);
+    await expect(faceMetric(selected, "available")).toBeVisible();
+    await expect(faceMetric(selected, "available")).toHaveAttribute(
+      "data-status",
+      item.status,
+    );
+    await expect(
+      faceMetric(selected, "available").locator("strong"),
+    ).toHaveText(item.value);
+    await expect(faceMetric(selected, "outstanding")).toBeVisible();
+    await expect(faceMetric(selected, "outstanding")).toHaveAttribute(
+      "data-status",
+      item.outstandingStatus,
+    );
+    await expect(
+      faceMetric(selected, "outstanding").locator("strong"),
+    ).toHaveText(item.outstanding);
     expect(fixture.writes).toEqual([]);
     expect(fixture.errors).toEqual([]);
   });
@@ -654,6 +747,72 @@ test("missing institution has an honest initials fallback and an empty account h
   expect(fixture.errors).toEqual([]);
 });
 
+for (const width of [320, 390]) {
+  test(`${width}px debt face keeps long names and large amounts inside the card`, async ({
+    context,
+    page,
+    baseURL,
+  }, testInfo) => {
+    const data = analyticsFixture();
+    const account = data.accounts.find((record) => record.id === ids.verified)!;
+    account.name = "QA International Platinum Rewards Credit Account";
+    account.institution = "QA International Financial Services";
+    account.creditLimit = "30000000.00";
+    const snapshot = data.snapshots.find(
+      (record) => record.accountId === ids.verified,
+    )!;
+    snapshot.reportedOutstanding = "12345678.90";
+    snapshot.reportedAvailable = "17654321.10";
+    const fixture = await mockWorkspace(context, page, baseURL!, data);
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/dashboard");
+    await page
+      .getByRole("button", { name: "Credit cards details", exact: true })
+      .click();
+    const card = activeCard(
+      page.getByRole("dialog").locator(".financial-carousel"),
+    );
+    const face = card.locator(".virtual-account-face");
+    await expect(faceMetric(card, "outstanding").locator("strong")).toHaveText(
+      "₹1,23,45,678.90",
+    );
+    await expect(faceMetric(card, "available").locator("strong")).toHaveText(
+      "₹1,76,54,321.10",
+    );
+    const box = (await face.boundingBox())!;
+    expect(box.width / box.height).toBeGreaterThan(1.35);
+    expect(box.width / box.height).toBeLessThan(1.7);
+    const identity = card.locator(".virtual-account-face-bottom");
+    const identityBox = (await identity.boundingBox())!;
+    for (const child of [
+      card.locator(".virtual-account-card-top"),
+      faceMetric(card, "outstanding").locator("strong"),
+      faceMetric(card, "available").locator("strong"),
+      identity,
+    ]) {
+      const childBox = (await child.boundingBox())!;
+      expect(childBox.x).toBeGreaterThanOrEqual(box.x);
+      expect(childBox.x + childBox.width).toBeLessThanOrEqual(
+        box.x + box.width,
+      );
+      expect(childBox.y).toBeGreaterThanOrEqual(box.y);
+      expect(childBox.y + childBox.height).toBeLessThanOrEqual(
+        box.y + box.height,
+      );
+    }
+    for (const metric of ["outstanding", "available"] as const) {
+      const metricBox = (await faceMetric(card, metric).boundingBox())!;
+      expect(metricBox.y + metricBox.height).toBeLessThanOrEqual(identityBox.y);
+    }
+    await expect(card.locator("h3")).toHaveText(account.name);
+    await expect(card.locator(".virtual-account-number")).toContainText("0222");
+    await face.screenshot({ path: testInfo.outputPath("long-debt-card.png") });
+    expect(fixture.writes).toEqual([]);
+    expect(fixture.unexpectedApis).toEqual([]);
+    expect(fixture.errors).toEqual([]);
+  });
+}
+
 test("a direct availability report remains visible when separate usage is only a minimum", async ({
   context,
   page,
@@ -675,11 +834,16 @@ test("a direct availability report remains visible when separate usage is only a
   const card = page.locator(
     `.financial-carousel-slide[data-account-id="${ids.partial}"] .virtual-account-card`,
   );
-  await expect(card.locator(".credit-availability")).toHaveAttribute(
+  await expect(faceMetric(card, "available")).toHaveAttribute(
     "data-status",
     "verified",
   );
-  await expect(card.locator(".credit-availability")).toContainText("₹300.00");
+  await expect(faceMetric(card, "available")).toContainText("₹300.00");
+  await expect(faceMetric(card, "outstanding")).toHaveAttribute(
+    "data-status",
+    "partial",
+  );
+  await expect(faceMetric(card, "outstanding")).toContainText("Not available");
   await expect(card).toContainText(/minimum known|at least/i);
   await expect(card).toContainText("₹800.00");
   await expect(card).not.toContainText("₹3,200");
@@ -706,6 +870,16 @@ test("a direct availability report remains visible when separate usage is only a
   await expect(summary.locator(".credit-availability")).toContainText(
     "₹300.00",
   );
+  await expect(faceMetric(activeCard(carousel), "available")).toHaveAttribute(
+    "data-status",
+    "verified",
+  );
+  await expect(faceMetric(activeCard(carousel), "available")).toContainText(
+    "₹300.00",
+  );
+  await expect(faceMetric(activeCard(carousel), "outstanding")).toContainText(
+    "Not available",
+  );
   expect(fixture.writes).toEqual([]);
   expect(fixture.unexpectedApis).toEqual([]);
   expect(fixture.errors).toEqual([]);
@@ -729,13 +903,34 @@ test("dashboard aggregate availability stays partial when one account is unknown
   });
   await expect(credit).toContainText(/partial/i);
   await expect(credit).toContainText("₹18,190.60");
+  await expect(credit.locator("#financial-credit-value")).toHaveText(
+    "₹4,559.40",
+  );
+  await expect(credit.locator("#financial-credit-caption")).toHaveText(
+    "3 cards",
+  );
   const payLater = page.getByRole("button", {
     name: "Pay Later details",
     exact: true,
   });
   await expect(payLater).toContainText(/partial/i);
   await expect(payLater).toContainText("₹8,500.00");
-  await expect(payLater).toContainText(/2\s*(?:of|\/)\s*3/);
+  await expect(payLater.locator("#financial-paylater-value")).toHaveText(
+    "₹2,500.00",
+  );
+  await expect(payLater.locator("#financial-paylater-caption")).toHaveText(
+    "3 providers",
+  );
+  await expect(payLater.locator("#financial-paylater-label")).toContainText(
+    /known outstanding.*partial.*estimated/i,
+  );
+  for (const card of [credit, payLater]) {
+    await expect(card.locator(".dashboard-credit-available")).toHaveAttribute(
+      "data-availability-status",
+      "partial",
+    );
+    await expect(card).not.toContainText(/total limits|usage known|smart use/i);
+  }
   expect(fixture.writes).toEqual([]);
   expect(fixture.unexpectedApis).toEqual([]);
   expect(fixture.errors).toEqual([]);
@@ -756,7 +951,7 @@ test("empty debt groups never claim verified availability", async ({
   for (const name of ["Credit cards details", "Pay Later details"]) {
     const card = page.getByRole("button", { name, exact: true });
     await expect(card).not.toContainText(/verified/i);
-    await expect(card.locator(".dashboard-credit-totals")).toHaveAttribute(
+    await expect(card.locator(".dashboard-credit-available")).toHaveAttribute(
       "data-availability-status",
       "unknown",
     );
@@ -802,15 +997,33 @@ test("outstanding verification does not certify a separate unverified usage repo
     name: "Credit cards details",
     exact: true,
   });
-  await expect(card.locator("#financial-credit-value")).toHaveText("₹200.00");
+  await expect(card.locator("#financial-credit-value")).toHaveText("₹100.00");
   await expect(card.locator("#financial-credit-caption")).not.toContainText(
     /verified/i,
   );
-  const outstanding = card.locator(".dashboard-credit-totals > span").first();
-  await expect(outstanding).toContainText("₹100.00");
+  const outstanding = card.locator("#financial-credit-label");
   await expect(outstanding).toContainText(/outstanding.*verified reports/i);
+  await expect(card.locator(".dashboard-credit-available")).toHaveAttribute(
+    "data-availability-status",
+    "estimated",
+  );
+  await expect(card.locator(".dashboard-credit-available")).toContainText(
+    "₹9,800.00",
+  );
   await card.click();
-  const summary = page.getByRole("dialog").locator(".fac-summary");
+  const dialog = page.getByRole("dialog");
+  const face = activeCard(dialog.locator(".financial-carousel"));
+  await expect(faceMetric(face, "outstanding")).toHaveAttribute(
+    "data-status",
+    "verified",
+  );
+  await expect(faceMetric(face, "outstanding")).toContainText("₹100.00");
+  await expect(faceMetric(face, "available")).toHaveAttribute(
+    "data-status",
+    "estimated",
+  );
+  await expect(faceMetric(face, "available")).toContainText("₹9,800.00");
+  const summary = dialog.locator(".fac-summary");
   const outstandingDetail = summary
     .locator(".fac-primary-balance")
     .filter({ hasText: /^Current outstanding/ });
@@ -864,9 +1077,10 @@ for (const kind of ["Credit cards", "Pay Later"]) {
     await page.keyboard.press("End");
     const last = kind === "Credit cards" ? ids.unknownLimit : ids.partial;
     await expect(carousel).toHaveAttribute("data-selected-account-id", last);
-    await expect(
-      activeCard(carousel).locator(".credit-availability"),
-    ).toHaveAttribute("data-status", "unknown");
+    await expect(faceMetric(activeCard(carousel), "available")).toHaveAttribute(
+      "data-status",
+      "unknown",
+    );
     await expect(
       carousel.getByRole("button", { name: `Next ${suffix}`, exact: true }),
     ).toBeDisabled();
@@ -950,8 +1164,20 @@ test.describe("native touch selection", () => {
         kind === "Credit cards" ? ids.estimated : ids.payEstimated,
       );
       await expect(
-        activeCard(carousel).locator(".credit-availability"),
+        faceMetric(activeCard(carousel), "available"),
       ).toHaveAttribute("data-status", "estimated");
+      await expect(
+        faceMetric(activeCard(carousel), "outstanding"),
+      ).toHaveAttribute("data-status", "estimated");
+      await expect(
+        faceMetric(activeCard(carousel), "outstanding").locator("strong"),
+      ).toHaveText(kind === "Credit cards" ? "₹2,000.00" : "₹1,000.00");
+      const history = page.locator(
+        `.recent-account-transactions[data-account-id="${kind === "Credit cards" ? ids.estimated : ids.payEstimated}"]`,
+      );
+      await expect(history).toBeVisible();
+      await expect(history).not.toContainText("QA Lunch");
+      await expect(history).not.toContainText("QA Supplies");
       expect(fixture.writes).toEqual([]);
       expect(fixture.errors).toEqual([]);
     });

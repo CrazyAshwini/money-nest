@@ -8,7 +8,8 @@
       "feat/signup-email-otp": false,
       "feat/responsive-account-carousels": false,
       "feat/public-multi-user-workspaces": false,
-      "feat/interactive-analytics-cards": false
+      "feat/interactive-analytics-cards": false,
+      "feat/compact-credit-card-summaries": false
     }
   },
   "regions": ["icn1"]

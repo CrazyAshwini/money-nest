@@ -109,3 +109,32 @@ export function getAggregateCreditAvailability(rows: readonly AccountUsage[]) {
     complete,
   };
 }
+
+/** Outstanding is a separate selector value from utilization or bill-only exposure. */
+export function getAggregateCreditOutstanding(rows: readonly AccountUsage[]) {
+  const known = rows.filter((row) => row.currentOutstanding !== null);
+  const count = rows.length;
+  const knownCount = known.length;
+  const estimatedCount = known.filter(
+    (row) => row.balanceVerificationStatus !== "verified",
+  ).length;
+  const complete = count > 0 && knownCount === count;
+  const status = !knownCount
+    ? ("unknown" as const)
+    : !complete
+      ? ("partial" as const)
+      : estimatedCount
+        ? ("estimated" as const)
+        : ("verified" as const);
+  return {
+    amount: knownCount
+      ? sumMoney(known.map((row) => row.currentOutstanding))
+      : null,
+    label: status === "partial" ? "Known outstanding" : "Outstanding",
+    status,
+    count,
+    knownCount,
+    estimatedCount,
+    complete,
+  };
+}

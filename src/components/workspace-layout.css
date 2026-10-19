@@ -60,30 +60,6 @@
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
-.dashboard-credit-totals {
-  display: grid;
-  gap: 5px;
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 11px;
-  width: 100%;
-}
-.dashboard-credit-totals > span {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 3px 8px;
-  width: 100%;
-}
-.dashboard-credit-totals b {
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-.dashboard-credit-totals small {
-  font-size: 10px;
-  line-height: 1.5;
-}
 .transaction-analytics-filters {
   display: flex;
   flex-wrap: wrap;

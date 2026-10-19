@@ -14,6 +14,8 @@ This document records verified context. After reviewing/testing the report, the 
 
 **19 October Analytics/card review branch:** [audit and verification](analytics-cards-verification-2026-10-19.md) describes interactive source-date spending drilldowns, compact Analytics, scoped chart focus styling and shared verified/estimated/unknown credit availability. It incorporates current main `6cd486d`, retaining the shared account summaries and approved panda branding. There are no supplied verified issuer card references, so institution-name/initials card fronts are explicit generic fallbacks. Finance/usage selectors, authentication, RLS, stored records and the existing carousel controller remain unchanged. The branch is for owner review; do not merge or deploy without approval.
 
+**19 October compact debt-card follow-up:** The Analytics/card release above was subsequently approved, merged as `a3a5c03`, and deployed successfully. The owner then requested less information on dashboard Credit Card/Pay Later tiles and outstanding plus availability directly on card faces. [Follow-up verification](compact-credit-review/verification.md) records the focused presentation changes and synthetic review evidence. This new follow-up remains for review; the previous release approval does not deploy it.
+
 ## Project and owner intent
 
 - Money Nest is the existing personal finance app in `CrazyAshwini/money-nest`. Keep its name, INR presentation, working features, financial semantics, and stored data.

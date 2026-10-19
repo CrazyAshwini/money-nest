@@ -239,9 +239,12 @@ test("compact cards open details for every active account and retain account nav
   await expect(page.locator(".financial-details-record")).toHaveCount(0);
   for (const title of ["Credit cards", "Pay Later"]) {
     await expect(
-      kpi(page, title).locator(".financial-usage-label"),
+      kpi(page, title).locator(".financial-value-label"),
+    ).toContainText(/outstanding/i);
+    await expect(
+      kpi(page, title).locator(".dashboard-credit-available"),
     ).toBeVisible();
-    await expect(kpi(page, title).locator(".usage-meter")).toBeVisible();
+    await expect(kpi(page, title).locator(".usage-meter")).toHaveCount(0);
   }
   await expect(page.locator(".dashboard-bank-grid, .credit-grid")).toHaveCount(
     0,
@@ -409,13 +412,15 @@ test("credit and Pay Later percentages retain bands, capped meters and unknown c
   await expect(payLaterCard.locator(":scope > strong")).toHaveText(
     "₹10,000.00",
   );
-  await expect(
-    payLaterCard.locator(".financial-usage-label > span").first(),
-  ).toHaveText("50% used");
-  await expect(payLaterCard.locator(".usage-meter")).toHaveAttribute(
-    "data-band",
-    "medium",
+  await expect(payLaterCard.locator(".financial-value-label")).toContainText(
+    /outstanding.*estimated/i,
   );
+  await expect(
+    payLaterCard.locator(".dashboard-credit-available > b"),
+  ).toHaveText("₹10,000.00");
+  await expect(
+    payLaterCard.locator(".dashboard-credit-available"),
+  ).toHaveAttribute("data-availability-status", "estimated");
   const payLater = await openDetails(page, "Pay Later", "Pay Later details");
   await expect(valueFor(payLater, "Total credit limit")).toContainText(
     "₹20,000.00",

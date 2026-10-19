@@ -128,25 +128,52 @@
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.financial-coverage,
-.financial-usage-label {
+.financial-coverage {
   display: block;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.4;
   margin-top: 6px;
 }
-.financial-usage-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 4px;
+.financial-value-label {
+  margin-top: 12px;
+  min-height: 3em;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
-.home-kpis .financial-summary-card > .usage-meter {
-  margin: 7px 0 0;
-  height: 5px;
-  flex-shrink: 0;
+.home-content .home-kpis .financial-value-label + strong {
+  margin-top: 3px;
+  margin-bottom: 0;
+  font-variant-numeric: tabular-nums;
+}
+.dashboard-credit-available {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 0 12px;
+}
+.dashboard-credit-available > span {
+  min-height: 3em;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.dashboard-credit-available small {
+  margin-left: 5px;
+  font-size: inherit;
+}
+.dashboard-credit-available small::before {
+  content: "· ";
+}
+.dashboard-credit-available b {
+  color: var(--accent);
+  font-size: clamp(18px, 1.6vw, 23px);
+  font-weight: 650;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.4px;
+  overflow-wrap: anywhere;
 }
 .financial-card-cue {
   display: flex;

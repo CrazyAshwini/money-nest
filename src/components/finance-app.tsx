@@ -23,7 +23,10 @@ import {
   analyticsCategoryColor as categoryColor,
   type SpendingMode,
 } from "@/lib/analytics-presentation";
-import { getAggregateCreditAvailability } from "@/lib/credit-presentation";
+import {
+  getAggregateCreditAvailability,
+  getAggregateCreditOutstanding,
+} from "@/lib/credit-presentation";
 import type { UsageSummary } from "@/lib/usage";
 import { RecentAccountTransactions } from "./recent-account-transactions";
 import {
@@ -75,11 +78,7 @@ import { NestBot } from "./nestbot";
 import { PrivateProfilePage } from "./private-profile";
 import { OrdersPage } from "./orders-page";
 import { Section, Stat, Badge, Empty, downloadFile } from "./ui";
-import {
-  formatUsagePercentage,
-  UsageMeter,
-  UsageStatus,
-} from "./account-summary";
+import { formatUsagePercentage } from "./account-summary";
 import { RecordEditor, type EditorState } from "./editors";
 import {
   ImportsPage,
@@ -605,6 +604,7 @@ function FinancialCard({
   section,
   title,
   value,
+  valueLabel,
   caption,
   icon,
   active,
@@ -614,6 +614,7 @@ function FinancialCard({
   section: FinancialSection;
   title: string;
   value: string;
+  valueLabel?: string;
   caption: string;
   icon: ReactNode;
   active: boolean;
@@ -625,7 +626,7 @@ function FinancialCard({
       type="button"
       className={"stat financial-summary-card dashboard-card-" + section}
       aria-label={title + " details"}
-      aria-describedby={`financial-${section}-value financial-${section}-caption`}
+      aria-describedby={`${valueLabel ? `financial-${section}-label ` : ""}financial-${section}-value${children ? ` financial-${section}-extra` : ""} financial-${section}-caption`}
       aria-haspopup="dialog"
       aria-expanded={active}
       onClick={(event) => onOpen(section, event.currentTarget)}
@@ -634,11 +635,19 @@ function FinancialCard({
         <span>{title}</span>
         {icon}
       </span>
+      {valueLabel && (
+        <span
+          id={`financial-${section}-label`}
+          className="financial-value-label"
+        >
+          {valueLabel}
+        </span>
+      )}
       <strong id={`financial-${section}-value`}>{value}</strong>
+      {children && <span id={`financial-${section}-extra`}>{children}</span>}
       <span id={`financial-${section}-caption`} className="stat-bottom">
         {caption}
       </span>
-      {children}
       <span className="financial-card-cue">
         <span>View details</span>
         <ChevronRight size={17} aria-hidden="true" />
@@ -646,65 +655,37 @@ function FinancialCard({
     </button>
   );
 }
-function DashboardCreditTotals({ summary }: { summary: UsageSummary }) {
+function creditStatusLabel(status: string, estimatedCount: number) {
+  return status === "partial"
+    ? estimatedCount
+      ? "Partial · Estimated"
+      : "Partial"
+    : status === "estimated"
+      ? "Estimated"
+      : status === "verified"
+        ? "Verified reports"
+        : "";
+}
+function DashboardCreditAvailability({ summary }: { summary: UsageSummary }) {
   const availability = getAggregateCreditAvailability(summary.rows);
-  const outstanding = summary.rows.filter(
-    (row) => row.currentOutstanding !== null,
+  const status = creditStatusLabel(
+    availability.status,
+    availability.estimatedCount,
   );
-  const completeOutstanding =
-    outstanding.length === summary.count && summary.count > 0;
-  const verifiedOutstanding =
-    outstanding.length > 0 &&
-    outstanding.every((row) => row.balanceVerificationStatus === "verified");
   return (
     <span
-      className="dashboard-credit-totals"
+      className="dashboard-credit-available"
       data-availability-status={availability.status}
     >
       <span>
-        <span>
-          {completeOutstanding
-            ? `Outstanding · ${verifiedOutstanding ? "verified reports" : "estimated"}`
-            : outstanding.length
-              ? "Known outstanding · partial"
-              : "Outstanding"}
-        </span>
-        <b>
-          {outstanding.length
-            ? formatMoney(
-                sumMoney(outstanding.map((row) => row.currentOutstanding)),
-              )
-            : "Not available"}
-        </b>
+        {availability.status === "partial" ? "Known available" : "Available"}
+        {status && <small>{status}</small>}
       </span>
-      <span>
-        <span>{availability.label}</span>
-        <b>
-          {availability.amount === null
-            ? "Not available"
-            : formatMoney(availability.amount)}
-        </b>
-      </span>
-      <small>
-        {availability.knownCount}/{availability.count} availability known
-        {availability.estimatedCount
-          ? " · Includes estimates"
-          : availability.status === "verified"
-            ? " · Verified reports"
-            : ""}
-      </small>
-      <span>
-        <span>
-          {summary.knownLimitCount === summary.count && summary.count > 0
-            ? "Total limits"
-            : "Known limits · partial"}
-        </span>
-        <b>
-          {summary.knownLimitCount
-            ? formatMoney(summary.limitTotal)
-            : "Not set"}
-        </b>
-      </span>
+      <b>
+        {availability.amount === null
+          ? "Not available"
+          : formatMoney(availability.amount)}
+      </b>
     </span>
   );
 }
@@ -719,25 +700,20 @@ function Kpis() {
   const payLater = usageSummary(data, "pay_later", today);
   const show = (section: FinancialSection, trigger: HTMLButtonElement) =>
     setDetails({ section, trigger });
-  const usageValue = (summary: typeof credit) =>
-    summary.knownUsageCount > 0
-      ? (summary.knownUsageCount < summary.count ||
-        summary.rows.some((row) => row.provenance === "partial")
-          ? "At least "
-          : "") + formatMoney(summary.usedTotal)
-      : "Not reported";
-  const usageCaption = (summary: UsageSummary, label: string) => {
-    if (!summary.count) return `No active ${label}`;
-    const source = summary.rows.some((row) => row.provenance === "partial")
-      ? " · Minimum known exposure"
-      : summary.rows.some(
-            (row) =>
-              row.provenance === "calculated" || row.provenance === "inferred",
-          )
-        ? " · Includes estimates"
-        : "";
-    return `${summary.count} ${label} · ${summary.knownUsageCount}/${summary.count} usage known${source}`;
+  const creditOutstanding = getAggregateCreditOutstanding(credit.rows);
+  const payLaterOutstanding = getAggregateCreditOutstanding(payLater.rows);
+  const outstandingLabel = (value: typeof creditOutstanding) => {
+    const status = creditStatusLabel(value.status, value.estimatedCount);
+    return `${value.label}${status ? ` · ${status}` : ""}`;
   };
+  const accountCount = (
+    summary: UsageSummary,
+    singular: string,
+    plural: string,
+  ) =>
+    summary.count
+      ? `${summary.count} ${summary.count === 1 ? singular : plural}`
+      : `No active ${plural}`;
   const bankCaption =
     (metrics.knownBankCount < metrics.totalBankCount
       ? `${metrics.knownBankCount}/${metrics.totalBankCount} balances known · Partial coverage`
@@ -781,44 +757,34 @@ function Kpis() {
         <FinancialCard
           section="credit"
           title="Credit cards"
-          value={usageValue(credit)}
-          caption={usageCaption(credit, "cards")}
+          value={
+            creditOutstanding.amount === null
+              ? "Not available"
+              : formatMoney(creditOutstanding.amount)
+          }
+          valueLabel={outstandingLabel(creditOutstanding)}
+          caption={accountCount(credit, "card", "cards")}
           icon={<CreditCard size={19} aria-hidden="true" />}
           active={details?.section === "credit"}
           onOpen={show}
         >
-          <DashboardCreditTotals summary={credit} />
-          <span className="financial-usage-label">
-            <span>
-              {credit.percentage === null
-                ? "Overall usage unknown"
-                : formatUsagePercentage(credit.percentage) + " used"}
-            </span>
-            {credit.percentage !== null && <UsageStatus band={credit.band} />}
-          </span>
-          <UsageMeter {...credit} label="Overall credit card usage" />
+          <DashboardCreditAvailability summary={credit} />
         </FinancialCard>
         <FinancialCard
           section="paylater"
           title="Pay Later"
-          value={usageValue(payLater)}
-          caption={usageCaption(payLater, "providers")}
+          value={
+            payLaterOutstanding.amount === null
+              ? "Not available"
+              : formatMoney(payLaterOutstanding.amount)
+          }
+          valueLabel={outstandingLabel(payLaterOutstanding)}
+          caption={accountCount(payLater, "provider", "providers")}
           icon={<Wallet size={19} aria-hidden="true" />}
           active={details?.section === "paylater"}
           onOpen={show}
         >
-          <DashboardCreditTotals summary={payLater} />
-          <span className="financial-usage-label">
-            <span>
-              {payLater.percentage === null
-                ? "Overall usage unknown"
-                : formatUsagePercentage(payLater.percentage) + " used"}
-            </span>
-            {payLater.percentage !== null && (
-              <UsageStatus band={payLater.band} />
-            )}
-          </span>
-          <UsageMeter {...payLater} label="Overall Pay Later usage" />
+          <DashboardCreditAvailability summary={payLater} />
         </FinancialCard>
       </section>
       {details && (
