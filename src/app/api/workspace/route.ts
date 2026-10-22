@@ -23,6 +23,7 @@ import { privateProfileEnabled } from "@/lib/private-profile-store";
 import {
   privateWorkspaceGET,
   privateWorkspacePOST,
+  privateWorkspaceDELETE,
 } from "@/lib/private-profile-http";
 
 export const dynamic = "force-dynamic";
@@ -236,4 +237,50 @@ export async function POST(request: NextRequest) {
       503,
     );
   return response({ record: fromDatabase(saved.data) });
+}
+
+export async function DELETE(request: NextRequest) {
+  if (privateProfileEnabled()) return privateWorkspaceDELETE(request);
+  if (!cloudRequestAllowed(request, true))
+    return response({ error: "Request origin is not allowed." }, 403);
+  const supabase = await createSupabaseServerClient();
+  if (!supabase)
+    return response(
+      { configured: false, error: "Supabase is not configured." },
+      503,
+    );
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error || !user || user.is_anonymous)
+    return response({ error: "Authentication required." }, 401);
+  if (!cloudUserAllowed(user))
+    return response(
+      { error: "This account cannot access the workspace." },
+      403,
+    );
+  const body = await request.json().catch(() => null);
+  if (
+    !body ||
+    typeof body.collection !== "string" ||
+    typeof body.id !== "string" ||
+    !Object.hasOwn(recordSchemas, body.collection)
+  )
+    return response({ error: "Invalid delete parameters." }, 400);
+
+  const collection = body.collection as MutableCollection;
+  const result = await supabase
+    .from(tables[collection])
+    .delete()
+    .eq("user_id", user.id)
+    .eq("id", body.id);
+
+  if (result.error)
+    return response(
+      { error: safeDatabaseError(result.error.code, result.error.message) },
+      400,
+    );
+
+  return response({ ok: true });
 }

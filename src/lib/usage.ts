@@ -10,7 +10,8 @@ import {
   localDateISO,
   sumMoney,
 } from "./finance";
-import type { Account, AccountSnapshot, Bill, Money, WorkspaceData } from "./types";
+import { calculateEmiAccountMetrics, getAmazonPayLaterBillingSchedule } from "./emi";
+import type { Account, AccountSnapshot, Bill, EmiAgreement, Money, WorkspaceData, WorkspaceDataWithEmi } from "./types";
 
 export type UsageBand = "smart" | "medium" | "high" | "unknown";
 
@@ -64,6 +65,21 @@ export interface AccountUsage {
   unpaidBillsAmount: Money | null;
   unpaidBillsCount: number;
   latestBill?: Bill;
+  // Principal-based EMI fields (Master Prompt Section 1 & 2)
+  financedPrincipal?: Money | null;
+  principalOutstanding?: Money | null;
+  billedPrincipal?: Money | null;
+  billedInterest?: Money | null;
+  unbilledFutureInterest?: Money | null;
+  processingFees?: Money | null;
+  totalScheduledRepayments?: Money | null;
+  providerReportedOutstanding?: Money | null;
+  providerReportedUnbilled?: Money | null;
+  discrepancy?: Money | null;
+  emiAgreementsCount?: number;
+  activeAgreements?: EmiAgreement[];
+  billingDay?: number | null;
+  dueDay?: number | null;
 }
 
 export type CreditAccountSummary = AccountUsage;
@@ -117,7 +133,7 @@ export function latestUsageSnapshot(
  * Distinguishes reported, calculated, billed, unbilled, repayments, holds and availability.
  */
 export function creditAccountSummary(
-  data: WorkspaceData,
+  data: WorkspaceData | WorkspaceDataWithEmi,
   accountId: string,
   asOf: string,
 ): CreditAccountSummary {
@@ -126,7 +142,7 @@ export function creditAccountSummary(
 
 /** Current usage and availability derived from confirmed reports or opening history. */
 export function accountUsage(
-  data: WorkspaceData,
+  data: WorkspaceData | WorkspaceDataWithEmi,
   accountId: string,
   asOf: string,
 ): AccountUsage {
@@ -235,13 +251,21 @@ export function accountUsage(
     }
   }
 
+  const isAmazonPayLater =
+    account.kind === "pay_later" &&
+    (account.name.toLowerCase().includes("amazon") ||
+      account.institution.toLowerCase().includes("amazon"));
+  const amzSchedule = isAmazonPayLater ? getAmazonPayLaterBillingSchedule(asOf) : null;
+
   // A statement is separate from account-wide utilization and outstanding.
   const latestBill = accountBills[0];
   const statementGenerationDate = latestSnapshot({
     ...data,
     snapshots: data.snapshots.filter((row) => row.nextStatementDate != null),
-  }, accountId, asOf)?.nextStatementDate ?? null;
-  const paymentDueDate = latestBill?.dueDate ?? null;
+  }, accountId, asOf)?.nextStatementDate ?? (amzSchedule ? amzSchedule.nextStatementDate : null);
+  const paymentDueDate = latestBill?.dueDate ?? (amzSchedule ? amzSchedule.nextDueDate : null);
+  const billingDay = amzSchedule?.billingDay ?? null;
+  const dueDay = amzSchedule?.dueDay ?? null;
   const billedAmount = latestBill ? billSummary(cutoffData, latestBill, cutoff).remaining : null;
 
   // These are recorded, dated payments through the cutoff. Pending receipt
@@ -283,6 +307,42 @@ export function accountUsage(
     accountMovementsSinceSnapshot(data, accountId, unbilledSnapshot, asOf).count === 0
     ? nonnegativeMoney(unbilledSnapshot.reportedUnbilled) : null;
 
+  // Check for active EMI agreements (Section 1: Principal-based credit usage)
+  const emiAgreements = ("emiAgreements" in data && Array.isArray((data as WorkspaceDataWithEmi).emiAgreements)
+    ? (data as WorkspaceDataWithEmi).emiAgreements!
+    : []).filter(
+    (a) => a.accountId === account.id && a.userId === account.userId && a.status === "active",
+  );
+
+  let financedPrincipal: Money | null = null;
+  let principalOutstanding: Money | null = null;
+  let billedPrincipal: Money | null = null;
+  let billedInterest: Money | null = null;
+  let unbilledFutureInterest: Money | null = null;
+  let processingFees: Money | null = null;
+  let totalScheduledRepayments: Money | null = null;
+  const emiAgreementsCount = emiAgreements.length;
+  const activeAgreements = emiAgreements;
+
+  if (emiAgreements.length > 0) {
+    const emiMetrics = calculateEmiAccountMetrics(data, account, asOf);
+    financedPrincipal = emiMetrics.financedPrincipal;
+    principalOutstanding = emiMetrics.principalOutstanding;
+    billedPrincipal = emiMetrics.billedPrincipal;
+    billedInterest = emiMetrics.billedInterest;
+    unbilledFutureInterest = emiMetrics.unbilledFutureInterest;
+    processingFees = emiMetrics.processingFees;
+    totalScheduledRepayments = emiMetrics.totalScheduledRepayments;
+
+    // Under principal-based credit usage: only principal outstanding consumes available limit!
+    // Future interest does not reduce credit limit upfront.
+    if (!useAvailableReport && limit !== null && new Decimal(limit).gt(0)) {
+      available = emiMetrics.availableCredit;
+      used = emiMetrics.principalConsumingCredit;
+      provenance = "calculated";
+    }
+  }
+
   const availableCredit = available;
   const estimatedAvailableCredit = available ?? (
     provenance === "partial" && used !== null && limit !== null && new Decimal(limit).gt(0)
@@ -310,6 +370,14 @@ export function accountUsage(
       ? "verified" : "estimated";
   }
 
+  // Provider reported and discrepancy tracking
+  const providerReportedOutstanding = nonnegativeMoney(outstandingSnapshot?.reportedOutstanding);
+  const providerReportedUnbilled = unbilledAmount;
+  let discrepancy: Money | null = null;
+  if (providerReportedOutstanding !== null && currentOutstanding !== null) {
+    discrepancy = new Decimal(currentOutstanding).minus(providerReportedOutstanding).toFixed(2);
+  }
+
   // Usage level & progress (never render misleading progress for partial/unknown)
   const level = usageLevel(provenance === "partial" ? null : used, limit);
 
@@ -325,7 +393,7 @@ export function accountUsage(
     movementsSinceSnapshot,
     snapshot: snapshot ?? availableSnapshot,
     totalCreditLimit: limit,
-    issuerReportedOutstanding: nonnegativeMoney(outstandingSnapshot?.reportedOutstanding),
+    issuerReportedOutstanding: providerReportedOutstanding,
     ledgerCalculatedOutstanding: currentOutstanding,
     currentOutstanding,
     billedAmount,
@@ -345,6 +413,21 @@ export function accountUsage(
     unpaidBillsAmount,
     unpaidBillsCount,
     latestBill,
+    // Principal-based EMI fields
+    financedPrincipal,
+    principalOutstanding,
+    billedPrincipal,
+    billedInterest,
+    unbilledFutureInterest,
+    processingFees,
+    totalScheduledRepayments,
+    providerReportedOutstanding,
+    providerReportedUnbilled,
+    discrepancy,
+    emiAgreementsCount,
+    activeAgreements,
+    billingDay,
+    dueDay,
   };
 }
 

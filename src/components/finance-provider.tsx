@@ -58,6 +58,10 @@ type ContextValue = {
     collection: K,
     record: WorkspaceData[K][number],
   ) => Promise<void>;
+  deleteRecord: <K extends keyof WorkspaceData>(
+    collection: K,
+    id: string,
+  ) => Promise<void>;
   refresh: () => Promise<boolean>;
   resetDemo: () => void;
   commitImport: (
@@ -405,6 +409,44 @@ export function FinanceProvider({
       ],
     });
   }
+  async function deleteRecord<K extends keyof WorkspaceData>(
+    collection: K,
+    id: string,
+  ) {
+    if (mode !== "demo" && mode !== "cloud" && mode !== "private")
+      throw new Error("Your workspace is not ready.");
+    const identity = mode === "demo" ? "demo" : `${backend}:${authUserId}`;
+    if (identity !== activeIdentity.current)
+      throw new Error(
+        "Your sign-in changed. Reopen your current workspace.",
+      );
+    if (collection === "auditEvents")
+      throw new Error("Audit history cannot be deleted.");
+    if (mode === "cloud" || mode === "private") {
+      const res = await fetch("/api/workspace", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collection, id }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (identity !== activeIdentity.current)
+        throw new Error("Your sign-in changed. Reopen your current workspace.");
+      if (!res.ok)
+        throw new Error(result.error || "Record could not be deleted.");
+      const refreshed = await refresh();
+      if (!refreshed) {
+        toast("Record was deleted, but workspace refresh failed.", "error");
+      }
+      return;
+    }
+    // demo mode:
+    const current = currentData.current;
+    const rows = current[collection] as OwnedRecord[];
+    replaceData({
+      ...current,
+      [collection]: rows.filter((row) => row.id !== id),
+    });
+  }
   function resetDemo() {
     if (mode !== "demo") return;
     replaceData(cloneDemoData());
@@ -521,6 +563,7 @@ export function FinanceProvider({
         messageKind,
         dismissMessage,
         save,
+        deleteRecord,
         refresh,
         resetDemo,
         commitImport,

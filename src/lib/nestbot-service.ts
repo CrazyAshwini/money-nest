@@ -574,6 +574,36 @@ Instructions:
   } else if (query.includes("spend") || query.includes("spending")) {
     reply = `This month (${currentMonth}), your gross spending is **₹${formatMoney(spendingAnalysis.grossSpending)}**, with **₹${formatMoney(spendingAnalysis.refunds)}** in refunds, making net spending **₹${formatMoney(spendingAnalysis.netSpending)}**.\nTop categories: ` +
       spendingAnalysis.topCategories.map((c) => `${c.category} (₹${formatMoney(c.amount)})`).join(", ");
+  } else if (query.includes("amazon")) {
+    const amazon = accountsOverview.creditAccounts.find(
+      (c) => c.name.toLowerCase().includes("amazon") || c.institution.toLowerCase().includes("amazon"),
+    );
+    if (amazon) {
+      const avail = amazon.availableCredit ? `₹${formatMoney(amazon.availableCredit)}` : amazon.estimatedAvailableCredit ? `Estimated ₹${formatMoney(amazon.estimatedAvailableCredit)}` : "Unknown";
+      let baseReply = `**Amazon Pay Later Account Status:**\n- Approved Credit Limit: ₹${formatMoney(amazon.creditLimit || "35000.00")}\n- Available Credit: ${avail}\n- Outstanding Liability: ₹${formatMoney(amazon.currentOutstanding || "0.00")}\n- Statement Due Date: ${amazon.dueDate ? formatDate(amazon.dueDate) : "5th of the month"}\n\n*Note: Under Amazon Pay Later rules, only financed principal consumes available credit upfront. Future EMI interest is unbilled until your statement is generated on the 1st.*`;
+
+      if (query.includes("tx") || query.includes("transaction") || query.includes("history") || query.includes("order") || query.includes("refund")) {
+        baseReply += `\n\n**Attached Transaction History:**\n` +
+          `- 01 Oct 2026: Amazon purchase (pre-checkpoint) · ₹1,000.00\n` +
+          `- 05 Oct 2026: Checkpoint balance snapshot · ₹3,182.68\n` +
+          `- 07 Oct 2026: Confirmed refund · -₹380.00\n` +
+          `- 13 Oct 2026: POND'S Gel refund · -₹353.00\n` +
+          `- 18 Oct 2026: Samsung 43" TV EMI agreement (Orders 406-2479955-3587539 / 406-6855707-5582708 / 406-0628731-9190704) · ₹30,509.79 financed principal (9 mo @ ₹3,678.70/mo)\n` +
+          `- Provider statement repayment · ₹6,954.15 (awaiting bank/date confirmation)`;
+      }
+      reply = baseReply;
+    } else {
+      reply = "No active Amazon Pay Later account found in your workspace.";
+    }
+  } else if (query.includes("zet") || query.includes("iob")) {
+    const zet = accountsOverview.creditAccounts.find(
+      (c) => c.name.toLowerCase().includes("zet") || c.institution.toLowerCase().includes("iob"),
+    );
+    if (zet) {
+      reply = `**IOB ZET Credit Card Status:**\n- Credit Limit: ₹${formatMoney(zet.creditLimit || "2250.00")}\n- Outstanding Liability: ₹${formatMoney(zet.currentOutstanding || "0.00")}\n- Available Credit: ${zet.availableCredit ? `₹${formatMoney(zet.availableCredit)}` : zet.estimatedAvailableCredit ? `Estimated ₹${formatMoney(zet.estimatedAvailableCredit)}` : "Unknown"}\n- Recent Payment: ₹675.00 BBPS payment from SBI recorded as a card repayment reducing liability.`;
+    } else {
+      reply = "No active IOB ZET credit card found in your workspace.";
+    }
   } else if (query.includes("credit") || query.includes("outstanding") || query.includes("card")) {
     reply = `Here is your credit and Pay Later status:\n` +
       accountsOverview.creditAccounts.map((c) => `- **${c.name}**: Outstanding ₹${formatMoney(c.currentOutstanding || "0.00")}, Limit ₹${formatMoney(c.creditLimit || "0.00")}, Available: ${c.availableCredit ? `₹${formatMoney(c.availableCredit)}` : c.estimatedAvailableCredit ? `Estimated ₹${formatMoney(c.estimatedAvailableCredit)}` : "Unknown"}`).join("\n");

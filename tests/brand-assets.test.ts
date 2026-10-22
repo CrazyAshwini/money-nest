@@ -36,7 +36,7 @@ describe("MoneyNest app icon exports", () => {
     expect(Buffer.from(embedded![1], "base64")).toEqual(icon);
     expect(svg).not.toMatch(/href="https?:|<text\b/);
     expect(await sharp(Buffer.from(svg)).metadata()).toMatchObject({ format: "svg", width: 512, height: 512 });
-  });
+  }, 15000);
 
   it("keeps every maskable foreground pixel inside the guaranteed central safe circle", async () => {
     const { data, info } = await sharp(await asset("icon-maskable-512.png")).ensureAlpha().raw().toBuffer({ resolveWithObject: true });

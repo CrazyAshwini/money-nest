@@ -7,6 +7,7 @@ import {
   logoutPrivateProfile,
   readPrivateProfile,
   savePrivateRecord,
+  deletePrivateRecord,
   setupPrivateProfile,
   updatePrivateProfile,
   commitPrivateImport,
@@ -121,6 +122,31 @@ export async function privateWorkspacePOST(request: NextRequest) {
       token(request),
       input.collection as keyof WorkspaceData,
       input.record as WorkspaceData[keyof WorkspaceData][number],
+    );
+    return privateResponse({ ok: true });
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function privateWorkspaceDELETE(request: NextRequest) {
+  if (!privateRequestAllowed(request, true))
+    return privateResponse({ error: "Request origin is not allowed." }, 403);
+  try {
+    if (!(await readPrivateProfile(token(request))))
+      return privateResponse({ error: "Authentication required." }, 401);
+    const input = z
+      .object({ collection: z.string(), id: z.string() })
+      .parse(await body(request, 10000));
+    if (
+      !Object.hasOwn(workspaceRecordSchemas, input.collection) ||
+      input.collection === "auditEvents"
+    )
+      throw new Error("Unknown record collection.");
+    await deletePrivateRecord(
+      token(request),
+      input.collection as keyof WorkspaceData,
+      input.id,
     );
     return privateResponse({ ok: true });
   } catch (error) {

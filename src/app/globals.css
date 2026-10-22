@@ -490,6 +490,15 @@ strong {
   padding: 7px 10px;
   font-size: 11px;
 }
+.button.danger {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.35);
+  background: transparent;
+}
+.button.danger:hover {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: #dc2626;
+}
 .month-picker {
   border: 1px solid var(--border);
   border-radius: 7px;

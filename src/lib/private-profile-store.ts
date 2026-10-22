@@ -641,6 +641,44 @@ export async function savePrivateRecord<K extends keyof WorkspaceData>(
     return store.workspace;
   });
 }
+export async function deletePrivateRecord<K extends keyof WorkspaceData>(
+  sessionToken: string,
+  collection: K,
+  id: string,
+): Promise<WorkspaceData> {
+  return withStore(async (dir, maybeStore) => {
+    const store = requireSession(maybeStore, sessionToken);
+    const existing = (store.workspace[collection] as OwnedRecord[]).find(
+      (row) => row.id === id,
+    );
+    if (!existing) return store.workspace;
+    if (existing.userId !== store.profile.id) {
+      throw new PrivateProfileError("auth", "Unauthorized.");
+    }
+    if (collection === "transactions") {
+      store.workspace.allocations = store.workspace.allocations.filter(
+        (a) => a.transactionId !== id,
+      );
+      store.workspace.emiAllocations = store.workspace.emiAllocations.filter(
+        (a) => a.transactionId !== id,
+      );
+    }
+    store.workspace[collection] = (
+      store.workspace[collection] as OwnedRecord[]
+    ).filter((row) => row.id !== id) as WorkspaceData[K];
+
+    if (collection !== "auditEvents")
+      audit(
+        store,
+        collection,
+        id,
+        "deleted",
+        "Financial record deleted.",
+      );
+    await writeStore(dir, store);
+    return store.workspace;
+  });
+}
 export async function readPrivateCommerce(sessionToken: string) {
   return withStore(async (_dir, maybeStore) => {
     const store = requireSession(maybeStore, sessionToken);

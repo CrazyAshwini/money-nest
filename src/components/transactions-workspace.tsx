@@ -147,6 +147,26 @@ function TransactionDetails({
   onEdit: (transaction: Transaction) => void;
   onClose: () => void;
 }) {
+  const { deleteRecord, toast } = useFinance();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  async function handleDelete() {
+    try {
+      setIsDeleting(true);
+      await deleteRecord("transactions", transaction.id);
+      toast("Transaction deleted", "success");
+      onClose();
+    } catch (err) {
+      toast(
+        err instanceof Error ? err.message : "Failed to delete transaction",
+        "error",
+      );
+      setIsDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
+
   const sourceUrls = [
     ...new Set(
       [
@@ -252,7 +272,35 @@ function TransactionDetails({
           </div>
         )}
       </div>
-      <div className="txw-detail-footer">
+      <div className="txw-detail-footer" style={{ justifyContent: "space-between", gap: "0.5rem" }}>
+        {confirmDelete ? (
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button
+              type="button"
+              className="button danger"
+              disabled={isDeleting}
+              onClick={handleDelete}
+            >
+              {isDeleting ? "Deleting…" : "Confirm delete"}
+            </button>
+            <button
+              type="button"
+              className="button"
+              disabled={isDeleting}
+              onClick={() => setConfirmDelete(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="button danger"
+            onClick={() => setConfirmDelete(true)}
+          >
+            Delete
+          </button>
+        )}
         <button
           type="button"
           className="button primary"

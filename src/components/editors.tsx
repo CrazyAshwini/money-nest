@@ -120,9 +120,10 @@ export function RecordEditor({
   editor: EditorState;
   onClose: () => void;
 }) {
-  const { data, userId, today, save, toast } = useFinance();
+  const { data, userId, today, save, deleteRecord, toast } = useFinance();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [newRecordId] = useState(() => crypto.randomUUID());
   const record = "record" in editor ? editor.record : undefined;
   const names = {
@@ -623,6 +624,26 @@ export function RecordEditor({
       );
     } finally {
       setBusy(false);
+    }
+  }
+  async function handleDeleteTransaction() {
+    if (editor.type !== "transaction" || !editor.record?.id) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await deleteRecord("transactions", editor.record.id);
+      toast("Transaction deleted", "success");
+      onClose();
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Unable to delete transaction.",
+      );
+      setBusy(false);
+      setConfirmDelete(false);
     }
   }
   const input = (
@@ -1406,6 +1427,17 @@ export function RecordEditor({
           </p>
         )}
         <div className="form-actions">
+          {editor.type === "transaction" && editor.record?.id && (
+            <button
+              type="button"
+              className={`button ${confirmDelete ? "danger" : ""}`}
+              onClick={handleDeleteTransaction}
+              disabled={busy}
+              style={{ marginRight: "auto" }}
+            >
+              {confirmDelete ? "Confirm delete" : "Delete"}
+            </button>
+          )}
           <button
             type="button"
             className="button"

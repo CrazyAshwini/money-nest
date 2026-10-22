@@ -140,6 +140,51 @@ export interface EmiAllocation extends OwnedRecord {
   amount: Money;
   createdAt?: string;
 }
+export type EmiAgreementStatus = "active" | "completed" | "cancelled" | "provisional";
+export type EmiInstallmentStatus = "upcoming" | "due" | "partially_paid" | "paid" | "overdue";
+
+export interface EmiInstallment extends OwnedRecord {
+  agreementId: string;
+  installmentNumber: number;
+  billingDate: string;
+  dueDate: string;
+  principalComponent: Money;
+  interestComponent: Money;
+  feeComponent: Money;
+  totalDue: Money;
+  amountPaid: Money;
+  principalRepaid: Money;
+  status: EmiInstallmentStatus;
+}
+
+export interface EmiAgreement extends OwnedRecord {
+  accountId: string;
+  purchaseTransactionId?: string | null;
+  orderIds?: string[];
+  purchaseDate: string;
+  merchant: string;
+  description: string;
+  category?: string;
+  financedPrincipal: Money;
+  annualInterestRate?: string | null;
+  totalScheduledInterest: Money;
+  processingFee: Money;
+  totalScheduledRepayment: Money;
+  emiCount: number;
+  monthlyPayment: Money;
+  principalOutstanding: Money;
+  principalRepaid: Money;
+  interestBilled: Money;
+  interestPaid: Money;
+  unbilledFutureInterest: Money;
+  feesBilled: Money;
+  feesPaid: Money;
+  firstBillingDate?: string | null;
+  firstDueDate?: string | null;
+  status: EmiAgreementStatus;
+  installments?: EmiInstallment[];
+  notes?: string;
+}
 export interface ExpenseGroup extends OwnedRecord {
   kind?: "expense" | "contribution_pool";
   title: string;
@@ -194,6 +239,9 @@ export interface WorkspaceData {
   settlements: Settlement[];
   reminders: Reminder[];
   auditEvents: AuditEvent[];
+}
+export interface WorkspaceDataWithEmi extends WorkspaceData {
+  emiAgreements?: EmiAgreement[];
 }
 export const CATEGORIES: Category[] = [
   "Food",
