@@ -1,0 +1,171 @@
+.recent-account-transactions.recent-account-grouped {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.recent-account-grouped .recent-account-heading {
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.recent-account-grouped .recent-account-heading h3 {
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.4;
+  letter-spacing: -0.25px;
+}
+.recent-account-grouped .recent-account-heading a {
+  color: #155e50;
+}
+.recent-account-grouped
+  .recent-account-date-group
+  + .recent-account-date-group {
+  margin-top: 15px;
+}
+.recent-account-grouped .recent-account-date-group h4 {
+  margin: 0 0 7px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.recent-account-grouped .recent-account-date-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.recent-account-grouped .recent-account-date-group li {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+.recent-account-grouped .recent-account-date-group li + li {
+  border-top: 1px solid var(--border);
+}
+.recent-account-grouped .recent-account-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) minmax(0, auto);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 66px;
+  margin: 0;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+.recent-account-grouped button.recent-account-row {
+  cursor: pointer;
+}
+.recent-account-grouped button.recent-account-row:hover {
+  background: var(--raised);
+}
+.recent-account-grouped button.recent-account-row:focus-visible {
+  outline: 2px solid #0f8a65;
+  outline-offset: -3px;
+}
+.recent-account-grouped .recent-account-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #edf5f0;
+  color: #155e50;
+}
+.recent-account-grouped .recent-account-row-icon[data-direction="incoming"] {
+  color: #087b5a;
+  background: #e8f5ee;
+}
+.recent-account-grouped .recent-account-row-icon[data-direction="internal"] {
+  color: #5966a1;
+  background: #f0f1f8;
+}
+.recent-account-grouped .recent-account-row-description {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.recent-account-grouped .recent-account-row-description strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-account-grouped .recent-account-row-description > span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-account-grouped .recent-account-row-description small {
+  color: #8a5c0b;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.recent-account-grouped
+  .recent-account-row-description
+  small[data-status="voided"] {
+  color: #9b4750;
+}
+.recent-account-grouped .recent-account-row-amount {
+  max-width: 128px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.2px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+.recent-account-grouped .recent-account-row-amount[data-direction="incoming"] {
+  color: #087b5a;
+}
+.recent-account-grouped .recent-account-row-amount[data-direction="internal"] {
+  color: #5966a1;
+}
+.recent-account-grouped li[data-status="voided"] .recent-account-row-amount {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.recent-account-grouped .recent-account-empty {
+  margin: 0;
+  padding: 18px 14px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 359px) {
+  .recent-account-grouped .recent-account-row {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+  .recent-account-grouped .recent-account-row-amount {
+    max-width: 100px;
+    font-size: 11px;
+  }
+  .recent-account-grouped .recent-account-heading h3 {
+    font-size: 14px;
+  }
+}

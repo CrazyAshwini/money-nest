@@ -11,7 +11,8 @@
       "feat/interactive-analytics-cards": false,
       "feat/compact-credit-card-summaries": false,
       "feat/final-ui-refinement": false,
-      "feat/transactions-activity": false
+      "feat/transactions-activity": false,
+      "feat/compact-account-pages": false
     }
   },
   "regions": ["icn1"]
