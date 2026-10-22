@@ -122,7 +122,7 @@ export function AccountStatementDetails({ view }: { view: AccountDetailView }) {
         <div className="account-emi-section" style={{ marginTop: "1.25rem" }}>
           <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.5rem" }}>Active EMI agreements</h3>
           <dl className="account-statement-details-grid">
-            <StatementValue field="financed-principal" label="Financed principal" note="Consumes credit limit">
+            <StatementValue field="financed-principal" label="Financed principal" note="Original financed amount">
               {money(usage.financedPrincipal)}
             </StatementValue>
             <StatementValue field="unbilled-interest" label="Unbilled future interest" note="Does not consume limit upfront">
@@ -136,95 +136,8 @@ export function AccountStatementDetails({ view }: { view: AccountDetailView }) {
             </StatementValue>
           </dl>
           <p className="account-statement-details-note" style={{ marginTop: "0.5rem" }}>
-            *Principal-based credit usage: only financed principal reduces available limit. Future interest is recognized upon monthly billing on the 1st.*
+            Remaining financed principal consumes available limit. Future interest is recognized as billed.
           </p>
-        </div>
-      )}
-      {usage.account.name.toLowerCase().includes("amazon") && (
-        <div className="account-reconciliation-section" style={{ marginTop: "1.25rem" }}>
-          <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.5rem" }}>Amazon Pay Later details</h3>
-          <dl className="account-statement-details-grid">
-            <StatementValue field="provider-outstanding" label="Provider-reported balance" note="Provider snapshot">
-              {money(usage.providerReportedOutstanding ?? "34808.60")}
-            </StatementValue>
-            <StatementValue field="next-bill-cycle" label="Billing schedule" note="Asia/Kolkata">
-              1st of month (Bill) · 5th (Due)
-            </StatementValue>
-            <StatementValue field="reconciled-discrepancy" label="Reconciled discrepancy" note="Future interest unbundled">
-              ₹2,265.08
-            </StatementValue>
-            <StatementValue field="provider-unbilled" label="Provider-reported unbilled" note="Provider statement">
-              ₹35,418.52
-            </StatementValue>
-          </dl>
-          <div className="account-historical-tx-section" style={{ marginTop: "1rem" }}>
-            <h4 style={{ fontSize: "0.875rem", fontWeight: 600, marginBottom: "0.5rem", color: "var(--muted)" }}>
-              Attached Historical Transactions
-            </h4>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-                <div>
-                  <div style={{ fontWeight: 550 }}>Amazon purchase (pre-checkpoint)</div>
-                  <small style={{ color: "var(--muted)" }}>01 Oct 2026 · Reflected in ₹3,182.68 checkpoint</small>
-                </div>
-                <div style={{ fontWeight: 600 }}>₹1,000.00</div>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-                <div>
-                  <div style={{ fontWeight: 550 }}>Checkpoint balance snapshot</div>
-                  <small style={{ color: "var(--muted)" }}>05 Oct 2026 · Provider reported baseline</small>
-                </div>
-                <div style={{ fontWeight: 600 }}>₹3,182.68</div>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-                <div>
-                  <div style={{ fontWeight: 550 }}>Amazon refund (posted)</div>
-                  <small style={{ color: "var(--muted)" }}>07 Oct 2026 · Reduces liability</small>
-                </div>
-                <div style={{ fontWeight: 600, color: "var(--positive, #10b981)" }}>-₹380.00</div>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-                <div>
-                  <div style={{ fontWeight: 550 }}>POND&apos;S Gel refund</div>
-                  <small style={{ color: "var(--muted)" }}>13 Oct 2026 · Reduces liability</small>
-                </div>
-                <div style={{ fontWeight: 600, color: "var(--positive, #10b981)" }}>-₹353.00</div>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-                <div>
-                  <div style={{ fontWeight: 550 }}>Samsung 43&quot; TV + 2 items (EMI Agreement)</div>
-                  <small style={{ color: "var(--muted)" }}>18 Oct 2026 · Financed principal (9 mo @ ₹3,678.70/mo)</small>
-                </div>
-                <div style={{ fontWeight: 600 }}>₹30,509.79</div>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem", padding: "6px 0" }}>
-                <div>
-                  <div style={{ fontWeight: 550 }}>Pay Later statement repayment</div>
-                  <small style={{ color: "var(--muted)" }}>Provider screenshot · Awaiting bank and date confirmation</small>
-                </div>
-                <div style={{ fontWeight: 600, color: "var(--warning, #f59e0b)" }}>₹6,954.15</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      {(usage.account.name.toLowerCase().includes("zet") || usage.account.institution.toLowerCase().includes("iob") || usage.account.maskedSuffix === "1967") && (
-        <div className="account-zet-section" style={{ marginTop: "1.25rem" }}>
-          <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.5rem" }}>IOB ZET Credit Card Reconciliation</h3>
-          <dl className="account-statement-details-grid">
-            <StatementValue field="zet-limit" label="Approved credit limit">
-              ₹2,250.00
-            </StatementValue>
-            <StatementValue field="zet-snapshot" label="Provider snapshot (16 Oct 2026)">
-              ₹1,413.40
-            </StatementValue>
-            <StatementValue field="zet-repayment" label="Confirmed SBI repayment">
-              ₹675.00 (04 Oct 2026 BBPS)
-            </StatementValue>
-            <StatementValue field="zet-undated" label="Unconfirmed statement records">
-              9 entries preserved
-            </StatementValue>
-          </dl>
         </div>
       )}
       <p className="account-statement-details-note" style={{ marginTop: "1rem" }}>

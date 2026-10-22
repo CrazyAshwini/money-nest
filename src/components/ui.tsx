@@ -11,6 +11,7 @@ export function Modal({
   className = "",
   overlayClassName = "",
   busy = false,
+  returnFocusTo,
 }: {
   title: string;
   description?: string;
@@ -19,6 +20,7 @@ export function Modal({
   className?: string;
   overlayClassName?: string;
   busy?: boolean;
+  returnFocusTo?: HTMLElement | null;
 }) {
   return (
     <Dialog.Root
@@ -31,6 +33,12 @@ export function Modal({
         <Dialog.Overlay className={`modal-overlay ${overlayClassName}`} />
         <Dialog.Content
           className={`modal ${className}`}
+          onCloseAutoFocus={(event) => {
+            if (returnFocusTo?.isConnected) {
+              event.preventDefault();
+              returnFocusTo.focus();
+            }
+          }}
           onEscapeKeyDown={(event) => {
             if (busy) event.preventDefault();
           }}

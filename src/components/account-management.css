@@ -1,0 +1,176 @@
+.account-management {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  max-width: 1100px;
+  min-width: 0;
+}
+
+.account-management-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  min-height: 44px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.account-management-heading h1 {
+  margin: 0;
+  font-size: clamp(22px, 3vw, 28px);
+  line-height: 1.3;
+}
+
+.account-management-heading p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.account-management-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.account-management-actions .button {
+  min-height: 44px;
+  white-space: normal;
+}
+
+.account-management-reconciliation {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel);
+}
+
+.account-management-reconciliation h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.account-management-reconciliation dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 16px 0 0;
+}
+
+.account-management-reconciliation dl > div {
+  min-width: 0;
+}
+
+.account-management-reconciliation dt,
+.account-management-reconciliation p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.account-management-reconciliation dd {
+  margin: 5px 0 0;
+  font-size: 16px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.account-management-reconciliation p {
+  margin: 16px 0 0;
+}
+
+.account-management-statements ul,
+.account-management-deposits ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-management-statements li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0;
+}
+
+.account-management-statements li + li,
+.account-management-deposits li + li {
+  border-top: 1px solid var(--border);
+}
+
+.account-management-statements li > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.account-management-statements li strong {
+  font-size: 13px;
+}
+
+.account-management-statements li span,
+.account-management-statements li small,
+.account-management-empty {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.account-management-statements li a,
+.account-management-deposits li a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 44px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.account-management-statements li a {
+  flex-shrink: 0;
+}
+
+.account-management .section-heading > .text-link {
+  min-height: 44px;
+}
+
+.account-management :is(a, button):focus-visible,
+.account-management-editor-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.account-management-editor-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding-block: 8px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+@media (max-width: 600px) {
+  .account-management-reconciliation dl {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .account-management-statements li {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}

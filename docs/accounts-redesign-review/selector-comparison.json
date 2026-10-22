@@ -1,0 +1,79 @@
+{
+  "baseCommit": "c04f0af4682bd159916217c42046330ee6518797",
+  "syntheticRecordsOnly": true,
+  "result": "passed",
+  "accountScenariosCompared": 8,
+  "selectorOutputsIdentical": true,
+  "coreFiles": [
+    {
+      "path": "src/lib/finance.ts",
+      "beforeSha256": "54b5dd9a2375d23f9cb999fa6ac952c0f22c4ba7f2acb3c7fc16817f0532041c",
+      "afterSha256": "54b5dd9a2375d23f9cb999fa6ac952c0f22c4ba7f2acb3c7fc16817f0532041c",
+      "unchanged": true
+    },
+    {
+      "path": "src/lib/usage.ts",
+      "beforeSha256": "09c8a40d22b702e3a23ee077e2a76377a10bcfa8f6b247e04a434009ed7a4b4c",
+      "afterSha256": "09c8a40d22b702e3a23ee077e2a76377a10bcfa8f6b247e04a434009ed7a4b4c",
+      "unchanged": true
+    },
+    {
+      "path": "src/lib/emi.ts",
+      "beforeSha256": "0ebc8bc46715b4042e03d4aa6f5642ccbb9bfe017d1ab9cd880897b91839e9d8",
+      "afterSha256": "0ebc8bc46715b4042e03d4aa6f5642ccbb9bfe017d1ab9cd880897b91839e9d8",
+      "unchanged": true
+    },
+    {
+      "path": "src/lib/types.ts",
+      "beforeSha256": "4a2babdce84452f300888892b95c4a52a080430933fb590aa340bd11b63db3d3",
+      "afterSha256": "4a2babdce84452f300888892b95c4a52a080430933fb590aa340bd11b63db3d3",
+      "unchanged": true
+    },
+    {
+      "path": "src/lib/credit-presentation.ts",
+      "beforeSha256": "6b226109ddb9be82af4963159d5ab02ffc72d8dfc42c334572402ef192712deb",
+      "afterSha256": "6b226109ddb9be82af4963159d5ab02ffc72d8dfc42c334572402ef192712deb",
+      "unchanged": true
+    },
+    {
+      "path": "src/lib/account-presentation.ts",
+      "beforeSha256": "fb66042ab0d85afb076bcaa7bfe4f2e435c779871545f8fef030ab7846183039",
+      "afterSha256": "fb66042ab0d85afb076bcaa7bfe4f2e435c779871545f8fef030ab7846183039",
+      "unchanged": true
+    },
+    {
+      "path": "src/lib/account-detail-view.ts",
+      "beforeSha256": "161466bb30fa93845926b555184ca1339c7bfcf5d1bccd3e87db36f4f6bcf91d",
+      "afterSha256": "161466bb30fa93845926b555184ca1339c7bfcf5d1bccd3e87db36f4f6bcf91d",
+      "unchanged": true
+    },
+    {
+      "path": "src/lib/transactions-view.ts",
+      "beforeSha256": "af0b8d7b3d4c71227f2d9b45bcc4a696be49c20b8e9063fc7f00dba25efc16b9",
+      "afterSha256": "af0b8d7b3d4c71227f2d9b45bcc4a696be49c20b8e9063fc7f00dba25efc16b9",
+      "unchanged": true
+    },
+    {
+      "path": "src/components/finance-provider.tsx",
+      "beforeSha256": "7d720f4d028463995d9fbe7ffdeda79fe944d332a36d1a7f872bf15592c45145",
+      "afterSha256": "7d720f4d028463995d9fbe7ffdeda79fe944d332a36d1a7f872bf15592c45145",
+      "unchanged": true
+    },
+    {
+      "path": "src/app/api/workspace/route.ts",
+      "beforeSha256": "4c2b40199cff4878bfc96d640c3478dd4573c4070e7af84c82233e815efdcfa3",
+      "afterSha256": "4c2b40199cff4878bfc96d640c3478dd4573c4070e7af84c82233e815efdcfa3",
+      "unchanged": true
+    }
+  ],
+  "coveredCases": [
+    "reported and calculated bank balances",
+    "calculated and unknown wallet balances",
+    "verified and unknown-limit cards",
+    "principal-based EMI availability excluding future interest",
+    "partial bill-only Pay Later exposure",
+    "owner-scoped linked history",
+    "self-transfer once",
+    "distinct IDs with equal merchant/date/amount retained"
+  ]
+}

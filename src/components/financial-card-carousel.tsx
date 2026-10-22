@@ -12,6 +12,7 @@ export function FinancialCardCarousel({
   onSelect,
   label,
   renderCard,
+  presentation = "default",
   emptyMessage = "No accounts in this group yet.",
 }: {
   accounts: readonly Account[];
@@ -19,6 +20,7 @@ export function FinancialCardCarousel({
   onSelect: (accountId: string) => void;
   label: string;
   renderCard: (account: Account) => ReactNode;
+  presentation?: "default" | "accounts";
   emptyMessage?: string;
 }) {
   const resolvedId = resolveSelectedAccountId(accounts, selectedId);
@@ -168,6 +170,7 @@ export function FinancialCardCarousel({
       aria-roledescription="carousel"
       aria-label={label}
       data-selected-account-id={resolvedId ?? undefined}
+      data-presentation={presentation}
     >
       <div className="financial-carousel-heading">
         <h2>{label}</h2>
@@ -214,7 +217,9 @@ export function FinancialCardCarousel({
       )}
       {accounts.length > 1 && (
         <div className="financial-carousel-controls">
-          <p>Swipe or use the arrows to browse</p>
+          {presentation !== "accounts" && (
+            <p>Swipe or use the arrows to browse</p>
+          )}
           <button
             type="button"
             aria-label={`Previous ${itemLabel}`}

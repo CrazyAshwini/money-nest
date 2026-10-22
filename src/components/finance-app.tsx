@@ -1,8 +1,8 @@
 "use client";
 import { BrandLockup } from "./brand-lockup";
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
@@ -18,25 +18,22 @@ import "./dashboard.css";
 import "./workspace-layout.css";
 import { FinancialCardCarousel } from "./financial-card-carousel";
 import { VirtualAccountCard } from "./virtual-account-card";
-import { CreditAvailability } from "./credit-availability";
-import { AccountStatementDetails } from "./account-statement-details";
-import { accountDetailView } from "@/lib/account-detail-view";
-import { type SpendingMode } from "@/lib/analytics-presentation";
+import { AccountManagement } from "./account-management";
+import {
+  ownedAnalyticsData,
+  type SpendingMode,
+} from "@/lib/analytics-presentation";
 import {
   getAggregateCreditAvailability,
   getAggregateCreditOutstanding,
 } from "@/lib/credit-presentation";
 import type { UsageSummary } from "@/lib/usage";
 import { RecentAccountTransactions } from "./recent-account-transactions";
-import {
-  maskedAccountSuffix,
-  resolveSelectedAccountId,
-} from "@/lib/account-presentation";
+import { resolveSelectedAccountId } from "@/lib/account-presentation";
 import { DashboardWelcome } from "./dashboard-welcome";
 import { DashboardFinancialDetails } from "./dashboard-details";
 import {
   Landmark,
-  ArrowLeftRight,
   CreditCard,
   CalendarDays,
   ChartNoAxesCombined,
@@ -49,7 +46,6 @@ import {
   Wallet,
   MoreHorizontal,
   Menu,
-  ShieldCheck,
   Check,
   Clock,
   X,
@@ -60,8 +56,7 @@ import { useFinance } from "./finance-provider";
 import { NestBot } from "./nestbot";
 import { PrivateProfilePage } from "./private-profile";
 import { OrdersPage } from "./orders-page";
-import { Section, Stat, Badge, Empty } from "./ui";
-import { formatUsagePercentage } from "./account-summary";
+import { Section, Badge, Empty } from "./ui";
 import { RecordEditor, type EditorState } from "./editors";
 import {
   ImportsPage,
@@ -76,9 +71,6 @@ import {
   formatMoney,
   formatDate,
   monthLabel,
-  accountBalance,
-  isDebtAccount,
-  latestSnapshot,
   billSummary,
   emiSummary,
   sumMoney,
@@ -87,8 +79,13 @@ import {
 } from "@/lib/finance";
 import { TransactionsWorkspace } from "./transactions-workspace";
 import { TransactionIcon, transactionIconColor } from "./transaction-icon";
-import { accountUsage, usageSummary } from "@/lib/usage";
-import { type Account, type Bill, type Transaction } from "@/lib/types";
+import { usageSummary } from "@/lib/usage";
+import {
+  type Account,
+  type Bill,
+  type Transaction,
+  type WorkspaceData,
+} from "@/lib/types";
 const AnalyticsWorkspace = dynamic(
   () =>
     import("./analytics-workspace").then((module) => module.AnalyticsWorkspace),
@@ -117,6 +114,7 @@ export function FinanceApp() {
   const [mobile, setMobile] = useState(false);
   const navigationTrigger = useRef<HTMLButtonElement | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
+  const [editorTrigger, setEditorTrigger] = useState<HTMLElement | null>(null);
   const part = pathname.split("/").filter(Boolean);
   const pageInfo = resolveAppPage(part);
   const page = pageInfo?.page || "dashboard";
@@ -173,6 +171,11 @@ export function FinanceApp() {
   );
   const metrics = dashboardMetrics(data, month);
   const open = (e: EditorState) => {
+    setEditorTrigger(
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null,
+    );
     setBotOpen(false);
     setEditor(e);
   };
@@ -274,7 +277,8 @@ export function FinanceApp() {
               </div>
             </header>
           ) : (
-            !mainTab && (
+            !mainTab &&
+            page !== "accounts" && (
               <header className="workspace-secondary-header">
                 {!detailPage && (
                   <Link
@@ -459,7 +463,11 @@ export function FinanceApp() {
           onReceiptRequest={() => open({ type: "transaction" })}
         />
         {editor && (
-          <RecordEditor editor={editor} onClose={() => setEditor(null)} />
+          <RecordEditor
+            editor={editor}
+            onClose={() => setEditor(null)}
+            returnFocusTo={editorTrigger}
+          />
         )}
         <div
           className={`toast ${messageKind} ${message ? "visible" : ""}`}
@@ -1071,12 +1079,14 @@ function AccountsPage({
   onlyPayLater?: boolean;
   open: Open;
 }) {
-  const { data, today, userId, month } = useFinance();
+  const { data: workspace, today, userId } = useFinance();
+  const data = useMemo(
+    () => ownedAnalyticsData(workspace, userId),
+    [workspace, userId],
+  );
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [kind, setKind] = useState("all");
-  const [accountTxnTab, setAccountTxnTab] = useState<
-    "all" | "purchases" | "repayments" | "refunds" | "pending"
-  >("all");
   const a = data.accounts.find((a) => a.id === id && a.userId === userId);
   if (id && !a)
     return (
@@ -1091,279 +1101,62 @@ function AccountsPage({
       </>
     );
   if (a) {
-    const balance = accountBalance(data, a.id, today);
-    const usage = isDebtAccount(a) ? accountUsage(data, a.id, today) : null;
-    const snapshot = latestSnapshot(data, a.id, today);
-    const fd = data.fixedDeposits.find((f) => f.backingAccountId === a.id);
-    const allAccountTxns = data.transactions.filter(
-      (t) => t.fromAccountId === a.id || t.toAccountId === a.id,
+    if (searchParams.get("manage") === "reports")
+      return <AccountManagement account={a} onOpenEditor={open} />;
+    const accounts = data.accounts.filter(
+      (account) =>
+        account.userId === userId &&
+        account.kind === a.kind &&
+        (account.active || account.id === a.id),
     );
-    const filteredAccountTxns = allAccountTxns.filter((t) => {
-      if (accountTxnTab === "purchases")
-        return t.fromAccountId === a.id && t.kind === "expense";
-      if (accountTxnTab === "repayments")
-        return (
-          t.toAccountId === a.id &&
-          ["bill_payment", "transfer"].includes(t.kind)
-        );
-      if (accountTxnTab === "refunds")
-        return t.toAccountId === a.id && t.kind === "refund";
-      if (accountTxnTab === "pending") return t.status === "pending_review";
-      return true;
-    });
-
-    const purchasesCount = allAccountTxns.filter(
-      (t) => t.fromAccountId === a.id && t.kind === "expense",
-    ).length;
-    const repaymentsCount = allAccountTxns.filter(
-      (t) =>
-        t.toAccountId === a.id && ["bill_payment", "transfer"].includes(t.kind),
-    ).length;
-    const refundsCount = allAccountTxns.filter(
-      (t) => t.toAccountId === a.id && t.kind === "refund",
-    ).length;
-    const pendingCount = allAccountTxns.filter(
-      (t) => t.status === "pending_review",
-    ).length;
-
     return (
-      <>
-        <DetailHeading
-          title={a.name}
-          subtitle={`${a.institution} · ${maskedAccountSuffix(a.maskedSuffix)} · ${kindLabel(a.kind)}`}
-          back="/accounts"
-          action={
-            <>
-              {isDebtAccount(a) && (
-                <button
-                  className="button"
-                  onClick={() =>
-                    open({ type: "transaction", kind: "bill_payment" })
-                  }
-                >
-                  <CreditCard size={15} />
-                  Record repayment
-                </button>
-              )}
-              <button
-                className="button"
-                onClick={() => open({ type: "snapshot", record: a })}
-              >
-                <Plus size={15} />
-                Reported snapshot
-              </button>
-              <button
-                className="button primary"
-                onClick={() => open({ type: "account", record: a })}
-              >
-                Edit account
-              </button>
-            </>
-          }
-        />
-        <FinancialCardCarousel
-          accounts={data.accounts.filter(
-            (account) =>
-              account.userId === userId &&
-              account.kind === a.kind &&
-              (account.active || account.id === a.id),
-          )}
-          selectedId={a.id}
-          onSelect={(nextId) =>
-            router.replace(`/accounts/${encodeURIComponent(nextId)}`, {
-              scroll: false,
-            })
-          }
-          label={
-            a.kind === "bank"
-              ? "Bank accounts"
-              : a.kind === "credit_card"
-                ? "Credit cards"
-                : a.kind === "pay_later"
-                  ? "Pay Later accounts"
-                  : "Wallets"
-          }
-          renderCard={(account) => (
-            <VirtualAccountCard account={account} data={data} today={today} />
-          )}
-        />
-        {
-          <div className="info-banner">
-            <Landmark size={17} aria-hidden="true" />
-            <span>
-              <strong>
-                {usage ? "Updated outstanding" : "Updated balance"} ·{" "}
-                {formatOptional(balance.current)}
-              </strong>
-              <br />
-              {balance.currentSource === "snapshot"
-                ? `Reported snapshot + posted movements after ${formatDate(balance.currentBaselineAsOf)}, through ${formatDate(today)}. Same-day payments change the balance only when confirmed as missing from that report.`
-                : balance.currentSource === "opening"
-                  ? `Opening balance + dated posted movements through ${formatDate(today)}.`
-                  : "Add a reported snapshot or a known opening balance to calculate this account's balance."}
-            </span>
-          </div>
-        }
-        {usage && (
-          <section
-            className="account-credit-overview"
-            aria-label={`${a.name} credit summary`}
-          >
-            <CreditAvailability usage={usage} />
-            <dl className="account-credit-facts">
-              <div>
-                <dt>
-                  {a.kind === "pay_later" ? "Approved limit" : "Credit limit"}
-                </dt>
-                <dd>
-                  {usage.totalCreditLimit === null
-                    ? "Not set"
-                    : formatMoney(usage.totalCreditLimit)}
-                </dd>
-              </div>
-              <div>
-                <dt>
-                  {usage.provenance === "partial"
-                    ? "Minimum known exposure"
-                    : "Credit used"}
-                </dt>
-                <dd>
-                  {usage.used === null
-                    ? "Not available"
-                    : `${usage.provenance === "partial" ? "At least " : ""}${formatMoney(usage.used)}`}
-                </dd>
-              </div>
-              <div>
-                <dt>Current outstanding</dt>
-                <dd>
-                  {usage.currentOutstanding === null
-                    ? "Not available"
-                    : formatMoney(usage.currentOutstanding)}
-                </dd>
-              </div>
-              <div>
-                <dt>Utilization</dt>
-                <dd>
-                  {usage.provenance === "partial"
-                    ? "Unknown"
-                    : formatUsagePercentage(usage.creditUtilization)}
-                </dd>
-              </div>
-            </dl>
-          </section>
-        )}
-        {usage && (
-          <AccountStatementDetails
-            view={accountDetailView(data, a, month, today)}
-          />
-        )}
-        <div className="three-stats">
-          <Stat
-            title="Reported balance / outstanding"
-            value={formatOptional(balance.reported)}
-            caption={`Snapshot · ${balance.asOf ? formatDate(balance.asOf) : "Not available"}`}
-            icon={Landmark}
-          />
-          <Stat
-            title="Calculated ledger balance"
-            value={formatOptional(balance.calculated)}
-            caption={
-              balance.asOf
-                ? "Posted ledger covered by this report"
-                : "Opening balance + dated posted movements"
+      <div className="account-details-page">
+        <Link href="/accounts" className="account-page-back">
+          <ChevronLeft size={18} aria-hidden="true" /> Back
+        </Link>
+        <h1 className="sr-only">Account details</h1>
+        <div className="account-group-panel account-detail-panel">
+          <FinancialCardCarousel
+            accounts={accounts}
+            selectedId={a.id}
+            onSelect={(nextId) =>
+              router.replace(`/accounts/${encodeURIComponent(nextId)}`, {
+                scroll: false,
+              })
             }
-            icon={ArrowLeftRight}
-          />
-          <Stat
-            title="Reconciliation difference"
-            value={formatOptional(balance.difference)}
-            caption={
-              balance.reconciliation === "unknown"
-                ? "Complete opening history required"
-                : balance.reconciliation
+            label={
+              a.kind === "bank"
+                ? "Bank accounts"
+                : a.kind === "credit_card"
+                  ? "Credit cards"
+                  : a.kind === "pay_later"
+                    ? "Pay Later accounts"
+                    : "Wallets"
             }
-            icon={ShieldCheck}
+            presentation="accounts"
+            renderCard={(account) => (
+              <VirtualAccountCard
+                account={account}
+                data={data}
+                today={today}
+                onEdit={(selected) =>
+                  open({ type: "account", record: selected })
+                }
+              />
+            )}
+          />
+          <RecentAccountTransactions
+            data={data}
+            accountId={a.id}
+            limit={5}
+            variant="grouped"
+            title="Statement history"
+            onOpenTransaction={(transaction) =>
+              open({ type: "transaction", record: transaction })
+            }
           />
         </div>
-        <div className="info-banner">
-          <ShieldCheck size={17} />
-          <span>
-            {snapshot
-              ? `Source: ${kindLabel(snapshot.source)}. Reported values are valid for their stated date.`
-              : "Add a reported snapshot to reconcile this account."}
-            {fd && (
-              <>
-                {" "}
-                · Pledged deposit:{" "}
-                <Link href={`/fixed-deposits/${fd.id}`}>{fd.name}</Link>
-              </>
-            )}
-          </span>
-        </div>
-        <Section
-          title="Statement history"
-          action={
-            <button
-              className="text-link"
-              onClick={() => open({ type: "bill" })}
-            >
-              <Plus size={15} />
-              Add statement
-            </button>
-          }
-        >
-          {data.bills
-            .filter((b) => b.accountId === a.id)
-            .map((b) => (
-              <BillRow key={b.id} bill={b} />
-            ))}
-          {!data.bills.some((b) => b.accountId === a.id) && (
-            <div className="inline-empty">
-              Statement not received. Current usage does not establish a bill.
-            </div>
-          )}
-        </Section>
-        <Section title="Account history">
-          <div className="tabs" style={{ marginBottom: "12px" }}>
-            <button
-              className={accountTxnTab === "all" ? "selected" : ""}
-              onClick={() => setAccountTxnTab("all")}
-            >
-              All ({allAccountTxns.length})
-            </button>
-            <button
-              className={accountTxnTab === "purchases" ? "selected" : ""}
-              onClick={() => setAccountTxnTab("purchases")}
-            >
-              Purchases ({purchasesCount})
-            </button>
-            <button
-              className={accountTxnTab === "repayments" ? "selected" : ""}
-              onClick={() => setAccountTxnTab("repayments")}
-            >
-              Repayments ({repaymentsCount})
-            </button>
-            <button
-              className={accountTxnTab === "refunds" ? "selected" : ""}
-              onClick={() => setAccountTxnTab("refunds")}
-            >
-              Refunds ({refundsCount})
-            </button>
-            {pendingCount > 0 && (
-              <button
-                className={accountTxnTab === "pending" ? "selected" : ""}
-                onClick={() => setAccountTxnTab("pending")}
-              >
-                Pending ({pendingCount})
-              </button>
-            )}
-          </div>
-          <TransactionTable
-            transactions={filteredAccountTxns}
-            onEdit={(t) => open({ type: "transaction", record: t })}
-          />
-        </Section>
-      </>
+      </div>
     );
   }
   const visibleAccounts = data.accounts.filter(
@@ -1424,6 +1217,9 @@ function AccountsPage({
           <AccountGroup
             key={group.kind}
             label={group.label}
+            open={open}
+            data={data}
+            today={today}
             accounts={activeAccounts.filter(
               (account) => account.kind === group.kind,
             )}
@@ -1446,6 +1242,9 @@ function AccountsPage({
               <AccountGroup
                 key={group.kind}
                 label={`Archived ${group.label.toLowerCase()}`}
+                open={open}
+                data={data}
+                today={today}
                 accounts={archivedAccounts.filter(
                   (account) => account.kind === group.kind,
                 )}
@@ -1460,11 +1259,16 @@ function AccountsPage({
 function AccountGroup({
   accounts,
   label,
+  open,
+  data,
+  today,
 }: {
   accounts: Account[];
   label: string;
+  open: Open;
+  data: WorkspaceData;
+  today: string;
 }) {
-  const { data, today } = useFinance();
   const [selection, setSelection] = useState<string | null>(null);
   const selectedId = resolveSelectedAccountId(accounts, selection);
   return (
@@ -1474,8 +1278,14 @@ function AccountGroup({
         selectedId={selectedId}
         onSelect={setSelection}
         label={label}
+        presentation="accounts"
         renderCard={(account) => (
-          <VirtualAccountCard account={account} data={data} today={today} />
+          <VirtualAccountCard
+            account={account}
+            data={data}
+            today={today}
+            onEdit={(selected) => open({ type: "account", record: selected })}
+          />
         )}
       />
       {selectedId && (
@@ -1483,6 +1293,10 @@ function AccountGroup({
           data={data}
           accountId={selectedId}
           limit={4}
+          variant="grouped"
+          onOpenTransaction={(transaction) =>
+            open({ type: "transaction", record: transaction })
+          }
         />
       )}
     </div>

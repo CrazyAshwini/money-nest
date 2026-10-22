@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Decimal from "decimal.js";
+import Link from "next/link";
 import { useFinance } from "./finance-provider";
 import { Modal, Field } from "./ui";
 import {
@@ -34,6 +35,7 @@ import {
 } from "@/lib/category-platforms";
 import { withSellerDescription } from "@/lib/seller-description";
 import { balanceSnapshotIdForEdit } from "@/lib/transaction-balance-confirmation";
+import "./account-management.css";
 
 type TransactionValues = {
   description: string;
@@ -116,9 +118,11 @@ const human = (s: string) => s.replaceAll("_", " ");
 export function RecordEditor({
   editor,
   onClose,
+  returnFocusTo,
 }: {
   editor: EditorState;
   onClose: () => void;
+  returnFocusTo?: HTMLElement | null;
 }) {
   const { data, userId, today, save, deleteRecord, toast } = useFinance();
   const [error, setError] = useState("");
@@ -712,6 +716,7 @@ export function RecordEditor({
           : `${record && editor.type !== "snapshot" ? "Edit" : "Add"} ${names[editor.type]}`
       }
       onClose={onClose}
+      returnFocusTo={returnFocusTo}
       busy={busy}
       className={
         editor.type === "transaction" ? "transaction-modal" : undefined
@@ -803,6 +808,15 @@ export function RecordEditor({
               <Field label="Notes" className="full">
                 {input("notes", editor.record?.notes)}
               </Field>
+              {editor.record && (
+                <Link
+                  href={`/accounts/${encodeURIComponent(editor.record.id)}?manage=reports`}
+                  onClick={onClose}
+                  className="account-management-editor-link full"
+                >
+                  Statements and reports
+                </Link>
+              )}
             </>
           )}
           {editor.type === "transaction" && (
