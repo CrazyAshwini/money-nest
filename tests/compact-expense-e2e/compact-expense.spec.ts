@@ -39,6 +39,18 @@ async function choose(
   await expect(dialog).toHaveCount(0);
 }
 
+async function expandSearch(dialog: Locator, label: string) {
+  await dialog
+    .getByRole("button", { name: `Search ${label.toLowerCase()}`, exact: true })
+    .click();
+  const input = dialog.getByRole("searchbox", {
+    name: `Search ${label.toLowerCase()}`,
+    exact: true,
+  });
+  await expect(input).toBeFocused();
+  return input;
+}
+
 const save = (editor: Locator, kind = "expense") =>
   editor.getByRole("button", { name: `Save ${kind}`, exact: true });
 
@@ -169,8 +181,9 @@ for (const width of [320, 360, 375, 390, 412, 430, 768, 1024, 1440]) {
     await assertControlsFit(page, editor);
     await expect(save(editor)).toBeInViewport();
     const category = await picker(page, editor, "Category");
+    await expect(category.getByRole("searchbox")).toHaveCount(0);
     await expect(
-      category.getByRole("searchbox", { name: "Search category", exact: true }),
+      category.getByRole("option", { selected: true }),
     ).toBeFocused();
     await noOverflow(page);
     const categoryBox = (await category.boundingBox())!;
@@ -232,9 +245,7 @@ test("account picker groups active accounts, searches and masks identifiers", as
   await expect(
     account.getByRole("option", { name: /QA Everyday Savings/ }),
   ).toContainText("0425");
-  await account
-    .getByRole("searchbox", { name: "Search paid from", exact: true })
-    .fill("rewards");
+  await (await expandSearch(account, "Paid from")).fill("rewards");
   await expect(account.getByRole("option")).toHaveCount(1);
   await account.getByRole("option", { name: /QA Rewards Card/ }).click();
   await expect(
@@ -255,9 +266,7 @@ test("category and platform keep suggestions, custom entry and incompatible rese
   const state = await mockWorkspace(context, page, baseURL!, f.data);
   const editor = await openEditor(page);
   const category = await picker(page, editor, "Category");
-  await category
-    .getByRole("searchbox", { name: "Search category", exact: true })
-    .fill("shop");
+  await (await expandSearch(category, "Category")).fill("shop");
   await expect(category.getByRole("option")).toHaveCount(1);
   await category.getByRole("option", { name: "Shopping", exact: true }).click();
   await choose(page, editor, "Platform", "Amazon");
@@ -289,10 +298,7 @@ test("picker supports search, arrow keys, Home/End, Escape and focus restoration
   const state = await mockWorkspace(context, page, baseURL!, f.data);
   const editor = await openEditor(page);
   let category = await picker(page, editor, "Category");
-  const search = category.getByRole("searchbox", {
-    name: "Search category",
-    exact: true,
-  });
+  const search = await expandSearch(category, "Category");
   await search.fill("no matching category xyz");
   await expect(category.getByRole("status")).toContainText(
     "No matching options",
@@ -310,7 +316,8 @@ test("picker supports search, arrow keys, Home/End, Escape and focus restoration
     editor.getByRole("button", { name: "Category", exact: true }),
   ).toBeFocused();
   category = await picker(page, editor, "Category");
-  await category.getByRole("searchbox").press("ArrowDown");
+  await expect(category.getByRole("searchbox")).toHaveCount(0);
+  await expect(category.getByRole("option", { selected: true })).toBeFocused();
   await page.keyboard.press("End");
   await expect(category.getByRole("option").last()).toBeFocused();
   await page.keyboard.press("Home");
@@ -326,6 +333,141 @@ test("picker supports search, arrow keys, Home/End, Escape and focus restoration
   await expect(
     page.getByRole("button", { name: "Add transaction", exact: true }),
   ).toBeFocused();
+  state.unchanged();
+});
+
+for (const width of [320, 1440]) {
+  for (const [label, query] of [
+    ["Category", "Food"],
+    ["Platform", "Swiggy"],
+    ["Paid from", "Rewards"],
+  ]) {
+    test(`${label} search opens only on request and resets at ${width}px`, async ({
+      context,
+      page,
+      baseURL,
+    }) => {
+      const f = fixture();
+      const state = await mockWorkspace(context, page, baseURL!, f.data);
+      await page.setViewportSize({ width, height: width < 768 ? 844 : 1000 });
+      const editor = await openEditor(page);
+      if (label === "Platform") await choose(page, editor, "Category", "Food");
+      let dialog = await picker(page, editor, label);
+      const options = dialog.getByRole("option");
+      const optionCount = await options.count();
+      expect(optionCount).toBeGreaterThan(1);
+      await expect(dialog.getByRole("searchbox")).toHaveCount(0);
+      await expect(
+        dialog.getByRole("option", { selected: true }),
+      ).toBeFocused();
+      let toggle = dialog.getByRole("button", {
+        name: `Search ${label.toLowerCase()}`,
+        exact: true,
+      });
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      await expect(toggle).toHaveAttribute("aria-controls", /.+/);
+      const toggleBox = (await toggle.boundingBox())!;
+      expect(toggleBox.height).toBeGreaterThanOrEqual(44);
+      expect(toggleBox.width).toBeGreaterThanOrEqual(44);
+      const dir = `artifacts/picker-search-on-demand/${width}px`;
+      const name = label.toLowerCase().replaceAll(" ", "-");
+      await mkdir(dir, { recursive: true });
+      await page.screenshot({ path: `${dir}/${name}-collapsed.png` });
+      if (width === 320) await toggle.click();
+      else {
+        await toggle.focus();
+        await toggle.press("Enter");
+      }
+      let input = dialog.getByRole("searchbox", {
+        name: `Search ${label.toLowerCase()}`,
+        exact: true,
+      });
+      await expect(input).toBeFocused();
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await input.fill(query);
+      await expect(options).toHaveCount(1);
+      await noOverflow(page);
+      await page.screenshot({ path: `${dir}/${name}-expanded.png` });
+      await dialog
+        .getByRole("button", {
+          name: `Close ${label.toLowerCase()} search`,
+          exact: true,
+        })
+        .click();
+      await expect(dialog.getByRole("searchbox")).toHaveCount(0);
+      await expect(options).toHaveCount(optionCount);
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      await expect(toggle).toBeFocused();
+      input = await expandSearch(dialog, label);
+      await expect(input).toHaveValue("");
+      await input.fill("nothing matches this QA search");
+      await expect(dialog.getByRole("status")).toContainText(
+        "No matching options",
+      );
+      await dialog
+        .getByRole("button", {
+          name: `Close ${label.toLowerCase()} picker`,
+          exact: true,
+        })
+        .click();
+      await expect(dialog).toHaveCount(0);
+      await expect(
+        editor.getByRole("button", { name: label, exact: true }),
+      ).toBeFocused();
+      dialog = await picker(page, editor, label);
+      await expect(dialog.getByRole("searchbox")).toHaveCount(0);
+      await expect(dialog.getByRole("option")).toHaveCount(optionCount);
+      toggle = dialog.getByRole("button", {
+        name: `Search ${label.toLowerCase()}`,
+        exact: true,
+      });
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      input = await expandSearch(dialog, label);
+      await expect(input).toHaveValue("");
+      await input.fill(query);
+      await expect(dialog.getByRole("option")).toHaveCount(1);
+      const selectedLabel = await dialog.getByRole("option").innerText();
+      await dialog.getByRole("option").click();
+      await expect(dialog).toHaveCount(0);
+      dialog = await picker(page, editor, label);
+      await expect(dialog.getByRole("searchbox")).toHaveCount(0);
+      await expect(
+        dialog.getByRole("option", { selected: true }),
+      ).toContainText(selectedLabel, { useInnerText: true });
+      await expect(
+        dialog.getByRole("option", { selected: true }),
+      ).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(editor).toBeVisible();
+      state.unchanged();
+    });
+  }
+}
+
+test("transaction type picker keeps direct keyboard selection without a search control", async ({
+  context,
+  page,
+  baseURL,
+}) => {
+  const f = fixture();
+  const state = await mockWorkspace(context, page, baseURL!, f.data);
+  const editor = await openEditor(page);
+  const dialog = await picker(page, editor, "Transaction type");
+  await expect(dialog.getByRole("searchbox")).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: /^Search / })).toHaveCount(0);
+  await expect(
+    dialog.getByRole("option", { name: "Expense", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(
+    dialog.getByRole("option", { name: "Income", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    editor.getByRole("button", { name: "Transaction type", exact: true }),
+  ).toContainText("Income");
   state.unchanged();
 });
 

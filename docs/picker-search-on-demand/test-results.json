@@ -1,0 +1,12 @@
+{
+  "baseline": "a47ec745fcf51e8051a15f4c55df200970db9bbd",
+  "browser": {
+    "command": "npx playwright test --config=playwright.compact-expense.config.ts",
+    "expected": 34,
+    "unexpected": 0,
+    "skipped": 0,
+    "flaky": 0,
+    "durationMs": 51580.357
+  },
+  "data": "Fictional owner-scoped fixture records; external requests blocked; no private export or production data used."
+}

@@ -55,6 +55,8 @@
 
 .transaction-picker-trigger:focus-visible,
 .transaction-picker-close:focus-visible,
+.transaction-picker-search-toggle:focus-visible,
+.transaction-picker-search-close:focus-visible,
 .transaction-picker-option:focus-visible {
   outline: 2px solid #0f8a65;
   outline-offset: 2px;
@@ -107,7 +109,16 @@
   overflow-wrap: anywhere;
 }
 
-.transaction-picker-close {
+.transaction-picker-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.transaction-picker-close,
+.transaction-picker-search-toggle,
+.transaction-picker-search-close {
   display: inline-flex;
   flex: 0 0 44px;
   align-items: center;
@@ -120,6 +131,20 @@
   color: #486054;
   background: #f2f7f4;
   cursor: pointer;
+}
+
+.transaction-picker-search-toggle {
+  background: transparent;
+}
+
+.transaction-picker-search-toggle:hover,
+.transaction-picker-search-toggle[aria-expanded="true"] {
+  background: #eaf5ef;
+  color: #155e50;
+}
+
+.transaction-picker-search-close {
+  background: transparent;
 }
 
 .transaction-picker-search {
@@ -146,6 +171,7 @@
 }
 
 .transaction-picker-search input {
+  flex: 1;
   width: 100%;
   min-width: 0;
   min-height: 44px;
@@ -156,6 +182,10 @@
   background: transparent;
   font: inherit;
   font-size: 16px;
+}
+
+.transaction-picker-search input::-webkit-search-cancel-button {
+  appearance: none;
 }
 
 .transaction-picker-options {
