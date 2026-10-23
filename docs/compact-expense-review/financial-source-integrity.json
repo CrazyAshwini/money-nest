@@ -1,0 +1,14 @@
+{
+  "baseline": "34a5cede4dbde55b27af067112262efd8d2d4d2e",
+  "coveredPaths": [
+    "src/lib",
+    "src/app/api",
+    "supabase",
+    "src/components/finance-provider.tsx"
+  ],
+  "trackedFilesCompared": 103,
+  "unchanged": true,
+  "beforeAggregateSha256": "573ae8c94d3b6a3cb258e9c04d7706a3a45d743fc7434f04a16ced179212cd9d",
+  "afterAggregateSha256": "573ae8c94d3b6a3cb258e9c04d7706a3a45d743fc7434f04a16ced179212cd9d",
+  "method": "Each tracked file compared byte-for-byte to baseline; aggregate SHA-256 includes path, NUL, bytes, NUL in git ls-files order."
+}

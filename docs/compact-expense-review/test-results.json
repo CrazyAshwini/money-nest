@@ -1,0 +1,43 @@
+{
+  "unit": {
+    "files": 5,
+    "passed": 145,
+    "failed": 0,
+    "skipped": 0
+  },
+  "browser": {
+    "compactEditor": {
+      "startTime": "2026-10-23T01:47:43.552Z",
+      "duration": 43085.45,
+      "expected": 27,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "accountEditorRegression": {
+      "startTime": "2026-10-23T01:47:43.558Z",
+      "duration": 9850.661,
+      "expected": 5,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "finalPassed": 32,
+    "skipped": 0
+  },
+  "beforeCaptureCases": 3,
+  "screenWidths": [
+    320,
+    360,
+    375,
+    390,
+    412,
+    430,
+    768,
+    1024,
+    1440
+  ],
+  "reviewScreenshots": 9,
+  "providers": "Mocked authenticated workspace and AI; no real financial data used",
+  "productionDeployed": false
+}

@@ -1,0 +1,282 @@
+.transaction-picker {
+  min-width: 0;
+  width: 100%;
+}
+
+.transaction-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid #dce4df;
+  border-radius: 13px;
+  background: #fff;
+  color: #263b32;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.transaction-picker-trigger > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transaction-picker-trigger > svg {
+  flex-shrink: 0;
+  color: #62776c;
+}
+
+.transaction-picker-trigger:hover:not(:disabled),
+.transaction-picker-trigger[data-state="open"] {
+  border-color: #83ac98;
+  background: #fafcfb;
+}
+
+.transaction-picker-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.transaction-picker-placeholder {
+  color: #78877e;
+}
+
+.transaction-picker-trigger:focus-visible,
+.transaction-picker-close:focus-visible,
+.transaction-picker-option:focus-visible {
+  outline: 2px solid #0f8a65;
+  outline-offset: 2px;
+}
+
+.transaction-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 170;
+  background: #102b235c;
+}
+
+.transaction-picker-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 171;
+  display: flex;
+  flex-direction: column;
+  width: 440px;
+  max-width: calc(100vw - 32px);
+  max-height: min(620px, calc(100dvh - 48px));
+  padding: 16px;
+  border: 1px solid #dce6df;
+  border-radius: 22px;
+  background: #fff;
+  color: #24382f;
+  box-shadow: 0 16px 48px #102b2326;
+  transform: translate(-50%, -50%);
+  overflow: hidden;
+  color-scheme: light;
+  animation: transaction-picker-appear 120ms ease-out;
+}
+
+.transaction-picker-heading {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.transaction-picker-heading h2 {
+  margin: 0;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.transaction-picker-close {
+  display: inline-flex;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #486054;
+  background: #f2f7f4;
+  cursor: pointer;
+}
+
+.transaction-picker-search {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 46px;
+  margin: 0 2px 12px;
+  padding: 0 12px;
+  border: 1px solid #dce6df;
+  border-radius: 12px;
+  color: #667d70;
+  background: #fafcfb;
+}
+
+.transaction-picker-search:focus-within {
+  outline: 2px solid #0f8a65;
+  outline-offset: 1px;
+}
+
+.transaction-picker-search > svg {
+  flex-shrink: 0;
+}
+
+.transaction-picker-search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 0;
+  border: 0;
+  outline: none;
+  color: #24382f;
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+}
+
+.transaction-picker-options {
+  min-height: 0;
+  padding: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.transaction-picker-group {
+  margin: 12px 10px 5px;
+  color: #62796b;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.transaction-picker-options > div:first-child .transaction-picker-group {
+  margin-top: 4px;
+}
+
+.transaction-picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  margin: 2px 0;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 11px;
+  color: #253b30;
+  background: #fff;
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.transaction-picker-option:hover,
+.transaction-picker-option[aria-selected="true"] {
+  background: #eaf5ef;
+  color: #155e50;
+}
+
+.transaction-picker-option > svg {
+  flex-shrink: 0;
+}
+
+.transaction-picker-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.transaction-picker-option-copy small {
+  color: #687d70;
+  font-size: 12px;
+}
+
+.transaction-picker-unchecked {
+  visibility: hidden;
+}
+
+.transaction-picker-empty {
+  margin: 12px 4px 16px;
+  color: #65776d;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.transaction-picker-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes transaction-picker-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 600px) {
+  .transaction-picker-trigger {
+    font-size: 16px;
+  }
+
+  .transaction-picker-dialog {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: min(80dvh, 640px);
+    padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 24px 24px 0 0;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .transaction-picker-dialog {
+    animation: none;
+  }
+
+  .transaction-picker-trigger {
+    transition: none;
+  }
+}

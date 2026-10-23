@@ -1,0 +1,65 @@
+[
+  {
+    "path": "screenshots/before/320px/add-expense.png",
+    "width": 320,
+    "height": 844,
+    "sha256": "2676cb55c4d5151cc9d08ba354e3f299341cf4a192772382931cb13a44295838",
+    "data": "fictional QA workspace only"
+  },
+  {
+    "path": "screenshots/before/390px/add-expense.png",
+    "width": 390,
+    "height": 844,
+    "sha256": "549bc253f3bde8e6f81411a67c9108da4b34a4acd4fbc56da7dfdc420f0ff17f",
+    "data": "fictional QA workspace only"
+  },
+  {
+    "path": "screenshots/before/1440px/add-expense.png",
+    "width": 1440,
+    "height": 1000,
+    "sha256": "c327432987e960ba75a470b369cf7780ffa3da89c4ce16b8a160395943eb51fc",
+    "data": "fictional QA workspace only"
+  },
+  {
+    "path": "screenshots/after/320px/add-expense.png",
+    "width": 320,
+    "height": 844,
+    "sha256": "64465f25eb394e5d24c9596ef957d5564e9a3c45a77d90d7fa6d4a4a6ff149e5",
+    "data": "fictional QA workspace only"
+  },
+  {
+    "path": "screenshots/after/320px/account-picker.png",
+    "width": 320,
+    "height": 844,
+    "sha256": "84f6057a5f619a55b64d56dcc8369211c17e67f096534422e6ee831f9fade187",
+    "data": "fictional QA workspace only"
+  },
+  {
+    "path": "screenshots/after/390px/add-expense.png",
+    "width": 390,
+    "height": 844,
+    "sha256": "1b10ebd9dafef8a287d42153e6f79a9b78f41a5684a429ef779639dc08a33cee",
+    "data": "fictional QA workspace only"
+  },
+  {
+    "path": "screenshots/after/390px/account-picker.png",
+    "width": 390,
+    "height": 844,
+    "sha256": "4b7491eb05ad15ac2d4d709d27e56595a411a5fbc081fecc078f79b8324252a1",
+    "data": "fictional QA workspace only"
+  },
+  {
+    "path": "screenshots/after/1440px/add-expense.png",
+    "width": 1440,
+    "height": 1000,
+    "sha256": "f0928257aee5c9d4692c32a5513af3c18f468c58f5730f4a7a521d6fa9a5d9e6",
+    "data": "fictional QA workspace only"
+  },
+  {
+    "path": "screenshots/after/1440px/account-picker.png",
+    "width": 1440,
+    "height": 1000,
+    "sha256": "f6af14abb41c293659befc261c3fd61d74b55e54f38ec8ee8f394a19b4d06fc7",
+    "data": "fictional QA workspace only"
+  }
+]

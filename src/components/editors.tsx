@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Decimal from "decimal.js";
 import Link from "next/link";
+import { CalendarDays, ChevronDown } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { Modal, Field } from "./ui";
 import {
@@ -35,7 +36,9 @@ import {
 } from "@/lib/category-platforms";
 import { withSellerDescription } from "@/lib/seller-description";
 import { balanceSnapshotIdForEdit } from "@/lib/transaction-balance-confirmation";
+import { TransactionPicker } from "./transaction-picker";
 import "./account-management.css";
+import "./transaction-editor.css";
 
 type TransactionValues = {
   description: string;
@@ -93,7 +96,10 @@ function transactionValues(
     externalLender,
     externalRepayment: Boolean(externalLender),
     notes:
-      record?.notes?.replace(/^Confirmed external lender: .*?\.\s*/, "") || "",
+      record?.kind === "expense"
+        ? record.notes || ""
+        : record?.notes?.replace(/^Confirmed external lender: .*?\.\s*/, "") ||
+          "",
   };
 }
 
@@ -186,6 +192,13 @@ export function RecordEditor({
   const [receiptReviewed, setReceiptReviewed] = useState(false);
   const [receiptPaymentConfirmed, setReceiptPaymentConfirmed] = useState(false);
   const [pendingConfirmed, setPendingConfirmed] = useState(false);
+  const [externalPayerChosen, setExternalPayerChosen] = useState(
+    Boolean(
+      editor.type === "transaction" &&
+      editor.record?.externalPayer &&
+      !editor.record.fromAccountId,
+    ),
+  );
   const [balanceChoices, setBalanceChoices] = useState<Record<string, string>>(
     {},
   );
@@ -244,6 +257,7 @@ export function RecordEditor({
     });
     setReceipt(applied);
     setOtherPlatform(false);
+    setExternalPayerChosen(false);
     setReceiptReviewed(false);
     setReceiptPaymentConfirmed(false);
     setPendingConfirmed(false);
@@ -372,7 +386,9 @@ export function RecordEditor({
         const canConfirmPending = prev?.status === "pending_review";
         const notes =
           kind === "expense"
-            ? prev?.notes || null
+            ? transaction.notes === (prev?.notes || "")
+              ? prev?.notes || null
+              : transaction.notes.trim() || null
             : externalRepayment
               ? `Confirmed external lender: ${lender}. ${transaction.notes.trim()}`.trim()
               : transaction.notes.trim() || null;
@@ -405,8 +421,12 @@ export function RecordEditor({
             prev,
             { userId, fromAccountId: from, toAccountId: to, occurredOn: date },
             side,
-            balance && (explicitChoice === "included" || explicitChoice === "excluded")
-              ? { snapshotId: balance.snapshot.id, included: explicitChoice === "included" }
+            balance &&
+              (explicitChoice === "included" || explicitChoice === "excluded")
+              ? {
+                  snapshotId: balance.snapshot.id,
+                  included: explicitChoice === "included",
+                }
               : undefined,
           );
         };
@@ -687,27 +707,80 @@ export function RecordEditor({
     "bill_payment",
     "adjustment",
   ].includes(transaction.kind);
+  const accountGroups = {
+    bank: "Bank accounts",
+    credit_card: "Credit cards",
+    pay_later: "Pay Later",
+    wallet: "Wallets",
+  };
   const transactionAccount = (
     name: "fromAccountId" | "toAccountId",
     label: string,
     full = false,
   ) => (
     <Field label={label} className={full ? "full" : undefined}>
-      <select
-        name={name}
-        value={transaction[name]}
-        onChange={(event) => updateTransaction(name, event.target.value)}
-      >
-        <option value="">
-          {name === "fromAccountId"
-            ? "Unknown / external"
-            : "Merchant / external"}
-        </option>
-        {options}
-      </select>
+      <TransactionPicker
+        label={label}
+        value={
+          name === "fromAccountId" &&
+          transaction.kind === "expense" &&
+          externalPayerChosen
+            ? "__external_payer__"
+            : transaction[name]
+        }
+        placeholder="Choose account"
+        disabled={busy}
+        onChange={(value) => {
+          if (name === "fromAccountId" && transaction.kind === "expense") {
+            setExternalPayerChosen(value === "__external_payer__");
+            updateTransaction(
+              name,
+              value === "__external_payer__" ? "" : value,
+            );
+            if (value !== "__external_payer__")
+              updateTransaction("externalPayer", "");
+          } else updateTransaction(name, value);
+        }}
+        options={[
+          { value: "", label: "Choose account" },
+          ...(["bank", "credit_card", "pay_later", "wallet"] as const).flatMap(
+            (kind) =>
+              data.accounts
+                .filter(
+                  (account) =>
+                    account.userId === userId &&
+                    account.kind === kind &&
+                    (account.active || account.id === transaction[name]),
+                )
+                .map((account) => {
+                  const suffix = account.maskedSuffix?.trim().slice(-4);
+                  return {
+                    value: account.id,
+                    label:
+                      suffix && !account.name.includes(suffix)
+                        ? `${account.name} · ••${suffix}`
+                        : account.name,
+                    group: accountGroups[kind],
+                    description: account.active
+                      ? account.institution
+                      : "Archived account",
+                  };
+                }),
+          ),
+          ...(name === "fromAccountId" && transaction.kind === "expense"
+            ? [
+                {
+                  value: "__external_payer__",
+                  label: "Someone else paid",
+                  group: "Other payment",
+                },
+              ]
+            : []),
+        ]}
+      />
     </Field>
   );
-  const transactionTitle = `${editor.type === "transaction" && editor.record ? "Edit" : "Add New"} ${human(transaction.kind).replace(/\b\w/g, (letter) => letter.toUpperCase())}`;
+  const transactionTitle = `${editor.type === "transaction" && editor.record ? "Edit" : "Add"} ${human(transaction.kind)}`;
   return (
     <Modal
       title={
@@ -718,6 +791,18 @@ export function RecordEditor({
       onClose={onClose}
       returnFocusTo={returnFocusTo}
       busy={busy}
+      headerActions={
+        editor.type === "transaction" &&
+        !editor.record &&
+        !receiptQueue.length ? (
+          <ReceiptScanner
+            compact
+            disabled={busy}
+            onApply={applyReceipt}
+            onApplyBatch={applyReceiptBatch}
+          />
+        ) : undefined
+      }
       className={
         editor.type === "transaction" ? "transaction-modal" : undefined
       }
@@ -735,14 +820,6 @@ export function RecordEditor({
       }
     >
       <form onSubmit={submit} className="editor-form">
-        {editor.type === "transaction" &&
-          !editor.record &&
-          !receiptQueue.length && (
-            <ReceiptScanner
-              onApply={applyReceipt}
-              onApplyBatch={applyReceiptBatch}
-            />
-          )}
         {receiptQueue.length > 1 && (
           <div className="receipt-save-review" role="status">
             <strong>
@@ -821,71 +898,134 @@ export function RecordEditor({
           )}
           {editor.type === "transaction" && (
             <>
-              <Field label="Amount · ₹" className="transaction-amount">
+              <div className="transaction-quick-controls full">
+                <TransactionPicker
+                  label="Transaction type"
+                  value={transaction.kind}
+                  searchable={false}
+                  disabled={busy}
+                  options={TRANSACTION_KINDS.map((kind) => ({
+                    value: kind,
+                    label: human(kind).replace(/^./, (letter) =>
+                      letter.toUpperCase(),
+                    ),
+                  }))}
+                  onChange={(kind) => {
+                    if (kind === transaction.kind) return;
+                    updateTransaction("kind", kind);
+                    setTransaction((current) => ({
+                      ...current,
+                      kind,
+                      fromAccountId: "",
+                      toAccountId: "",
+                      externalPayer: "",
+                      externalRepayment: false,
+                      refundOfTransactionId: "",
+                    }));
+                    setExternalPayerChosen(false);
+                    setBalanceChoices({});
+                  }}
+                />
+                <label className="transaction-date-control">
+                  <CalendarDays size={16} aria-hidden="true" />
+                  <span aria-hidden="true">
+                    {transaction.occurredOn === today
+                      ? "Today"
+                      : transaction.occurredOn
+                        ? formatDate(transaction.occurredOn)
+                        : "Choose date"}
+                  </span>
+                  <ChevronDown size={14} aria-hidden="true" />
+                  <input
+                    type="date"
+                    name="occurredOn"
+                    aria-label="Date"
+                    value={transaction.occurredOn}
+                    disabled={busy}
+                    onChange={(event) =>
+                      updateTransaction("occurredOn", event.target.value)
+                    }
+                    onClick={(event) => {
+                      try {
+                        event.currentTarget.showPicker?.();
+                      } catch {
+                        /* The native date input remains available on older browsers. */
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+              <Field label="Amount · ₹" className="transaction-amount full">
                 <span className="transaction-amount-control">
                   <span aria-hidden="true">₹</span>
                   {transactionInput("amount", "number", true)}
                 </span>
               </Field>
-              {(receipt || editor.record?.sourceSystem === "receipt_ai") && (
-                <Field label="Transaction type" className="full">
-                  <select
-                    aria-label="Transaction type"
-                    value={transaction.kind}
-                    onChange={(event) => {
-                      updateTransaction("kind", event.target.value);
-                      setTransaction((current) => ({
-                        ...current,
-                        kind: event.target.value,
-                        fromAccountId: "",
-                        toAccountId: "",
-                        externalPayer: "",
-                        externalRepayment: false,
-                        refundOfTransactionId: "",
-                      }));
-                      setBalanceChoices({});
-                    }}
-                  >
-                    {TRANSACTION_KINDS.map((kind) => (
-                      <option key={kind} value={kind}>
-                        {human(kind)}
-                      </option>
-                    ))}
-                  </select>
+              <Field label="Description" className="full">
+                <textarea
+                  name="description"
+                  value={transaction.description}
+                  onChange={(event) =>
+                    updateTransaction("description", event.target.value)
+                  }
+                  placeholder={
+                    transaction.kind === "expense"
+                      ? "Seller name and what you bought"
+                      : `What was this ${human(transaction.kind)} for?`
+                  }
+                  rows={1}
+                  maxLength={200}
+                  required
+                />
+              </Field>
+              <div className="transaction-category-row full">
+                <Field label="Category">
+                  <TransactionPicker
+                    label="Category"
+                    value={transaction.category}
+                    onChange={changeCategory}
+                    disabled={busy}
+                    options={[
+                      ...new Set([
+                        ...CATEGORIES,
+                        transaction.category,
+                        ...data.transactions
+                          .filter((item) => item.userId === userId)
+                          .map((item) => item.category)
+                          .filter((category): category is string =>
+                            Boolean(category),
+                          ),
+                      ]),
+                    ]
+                      .filter(Boolean)
+                      .map((category) => ({
+                        value: category,
+                        label: category,
+                      }))}
+                  />
                 </Field>
-              )}
-              <Field label="Category">
-                <select
-                  name="category"
-                  aria-label="Category"
-                  value={transaction.category}
-                  onChange={(event) => changeCategory(event.target.value)}
-                >
-                  {!CATEGORIES.some(
-                    (category) => category === transaction.category,
-                  ) && <option>{transaction.category}</option>}
-                  {CATEGORIES.map((k) => (
-                    <option key={k}>{k}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Platform / Source" className="full">
-                <select
-                  aria-label="Platform / Source"
-                  value={otherPlatform ? OTHER_PLATFORM : transaction.platform}
-                  onChange={(event) => changePlatform(event.target.value)}
-                >
-                  <option value="">Select platform / source</option>
-                  {getCategoryPlatformOptions(
-                    transaction.category,
-                    transaction.platform,
-                  ).map((platform) => (
-                    <option key={platform} value={platform}>
-                      {platform}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+                <Field label="Platform">
+                  <TransactionPicker
+                    label="Platform"
+                    value={
+                      otherPlatform ? OTHER_PLATFORM : transaction.platform
+                    }
+                    onChange={changePlatform}
+                    disabled={busy}
+                    placeholder="Choose platform"
+                    options={[
+                      { value: "", label: "No platform" },
+                      ...getCategoryPlatformOptions(
+                        transaction.category,
+                        transaction.platform,
+                      ).map((platform) => ({
+                        value: platform,
+                        label: platform,
+                      })),
+                    ]}
+                  />
+                </Field>
+              </div>
               {otherPlatform && (
                 <Field label="Other platform / source" className="full">
                   {transactionInput("platform")}
@@ -894,7 +1034,7 @@ export function RecordEditor({
               {!incomingTransaction &&
                 transactionAccount(
                   "fromAccountId",
-                  "From account",
+                  transaction.kind === "expense" ? "Paid from" : "From account",
                   !twoAccountTransaction,
                 )}
               {(incomingTransaction || twoAccountTransaction) &&
@@ -909,31 +1049,13 @@ export function RecordEditor({
                   matching account above.
                 </p>
               )}
-              {transaction.kind === "expense" && !transaction.fromAccountId && (
-                <Field label="External payer" className="full">
-                  {transactionInput("externalPayer")}
-                </Field>
-              )}
-              <Field label="Description" className="full">
-                <textarea
-                  name="description"
-                  value={transaction.description}
-                  onChange={(event) =>
-                    updateTransaction("description", event.target.value)
-                  }
-                  placeholder={
-                    transaction.kind === "expense"
-                      ? "Seller name and what you bought"
-                      : `What was this ${human(transaction.kind)} for?`
-                  }
-                  rows={2}
-                  maxLength={200}
-                  required
-                />
-              </Field>
-              <Field label="Date" className="full">
-                {transactionInput("occurredOn", "date")}
-              </Field>
+              {transaction.kind === "expense" &&
+                externalPayerChosen &&
+                !transaction.fromAccountId && (
+                  <Field label="External payer" className="full">
+                    {transactionInput("externalPayer")}
+                  </Field>
+                )}
               {sameDayBalances.map(({ account, snapshot, key, choice }) => (
                 <Field
                   key={key}
@@ -965,12 +1087,6 @@ export function RecordEditor({
               ))}
               {transaction.kind !== "expense" && (
                 <>
-                  <Field label="Bank reference">
-                    {transactionInput("externalReference")}
-                  </Field>
-                  <Field label="External payer (if applicable)">
-                    {transactionInput("externalPayer")}
-                  </Field>
                   {(transaction.kind === "refund" ||
                     transaction.refundOfTransactionId) && (
                     <Field label="Refund of (optional)">
@@ -1034,11 +1150,29 @@ export function RecordEditor({
                       </p>
                     </>
                   )}
+                </>
+              )}
+              <details className="transaction-extra full">
+                <summary>
+                  More details <ChevronDown size={16} aria-hidden="true" />
+                </summary>
+                <div className="transaction-extra-fields">
+                  <Field label="Bank reference">
+                    {transactionInput("externalReference")}
+                  </Field>
+                  <Field label="Merchant (optional)">
+                    {transactionInput("merchant")}
+                  </Field>
+                  {transaction.kind !== "expense" && (
+                    <Field label="External payer (if applicable)">
+                      {transactionInput("externalPayer")}
+                    </Field>
+                  )}
                   <Field label="Notes" className="full">
                     {transactionInput("notes")}
                   </Field>
-                </>
-              )}
+                </div>
+              </details>
               {(!transaction.occurredOn ||
                 (["transfer", "bill_payment"].includes(transaction.kind) &&
                   (!transaction.fromAccountId ||
@@ -1469,7 +1603,10 @@ export function RecordEditor({
               : receiptQueue.length > 1 &&
                   receiptIndex < receiptQueue.length - 1
                 ? "Save and next"
-                : "Save " + names[editor.type]}
+                : "Save " +
+                  (editor.type === "transaction"
+                    ? human(transaction.kind)
+                    : names[editor.type])}
           </button>
         </div>
       </form>
