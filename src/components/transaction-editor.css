@@ -1,0 +1,339 @@
+.transaction-modal-overlay {
+  background: #142b2366;
+  backdrop-filter: blur(4px);
+}
+
+.modal.transaction-modal {
+  --text: #263b32;
+  --muted: #66776e;
+  --border: #dce5df;
+  --panel: #fff;
+  color-scheme: light;
+  display: flex;
+  flex-direction: column;
+  width: 560px;
+  max-height: calc(100dvh - 40px);
+  padding: 0;
+  overflow: hidden;
+  background: #fff;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+}
+
+.transaction-modal .modal-heading {
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 14px 20px 10px;
+}
+
+.transaction-modal .modal-heading h2 {
+  font-family: inherit;
+  font-size: 21px;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.4px;
+}
+
+.transaction-modal .modal-heading p {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.transaction-modal .modal-heading-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.transaction-modal .modal-heading .icon-button {
+  width: 44px;
+  height: 44px;
+  color: var(--muted);
+}
+
+.transaction-modal .editor-form {
+  min-height: 0;
+  padding: 0 20px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.transaction-modal .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding-bottom: 6px;
+}
+
+.transaction-modal .field {
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.transaction-modal .field input:not([type="checkbox"]),
+.transaction-modal .field select,
+.transaction-modal .field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.transaction-modal .field textarea {
+  field-sizing: content;
+  max-height: 140px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.transaction-modal .field input::placeholder,
+.transaction-modal .field textarea::placeholder {
+  color: #849389;
+}
+
+.transaction-modal .field input:focus-visible,
+.transaction-modal .field select:focus-visible,
+.transaction-modal .field textarea:focus-visible,
+.transaction-modal summary:focus-visible,
+.transaction-modal .icon-button:focus-visible,
+.transaction-modal .form-actions button:focus-visible {
+  outline: 2px solid #0f8a65;
+  outline-offset: 2px;
+}
+
+.transaction-quick-controls,
+.transaction-category-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.transaction-quick-controls .transaction-picker-trigger {
+  border-color: transparent;
+  background: #f2f7f4;
+  color: #155e50;
+  font-weight: 550;
+}
+
+.transaction-date-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 46px;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  background: #f2f7f4;
+  color: #155e50;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.transaction-date-control > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transaction-date-control > svg {
+  flex-shrink: 0;
+}
+
+.transaction-date-control input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.transaction-date-control:focus-within {
+  outline: 2px solid #0f8a65;
+  outline-offset: 2px;
+}
+
+.transaction-amount-control {
+  position: relative;
+  display: block;
+}
+
+.transaction-amount-control > span {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  transform: translateY(-50%);
+  color: #155e50;
+  font-size: 26px;
+  font-weight: 550;
+  pointer-events: none;
+}
+
+.transaction-modal .field.transaction-amount input:not([type="checkbox"]) {
+  min-height: 62px;
+  padding-left: 42px;
+  border-color: #b4cec0;
+  font-size: 30px;
+  font-weight: 550;
+  letter-spacing: -0.5px;
+}
+
+.transaction-extra > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  border-radius: 8px;
+  color: #155e50;
+  font-size: 14px;
+  font-weight: 550;
+  list-style: none;
+  cursor: pointer;
+}
+
+.transaction-extra > summary::-webkit-details-marker {
+  display: none;
+}
+
+.transaction-extra[open] > summary > svg {
+  transform: rotate(180deg);
+}
+
+.transaction-extra-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 6px 0 12px;
+}
+
+.transaction-modal .form-note {
+  padding: 9px 11px;
+  background: #f1f7f3;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.transaction-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.transaction-modal .form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin: 0 -20px;
+  padding: 12px 20px max(12px, env(safe-area-inset-bottom));
+  background: #fff;
+  border-top: 1px solid var(--border);
+}
+
+.transaction-modal .form-actions .button {
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 15px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  color: #455e51;
+  font-size: 14px;
+}
+
+.transaction-modal .form-actions .button.primary {
+  flex: 1;
+  background: #155e50;
+  border-color: #155e50;
+  color: #fff;
+}
+
+.transaction-modal .form-actions .button.danger {
+  color: #a13737;
+  border-color: #e6bcbc;
+}
+
+.transaction-modal .error {
+  margin: 10px 0 14px;
+  background: #fff2f0;
+  border-color: #edc5c0;
+  color: #9b3535;
+  font-size: 13px;
+}
+
+@media (max-width: 600px) {
+  .modal.transaction-modal {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - 12px);
+    transform: none;
+    border-radius: 22px 22px 0 0;
+  }
+
+  .transaction-modal .modal-heading {
+    padding: 12px 16px 8px;
+  }
+
+  .transaction-modal .modal-heading h2 {
+    font-size: 20px;
+  }
+
+  .transaction-modal .editor-form {
+    padding: 0 16px;
+    scrollbar-gutter: auto;
+  }
+
+  .transaction-modal .form-actions {
+    margin-right: -16px;
+    margin-left: -16px;
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .transaction-extra-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 359px) {
+  .transaction-modal .modal-heading {
+    gap: 4px;
+  }
+
+  .transaction-modal .modal-heading h2 {
+    font-size: 18px;
+  }
+
+  .transaction-modal .receipt-compact-trigger {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+}

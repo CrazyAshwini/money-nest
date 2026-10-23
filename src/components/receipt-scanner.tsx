@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { Camera, ImagePlus, ScanLine, Upload, X } from "lucide-react";
 import { useFinance } from "./finance-provider";
@@ -35,13 +35,18 @@ export type AppliedReceipt = {
 export function ReceiptScanner({
   onApply,
   onApplyBatch,
+  compact = false,
+  disabled = false,
 }: {
   onApply: (receipt: AppliedReceipt) => void;
   onApplyBatch?: (receipts: AppliedReceipt[]) => void;
+  compact?: boolean;
+  disabled?: boolean;
 }) {
   const { mode, data, userId } = useFinance();
   const panelId = useId();
   const [open, setOpen] = useState(false);
+  const [opener, setOpener] = useState<HTMLButtonElement | null>(null);
   const [settings, setSettings] = useState<ReceiptAISettings | null>(null);
   const [checking, setChecking] = useState(false);
   const [images, setImages] = useState<Array<{ file: File; url: string }>>([]);
@@ -153,7 +158,8 @@ export function ReceiptScanner({
     }
   }
 
-  function openScanner() {
+  function openScanner(event: MouseEvent<HTMLButtonElement>) {
+    setOpener(event.currentTarget);
     if (signedIn) void checkSettings();
     setOpen(true);
   }
@@ -430,37 +436,54 @@ export function ReceiptScanner({
 
   return (
     <>
-      <section className="receipt-scanner" aria-label="Receipt autofill">
-        <div className="receipt-card-heading">
-          <span className="receipt-camera-icon">
-            <Camera size={21} aria-hidden="true" />
-          </span>
-          <div>
-            <h3>Auto-Fill from Receipt</h3>
-            <p>Take a photo or upload an image to fill in the details.</p>
+      {compact ? (
+        <button
+          type="button"
+          className="receipt-compact-trigger"
+          disabled={disabled}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-controls={open ? panelId : undefined}
+          onClick={openScanner}
+        >
+          <Camera size={18} aria-hidden="true" />
+          <span>Scan receipt</span>
+        </button>
+      ) : (
+        <section className="receipt-scanner" aria-label="Receipt autofill">
+          <div className="receipt-card-heading">
+            <span className="receipt-camera-icon">
+              <Camera size={21} aria-hidden="true" />
+            </span>
+            <div>
+              <h3>Auto-Fill from Receipt</h3>
+              <p>Take a photo or upload an image to fill in the details.</p>
+            </div>
           </div>
-        </div>
-        <div className="receipt-card-actions">
-          <button
-            type="button"
-            className="receipt-pill receipt-camera-button"
-            aria-haspopup="dialog"
-            aria-expanded={open}
-            onClick={openScanner}
-          >
-            <Camera size={19} aria-hidden="true" /> Take Photo
-          </button>
-          <button
-            type="button"
-            className="receipt-pill"
-            aria-haspopup="dialog"
-            aria-expanded={open}
-            onClick={openScanner}
-          >
-            <Upload size={19} aria-hidden="true" /> Upload Image
-          </button>
-        </div>
-      </section>
+          <div className="receipt-card-actions">
+            <button
+              type="button"
+              className="receipt-pill receipt-camera-button"
+              disabled={disabled}
+              aria-haspopup="dialog"
+              aria-expanded={open}
+              onClick={openScanner}
+            >
+              <Camera size={19} aria-hidden="true" /> Take Photo
+            </button>
+            <button
+              type="button"
+              className="receipt-pill"
+              disabled={disabled}
+              aria-haspopup="dialog"
+              aria-expanded={open}
+              onClick={openScanner}
+            >
+              <Upload size={19} aria-hidden="true" /> Upload Image
+            </button>
+          </div>
+        </section>
+      )}
       {open && (
         <Modal
           title="Scan receipt"
@@ -468,6 +491,7 @@ export function ReceiptScanner({
           onClose={closeScanner}
           className="receipt-modal"
           overlayClassName="receipt-modal-overlay"
+          returnFocusTo={opener}
         >
           <div id={panelId} className="receipt-panel">
             {!signedIn ? (

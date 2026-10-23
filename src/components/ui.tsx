@@ -2,7 +2,13 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, ChevronRight, Plus, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
-import { useId, useState, type ReactNode, type ComponentType } from "react";
+import {
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+  type ComponentType,
+} from "react";
 export function Modal({
   title,
   description,
@@ -12,6 +18,7 @@ export function Modal({
   overlayClassName = "",
   busy = false,
   returnFocusTo,
+  headerActions,
 }: {
   title: string;
   description?: string;
@@ -21,7 +28,19 @@ export function Modal({
   overlayClassName?: string;
   busy?: boolean;
   returnFocusTo?: HTMLElement | null;
+  headerActions?: ReactNode;
 }) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const closeButton = (
+    <Dialog.Close
+      type="button"
+      className="icon-button"
+      aria-label="Close dialog"
+      disabled={busy}
+    >
+      <X size={20} />
+    </Dialog.Close>
+  );
   return (
     <Dialog.Root
       open
@@ -32,6 +51,7 @@ export function Modal({
       <Dialog.Portal>
         <Dialog.Overlay className={`modal-overlay ${overlayClassName}`} />
         <Dialog.Content
+          ref={contentRef}
           className={`modal ${className}`}
           onCloseAutoFocus={(event) => {
             if (returnFocusTo?.isConnected) {
@@ -40,7 +60,20 @@ export function Modal({
             }
           }}
           onEscapeKeyDown={(event) => {
-            if (busy) event.preventDefault();
+            // Handle Escape on the focused content below. Document listeners
+            // can briefly retain the previous layer during a nested open.
+            event.preventDefault();
+          }}
+          onKeyDownCapture={(event) => {
+            if (
+              event.key === "Escape" &&
+              event.target instanceof Element &&
+              event.target.closest('[role="dialog"]') === contentRef.current
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              if (!busy) onClose();
+            }
           }}
           onPointerDownOutside={(event) => {
             if (busy) event.preventDefault();
@@ -53,14 +86,14 @@ export function Modal({
                 {description || "Review the details below before saving."}
               </Dialog.Description>
             </div>
-            <Dialog.Close
-              type="button"
-              className="icon-button"
-              aria-label="Close dialog"
-              disabled={busy}
-            >
-              <X size={20} />
-            </Dialog.Close>
+            {headerActions ? (
+              <div className="modal-heading-actions">
+                {headerActions}
+                {closeButton}
+              </div>
+            ) : (
+              closeButton
+            )}
           </div>
           {children}
         </Dialog.Content>
