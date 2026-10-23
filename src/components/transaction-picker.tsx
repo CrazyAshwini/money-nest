@@ -2,7 +2,13 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { Check, ChevronDown, Search, X } from "lucide-react";
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import "./transaction-picker.css";
 
 export interface TransactionPickerOption {
@@ -36,8 +42,12 @@ export function TransactionPicker({
 }: TransactionPickerProps) {
   const id = useId();
   const [open, setOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const searchRef = useRef<HTMLInputElement>(null);
+  const searchButtonRef = useRef<HTMLButtonElement>(null);
+  const focusSearch = useCallback((element: HTMLInputElement | null) => {
+    element?.focus();
+  }, []);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const selected = options.find((option) => option.value === value);
   const normalizedQuery = query.trim().toLocaleLowerCase("en-IN");
@@ -72,7 +82,14 @@ export function TransactionPicker({
   function choose(option: TransactionPickerOption) {
     onChange(option.value);
     setOpen(false);
+    setSearchOpen(false);
     setQuery("");
+  }
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setQuery("");
+    searchButtonRef.current?.focus();
   }
 
   function focusOption(index: number) {
@@ -111,6 +128,7 @@ export function TransactionPicker({
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
+          setSearchOpen(false);
           setQuery("");
         }}
       >
@@ -139,9 +157,7 @@ export function TransactionPicker({
           <Dialog.Content
             className="transaction-picker-dialog"
             onOpenAutoFocus={(event) => {
-              const target = searchable
-                ? searchRef.current
-                : optionRefs.current[initialIndex];
+              const target = optionRefs.current[initialIndex];
               if (target) {
                 event.preventDefault();
                 target.focus();
@@ -153,28 +169,46 @@ export function TransactionPicker({
                 event.preventDefault();
                 event.stopPropagation();
                 setOpen(false);
+                setSearchOpen(false);
                 setQuery("");
               }
             }}
           >
             <div className="transaction-picker-heading">
               <Dialog.Title>Choose {label.toLowerCase()}</Dialog.Title>
-              <Dialog.Close
-                type="button"
-                className="transaction-picker-close"
-                aria-label={`Close ${label.toLowerCase()} picker`}
-              >
-                <X size={20} aria-hidden="true" />
-              </Dialog.Close>
+              <div className="transaction-picker-actions">
+                {searchable && (
+                  <button
+                    ref={searchButtonRef}
+                    type="button"
+                    className="transaction-picker-search-toggle"
+                    aria-label={`Search ${label.toLowerCase()}`}
+                    aria-expanded={searchOpen}
+                    aria-controls={`${id}-search`}
+                    onClick={() =>
+                      searchOpen ? closeSearch() : setSearchOpen(true)
+                    }
+                  >
+                    <Search size={20} aria-hidden="true" />
+                  </button>
+                )}
+                <Dialog.Close
+                  type="button"
+                  className="transaction-picker-close"
+                  aria-label={`Close ${label.toLowerCase()} picker`}
+                >
+                  <X size={20} aria-hidden="true" />
+                </Dialog.Close>
+              </div>
             </div>
             <Dialog.Description className="transaction-picker-sr-only">
               Select an option. Use the arrow keys to browse the list.
             </Dialog.Description>
-            {searchable && (
-              <div className="transaction-picker-search">
+            {searchable && searchOpen && (
+              <div id={`${id}-search`} className="transaction-picker-search">
                 <Search size={18} aria-hidden="true" />
                 <input
-                  ref={searchRef}
+                  ref={focusSearch}
                   type="search"
                   value={query}
                   aria-label={`Search ${label.toLowerCase()}`}
@@ -196,6 +230,14 @@ export function TransactionPicker({
                     }
                   }}
                 />
+                <button
+                  type="button"
+                  className="transaction-picker-search-close"
+                  aria-label={`Close ${label.toLowerCase()} search`}
+                  onClick={closeSearch}
+                >
+                  <X size={18} aria-hidden="true" />
+                </button>
               </div>
             )}
             <div
