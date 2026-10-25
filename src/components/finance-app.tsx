@@ -78,6 +78,7 @@ import {
   transactionNotionUrl,
 } from "@/lib/finance";
 import { TransactionsWorkspace } from "./transactions-workspace";
+import { TransactionHistory } from "./unified-transaction-history";
 import { TransactionIcon, transactionIconColor } from "./transaction-icon";
 import { usageSummary } from "@/lib/usage";
 import {
@@ -770,16 +771,16 @@ function Dashboard({ open }: { open: Open }) {
           href="/transactions"
           className="dashboard-activity"
         >
-          <div className="recent-activity-list">
-            {recent.map((transaction) => (
-              <RecentActivity
-                key={transaction.id}
-                transaction={transaction}
-                open={open}
-              />
-            ))}
-          </div>
-          {recent.length === 0 && (
+          {recent.length ? (
+            <TransactionHistory
+              transactions={recent}
+              accounts={data.accounts}
+              groupByDate={true}
+              onSelectTransaction={(transaction) =>
+                open({ type: "transaction", record: transaction })
+              }
+            />
+          ) : (
             <Empty
               title="No activity this month"
               description="Add a transaction to get started."
@@ -792,69 +793,6 @@ function Dashboard({ open }: { open: Open }) {
         <ArrowUpRight size={13} />
       </Link>
     </>
-  );
-}
-function RecentActivity({
-  transaction,
-  open,
-}: {
-  transaction: Transaction;
-  open: Open;
-}) {
-  const { data } = useFinance();
-  const from = data.accounts.find(
-    (account) => account.id === transaction.fromAccountId,
-  );
-  const to = data.accounts.find(
-    (account) => account.id === transaction.toAccountId,
-  );
-  const direction = transactionDirection(transaction);
-  const incoming = direction === "incoming";
-  const outgoing = direction === "outgoing";
-  return (
-    <button
-      className="recent-activity-row"
-      aria-label={`Edit ${transaction.description}`}
-      onClick={() => open({ type: "transaction", record: transaction })}
-    >
-      <span
-        className="activity-icon category-icon"
-        style={
-          {
-            "--category-color": transactionIconColor(transaction),
-          } as React.CSSProperties
-        }
-      >
-        <TransactionIcon transaction={transaction} />
-      </span>
-      <span className="activity-copy">
-        <b title={transaction.description}>{transaction.description}</b>
-        <small>
-          {transaction.kind === "expense" && transaction.category
-            ? transaction.category
-            : kindLabel(transaction.kind)}{" "}
-          ·{" "}
-          {transaction.occurredOn
-            ? formatDate(transaction.occurredOn)
-            : "Date unconfirmed"}
-          {(from || to) && <> · {from?.name || to?.name}</>}
-          {transaction.status === "posted" && " · Posted"}
-        </small>
-        {transaction.status === "pending_review" && (
-          <Badge tone="amber">Needs review</Badge>
-        )}
-      </span>
-      <span className={`activity-amount ${incoming ? "green-text" : ""}`}>
-        {incoming
-          ? "+"
-          : outgoing
-            ? "−"
-            : direction === "between_accounts"
-              ? "↔ "
-              : ""}
-        {formatMoney(transaction.amount)}
-      </span>
-    </button>
   );
 }
 function BillRow({ bill }: { bill: Bill }) {

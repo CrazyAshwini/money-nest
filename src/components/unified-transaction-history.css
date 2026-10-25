@@ -1,0 +1,330 @@
+/* MoneyNest Unified Transaction History UI Styles */
+
+.uth-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* Optional Top Header (e.g. "Transaction history   Newest first") */
+.uth-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.uth-header h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text, #152a22);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.uth-header-action {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lime, #087b5a);
+}
+
+.uth-header-action:hover {
+  text-decoration: underline;
+}
+
+/* Date Group */
+.uth-date-group {
+  margin-bottom: 20px;
+}
+
+.uth-date-group:last-child {
+  margin-bottom: 0;
+}
+
+.uth-date-heading {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted, #62756c);
+  margin: 0 0 8px 4px;
+  letter-spacing: 0.01em;
+}
+
+/* Date Card: Single white rounded container for all transactions on the same date */
+.uth-card {
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--border, #dfe9e3);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Thin horizontal divider between rows */
+.uth-divider {
+  height: 1px;
+  background-color: var(--border, #dfe9e3);
+  margin: 0;
+  border: none;
+}
+
+/* Transaction Row */
+.uth-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 15px 16px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  font: inherit;
+  color: inherit;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.uth-row.is-static {
+  cursor: default;
+}
+
+.uth-row:not(.is-static):hover {
+  background-color: var(--raised, #eff6f2);
+}
+
+.uth-row:focus-visible {
+  outline: 2px solid var(--lime, #087b5a);
+  outline-offset: -2px;
+  z-index: 1;
+}
+
+/* Left Icon Container: 42px circle with soft category tint */
+.uth-icon-wrap {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background-color: var(--uth-icon-bg, #eff6f2);
+  color: var(--uth-icon-color, #087b5a);
+  transition: transform 0.12s ease;
+}
+
+.uth-row:hover .uth-icon-wrap {
+  transform: scale(1.04);
+}
+
+/* Middle Content Area */
+.uth-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+/* Primary Line: Merchant or Description */
+.uth-merchant {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text, #152a22);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+/* Secondary Line: Category · Platform */
+.uth-subtitle {
+  font-size: 12.5px;
+  color: var(--muted, #62756c);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+/* Optional Tertiary Line: Source → Destination for transfers */
+.uth-transfer-route {
+  font-size: 11.5px;
+  color: var(--muted, #62756c);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Status Badges */
+.uth-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 550;
+  width: fit-content;
+  margin-top: 2px;
+}
+
+.uth-badge.is-pending {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.uth-badge.is-voided {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+/* Right Amount Container */
+.uth-amount-wrap {
+  flex-shrink: 0;
+  text-align: right;
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.uth-amount {
+  font-size: 14.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text, #152a22);
+  letter-spacing: -0.01em;
+}
+
+.uth-amount.is-incoming {
+  color: var(--lime, #087b5a);
+}
+
+.uth-amount.is-between {
+  color: var(--blue, #416dbc);
+}
+
+.uth-meta-note {
+  font-size: 11px;
+  color: var(--muted, #62756c);
+}
+
+/* Empty State */
+.uth-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 20px;
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--border, #dfe9e3);
+  border-radius: 20px;
+  color: var(--muted, #62756c);
+  gap: 8px;
+}
+
+.uth-empty-icon {
+  color: var(--muted, #62756c);
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+
+.uth-empty h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text, #152a22);
+  margin: 0;
+}
+
+.uth-empty p {
+  font-size: 13px;
+  margin: 0;
+  max-width: 300px;
+}
+
+/* Responsive Adaptations */
+@media (max-width: 480px) {
+  .uth-row {
+    padding: 13px 14px;
+    gap: 12px;
+  }
+
+  .uth-icon-wrap {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+  }
+
+  .uth-merchant {
+    font-size: 13.5px;
+  }
+
+  .uth-subtitle {
+    font-size: 11.5px;
+  }
+
+  .uth-amount {
+    font-size: 13.5px;
+  }
+
+  .uth-card {
+    border-radius: 18px;
+  }
+}
+
+@media (max-width: 350px) {
+  .uth-row {
+    padding: 11px 12px;
+    gap: 10px;
+  }
+
+  .uth-icon-wrap {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+  }
+
+  .uth-merchant {
+    font-size: 13px;
+  }
+
+  .uth-amount {
+    font-size: 13px;
+  }
+}
+
+/* Desktop Comfort & Max Width */
+@media (min-width: 1024px) {
+  .uth-row {
+    padding: 16px 18px;
+    gap: 16px;
+  }
+
+  .uth-icon-wrap {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+  }
+
+  .uth-merchant {
+    font-size: 15px;
+  }
+
+  .uth-amount {
+    font-size: 15px;
+  }
+}

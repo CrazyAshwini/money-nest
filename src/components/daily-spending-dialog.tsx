@@ -16,6 +16,7 @@ import {
   subtractMoney,
 } from "@/lib/finance";
 import type { Transaction, WorkspaceData } from "@/lib/types";
+import { TransactionRow } from "./unified-transaction-history";
 import "./daily-spending-dialog.css";
 
 export function DailySpendingDialog({
@@ -147,78 +148,46 @@ export function DailySpendingDialog({
                   contribute to spending on this date.
                 </p>
               ) : (
-                <ul>
-                  {rows.map(({ transaction, matched }) => {
+                <div className="uth-card" role="list">
+                  {rows.map(({ transaction, matched }, idx) => {
                     const refund = transaction.kind === "refund";
-                    const account = accounts.get(
-                      (refund
-                        ? transaction.toAccountId
-                        : transaction.fromAccountId) ?? "",
-                    );
                     const unapplied =
                       matched === null
                         ? "0.00"
                         : subtractMoney(transaction.amount, matched);
+
+                    const metaNote =
+                      refund && matched !== null ? (
+                        <span className="daily-spending-refund-attribution">
+                          {formatMoney(matched)} applied to this day’s net spending
+                          {compareMoney(unapplied, "0.00") > 0
+                            ? ` · ${formatMoney(unapplied)} not applied to this day’s net spending`
+                            : ""}
+                          {transaction.occurredOn !== detail.date
+                            ? " · Recognized when the linked purchase became dated and posted"
+                            : ""}
+                        </span>
+                      ) : undefined;
+
                     return (
-                      <li key={transaction.id}>
-                        <button
-                          type="button"
-                          className="daily-spending-transaction"
-                          data-transaction-id={transaction.id}
-                          aria-label={`Open ${transaction.description}`}
-                          onClick={() => {
+                      <div key={transaction.id} className="uth-row-container">
+                        {idx > 0 && <div className="uth-divider" />}
+                        <TransactionRow
+                          transaction={transaction}
+                          accounts={accounts}
+                          onSelect={() => {
                             skipRestore.current = true;
                             onClose();
                             requestAnimationFrame(() =>
                               onOpenTransaction(transaction),
                             );
                           }}
-                        >
-                          <span className="daily-spending-transaction-copy">
-                            <strong>
-                              {transaction.merchant || transaction.description}
-                            </strong>
-                            {transaction.merchant &&
-                              transaction.merchant !==
-                                transaction.description && (
-                                <span>{transaction.description}</span>
-                              )}
-                            <small>
-                              {transaction.category || "Other"}
-                              {account ? ` · ${account.name}` : ""}
-                            </small>
-                            <small>
-                              {refund ? "Refund" : "Expense"} · Posted ·{" "}
-                              {transaction.occurredOn
-                                ? formatDate(transaction.occurredOn, {
-                                    year: "numeric",
-                                  })
-                                : "Date unavailable"}
-                            </small>
-                            {refund && matched !== null && (
-                              <span className="daily-spending-refund-attribution">
-                                {formatMoney(matched)} applied to this day’s net
-                                spending
-                                {compareMoney(unapplied, "0.00") > 0
-                                  ? ` · ${formatMoney(unapplied)} not applied to this day’s net spending`
-                                  : ""}
-                                {transaction.occurredOn !== detail.date
-                                  ? " · Recognized when the linked purchase became dated and posted"
-                                  : ""}
-                              </span>
-                            )}
-                          </span>
-                          <strong
-                            className={`daily-spending-amount${refund ? " is-refund" : ""}`}
-                          >
-                            {refund ? "+" : "−"}
-                            {formatMoney(transaction.amount)}
-                          </strong>
-                        </button>
-                      </li>
+                          metaNote={metaNote}
+                        />
+                      </div>
                     );
                   })}
-                </ul>
+                </div>
               )}
             </section>
             <p className="daily-spending-ledger-note">

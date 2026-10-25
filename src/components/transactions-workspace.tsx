@@ -27,6 +27,7 @@ import {
 import type { Account, Transaction } from "@/lib/types";
 import { useFinance } from "./finance-provider";
 import { TransactionIcon } from "./transaction-icon";
+import { TransactionHistory } from "./unified-transaction-history";
 import { downloadFile } from "./ui";
 import "./transactions-workspace.css";
 
@@ -751,132 +752,16 @@ export function TransactionsWorkspace({
           </select>
         </div>
         {view.transactions.length ? (
-          <>
-            <div className="txw-mobile-history">
-              {[...dateGroups].map(([date, transactions]) => (
-                <div className="txw-date-group" key={date}>
-                  <h3>
-                    {date === "__unavailable__"
-                      ? "Date unavailable"
-                      : date
-                        ? formatDate(date, {
-                            day: "numeric",
-                            month: "long",
-                            year: "numeric",
-                          })
-                        : "Date not recorded"}
-                  </h3>
-                  <ul>
-                    {transactions.map((transaction) => (
-                      <li key={transaction.id}>
-                        <button
-                          type="button"
-                          data-transaction-id={transaction.id}
-                          className="txw-mobile-row"
-                          onClick={(event) =>
-                            openDetails(transaction, event.currentTarget)
-                          }
-                          aria-label={`View transaction: ${transaction.description}`}
-                        >
-                          <span
-                            className={`txw-transaction-icon txw-icon-${transactionDirection(transaction)}`}
-                          >
-                            <TransactionIcon transaction={transaction} />
-                          </span>
-                          <span className="txw-row-description">
-                            <strong>
-                              {transaction.merchant || transaction.description}
-                            </strong>
-                            <span>
-                              {transaction.category ||
-                                kindLabel(transaction.kind)}
-                              {transaction.platform
-                                ? ` · ${transaction.platform}`
-                                : ""}
-                            </span>
-                            {transactionDirection(transaction) ===
-                              "between_accounts" && (
-                              <span>
-                                {transactionAccount(transaction, accounts)}
-                              </span>
-                            )}
-                            {transaction.status !== "posted" && (
-                              <small
-                                className={`txw-status txw-status-${transaction.status}`}
-                              >
-                                {statusLabel(transaction)}
-                              </small>
-                            )}
-                          </span>
-                          <SignedAmount transaction={transaction} />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-            <div className="txw-desktop-history">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Description</th>
-                    <th>Category</th>
-                    <th>Platform</th>
-                    <th>Account / source</th>
-                    <th className="txw-right">Amount</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {view.transactions.map((transaction) => (
-                    <tr
-                      key={transaction.id}
-                      data-transaction-id={transaction.id}
-                    >
-                      <td>{recordedDateLabel(transaction.occurredOn)}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="txw-desktop-description"
-                          aria-label={`View transaction: ${transaction.description}`}
-                          onClick={(event) =>
-                            openDetails(transaction, event.currentTarget)
-                          }
-                        >
-                          <span
-                            className={`txw-transaction-icon txw-icon-${transactionDirection(transaction)}`}
-                          >
-                            <TransactionIcon transaction={transaction} />
-                          </span>
-                          <span>
-                            <strong>
-                              {transaction.merchant || transaction.description}
-                            </strong>
-                            <small>{kindLabel(transaction.kind)}</small>
-                          </span>
-                        </button>
-                      </td>
-                      <td>{transaction.category || "Uncategorized"}</td>
-                      <td>{transaction.platform || "—"}</td>
-                      <td>{transactionAccount(transaction, accounts)}</td>
-                      <td className="txw-right">
-                        <SignedAmount transaction={transaction} />
-                      </td>
-                      <td>
-                        <span
-                          className={`txw-status txw-status-${transaction.status}`}
-                        >
-                          {statusLabel(transaction)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
+          <div className="txw-unified-history">
+            <TransactionHistory
+              transactions={view.transactions}
+              accounts={accounts}
+              sort={filters.sort}
+              onSelectTransaction={(transaction, event) =>
+                openDetails(transaction, event.currentTarget)
+              }
+            />
+          </div>
         ) : (
           <div className="txw-empty">
             <Search size={25} aria-hidden="true" />

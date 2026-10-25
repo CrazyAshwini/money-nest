@@ -179,6 +179,7 @@ export function RecentAccountTransactions({
   variant = "legacy",
   title = "Recent transactions",
   onOpenTransaction,
+  onSelectTransaction,
 }: {
   data: WorkspaceData;
   accountId: string;
@@ -188,6 +189,7 @@ export function RecentAccountTransactions({
   variant?: "legacy" | "grouped";
   title?: string;
   onOpenTransaction?: (transaction: Transaction) => void;
+  onSelectTransaction?: (transaction: Transaction) => void;
 }) {
   const account = data.accounts.find((item) => item.id === accountId);
   if (!account) return null;
@@ -197,6 +199,7 @@ export function RecentAccountTransactions({
     limit,
     asOf,
   );
+  const handleOpen = onOpenTransaction ?? onSelectTransaction;
   if (variant === "grouped")
     return (
       <section
@@ -217,7 +220,7 @@ export function RecentAccountTransactions({
             ownerId={account.userId}
             accountId={accountId}
             transactions={transactions}
-            onOpenTransaction={onOpenTransaction}
+            onOpenTransaction={handleOpen}
           />
         ) : (
           <p className="recent-account-empty">

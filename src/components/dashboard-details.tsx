@@ -14,6 +14,7 @@ import {
 import type { Transaction, WorkspaceData } from "@/lib/types";
 import { useFinance } from "./finance-provider";
 import { FinancialAccountDetails } from "./financial-account-details";
+import { TransactionRow } from "./unified-transaction-history";
 import "./dashboard-details.css";
 
 export type DashboardFinancialSection =
@@ -75,47 +76,18 @@ function TransactionDetails({
     data.accounts.map((account) => [account.id, account]),
   );
   return (
-    <ul className="financial-details-transactions">
-      {transactions.map((transaction) => {
-        const source = transaction.fromAccountId
-          ? accounts.get(transaction.fromAccountId)
-          : null;
-        const destination = transaction.toAccountId
-          ? accounts.get(transaction.toAccountId)
-          : null;
-        return (
-          <li key={transaction.id}>
-            <div className="financial-details-transaction-heading">
-              <strong>
-                {transaction.merchant ||
-                  transaction.description ||
-                  "Description not available"}
-              </strong>
-              <b>{formatMoney(transaction.amount)}</b>
-            </div>
-            {transaction.merchant &&
-              transaction.description !== transaction.merchant && (
-                <p>{transaction.description}</p>
-              )}
-            <p>
-              {date(transaction.occurredOn)} ·{" "}
-              {transaction.kind === "bill_payment"
-                ? "Repayment"
-                : transaction.category || "Other"}
-            </p>
-            <div className="financial-details-transaction-meta">
-              <span>
-                {source?.name || "Source account not available"}
-                {destination ? ` → ${destination.name}` : ""}
-              </span>
-              <span className="financial-details-status" data-status="paid">
-                Posted
-              </span>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+    <div className="uth-card" role="list">
+      {transactions.map((transaction, idx) => (
+        <div key={transaction.id} className="uth-row-container">
+          {idx > 0 && <div className="uth-divider" />}
+          <TransactionRow
+            transaction={transaction}
+            accounts={accounts}
+            interactive={false}
+          />
+        </div>
+      ))}
+    </div>
   );
 }
 
