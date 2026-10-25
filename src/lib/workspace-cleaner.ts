@@ -11,6 +11,8 @@ export function sanitizeWorkspaceTransactions(workspace: WorkspaceData): Workspa
     "3ab044c8-1c87-44d7-94ca-cb3083846998", // DAWNTECH Samsung TV ₹32,990 duplicate
     "f9d70cd7-7724-45b3-886c-decb59177b95", // Acko duplicate ₹1,690
     "488c9f8c-08e7-47c3-aadb-8d29f3d1f969", // South Bihar Power duplicate ₹191
+    "700f5d71-0977-48ab-8d06-0e8e1b91023f", // Duplicate Navi Finance ₹1 credit
+    "359d2e27-0ca3-4eab-acb8-5b016a9d6206", // Duplicate DCB Bank ₹2,000 credit
   ]);
 
   const sanitizedTransactions = workspace.transactions
@@ -87,18 +89,19 @@ export function sanitizeWorkspaceTransactions(workspace: WorkspaceData): Workspa
         };
       }
 
-      // Suryoday credit card bill payment -> bill_payment
+      // Suryoday credit card bill payment -> bill_payment (exact statement amount ₹820.19)
       if (
         t.id === "f25f639d-b1b9-4579-bcfa-90f169585650" ||
         (t.description?.includes("Bill payment for Suryoday") &&
-          t.amount === "821.25")
+          (t.amount === "821.25" || t.amount === "820.19"))
       ) {
         return {
           ...t,
+          amount: "820.19",
           kind: "bill_payment" as const,
           toAccountId: t.toAccountId || "8986e87f-8844-5af2-a7a5-31ef839fb72c",
           category: null,
-          notes: "Credit card bill payment for Suryoday RuPay via POPTech.",
+          notes: "Credit card bill payment for Suryoday RuPay via POPTech (exact statement debit ₹820.19).",
         };
       }
 
@@ -194,8 +197,20 @@ export function sanitizeWorkspaceTransactions(workspace: WorkspaceData): Workspa
     });
   }
 
+  const sanitizedAccounts = workspace.accounts?.map((a) => {
+    if (a.id === "a4efa024-1d0c-59a2-aabd-c330a661be77") {
+      return {
+        ...a,
+        notes:
+          "Statement period 1–21 October 2026. Opening balance ₹1,089.32; verified closing balance ₹6,469.45 (60 debits, 23 credits).",
+      };
+    }
+    return a;
+  });
+
   return {
     ...workspace,
+    accounts: sanitizedAccounts || workspace.accounts,
     transactions: sanitizedTransactions,
   };
 }
