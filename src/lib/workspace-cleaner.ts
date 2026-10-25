@@ -1,10 +1,10 @@
-import type { WorkspaceData } from "./types";
+import type { WorkspaceData, WorkspaceDataWithEmi } from "./types";
 
 /**
  * Sanitizes workspace transactions to remove confirmed duplicates and normalize
  * misclassified repayments and transfers that distort spending totals.
  */
-export function sanitizeWorkspaceTransactions(workspace: WorkspaceData): WorkspaceData {
+export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace: T): T & WorkspaceDataWithEmi {
   if (!workspace || !Array.isArray(workspace.transactions)) return workspace;
 
   const toRemoveIds = new Set([
@@ -143,10 +143,12 @@ export function sanitizeWorkspaceTransactions(workspace: WorkspaceData): Workspa
   const iciciAccountId = "2e84b7fc-dc55-4052-a087-7910619c3f2e";
   const sbiAccountId = "a4efa024-1d0c-59a2-aabd-c330a661be77";
   const idfcAccountId = "5d9bc626-5ee8-514f-a2ff-fca8b5618b74";
+  const amazonAccountId = "476fa60a-ab35-5769-a18c-839e8a88d283";
 
   const hasIcici = workspace.accounts?.some((a) => a.id === iciciAccountId);
   const hasSbi = workspace.accounts?.some((a) => a.id === sbiAccountId);
   const hasIdfc = workspace.accounts?.some((a) => a.id === idfcAccountId);
+  const hasAmazon = workspace.accounts?.some((a) => a.id === amazonAccountId);
 
   const userId =
     workspace.accounts?.find((a) => a.userId)?.userId ||
@@ -394,11 +396,63 @@ export function sanitizeWorkspaceTransactions(workspace: WorkspaceData): Workspa
     return fd;
   });
 
+  // Attach structured Samsung TV EMI agreement if Amazon Pay Later account exists
+  let sanitizedEmiAgreements =
+    "emiAgreements" in workspace &&
+    Array.isArray((workspace as any).emiAgreements)
+      ? [...(workspace as any).emiAgreements]
+      : [];
+
+  if (hasAmazon) {
+    const hasSamsungEmi = sanitizedEmiAgreements.some(
+      (e) =>
+        e.accountId === amazonAccountId &&
+        e.description?.toLowerCase().includes("samsung"),
+    );
+    if (!hasSamsungEmi) {
+      sanitizedEmiAgreements.push({
+        id: "agr-samsung-tv",
+        userId,
+        accountId: amazonAccountId,
+        orderIds: [
+          "406-2479955-3587539",
+          "406-6855707-5582708",
+          "406-0628731-9190704",
+        ],
+        purchaseDate: "2026-10-18",
+        merchant: "Amazon",
+        description: "Samsung 43-inch television plus two additional items",
+        financedPrincipal: "30509.79",
+        annualInterestRate: "20.00",
+        totalScheduledInterest: "2598.50",
+        processingFee: "360.02",
+        totalScheduledRepayment: "33468.31",
+        emiCount: 9,
+        monthlyPayment: "3678.70",
+        principalOutstanding: "30509.79",
+        principalRepaid: "0.00",
+        interestBilled: "0.00",
+        interestPaid: "0.00",
+        unbilledFutureInterest: "2598.50",
+        feesBilled: "0.00",
+        feesPaid: "0.00",
+        firstBillingDate: "2026-11-01",
+        firstDueDate: "2026-11-05",
+        status: "active",
+        notes:
+          "9-month EMI agreement for Samsung 43\" TV + 2 items. Only principal consumes credit limit upfront.",
+      });
+    }
+  }
+
   return {
     ...workspace,
     accounts: sanitizedAccounts || workspace.accounts,
     snapshots: sanitizedSnapshots || workspace.snapshots,
     fixedDeposits: sanitizedFixedDeposits || workspace.fixedDeposits,
     transactions: sanitizedTransactions,
+    ...(sanitizedEmiAgreements.length > 0
+      ? { emiAgreements: sanitizedEmiAgreements }
+      : {}),
   };
 }

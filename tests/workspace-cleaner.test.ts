@@ -135,6 +135,31 @@ describe("workspace-cleaner", () => {
     expect(idfcSnap).toBeDefined();
   });
 
+  it("attaches Samsung TV EMI agreement when Amazon Pay Later account exists", () => {
+    const ws = createBaseWorkspace();
+    ws.accounts.push({
+      id: "476fa60a-ab35-5769-a18c-839e8a88d283",
+      userId,
+      name: "Amazon Pay Later",
+      institution: "Amazon",
+      kind: "pay_later",
+      maskedSuffix: "",
+      creditLimit: "35000.00",
+      active: true,
+    });
+
+    const result = sanitizeWorkspaceTransactions(ws);
+    expect(result.emiAgreements).toBeDefined();
+    expect(result.emiAgreements).toHaveLength(1);
+    expect(result.emiAgreements![0]).toMatchObject({
+      id: "agr-samsung-tv",
+      financedPrincipal: "30509.79",
+      monthlyPayment: "3678.70",
+      emiCount: 9,
+      status: "active",
+    });
+  });
+
   it("does not inject rogue transactions into empty workspaces for other users", () => {
     const emptyWorkspace: WorkspaceData = {
       accounts: [],
