@@ -139,78 +139,266 @@ export function sanitizeWorkspaceTransactions(workspace: WorkspaceData): Workspa
       return t;
     });
 
-  // Ensure ICICI statement entries from 25 Oct 2026 are present
-  const iciciJayantRef = "512684732761";
-  const iciciSwiggyRef = "588091285703";
+  const ownerUserId = "4aed7ac5-23e7-4878-aa7a-13ad6d24b597";
   const iciciAccountId = "2e84b7fc-dc55-4052-a087-7910619c3f2e";
+  const sbiAccountId = "a4efa024-1d0c-59a2-aabd-c330a661be77";
+  const idfcAccountId = "5d9bc626-5ee8-514f-a2ff-fca8b5618b74";
+
+  const hasIcici = workspace.accounts?.some((a) => a.id === iciciAccountId);
+  const hasSbi = workspace.accounts?.some((a) => a.id === sbiAccountId);
+  const hasIdfc = workspace.accounts?.some((a) => a.id === idfcAccountId);
+
   const userId =
-    workspace.accounts?.find((a) => a.id === iciciAccountId)?.userId ||
+    workspace.accounts?.find((a) => a.userId)?.userId ||
     workspace.transactions[0]?.userId ||
-    "4aed7ac5-23e7-4878-aa7a-13ad6d24b597";
+    ownerUserId;
 
-  const hasJayant = sanitizedTransactions.some(
-    (t) =>
-      t.externalReference === iciciJayantRef ||
-      t.id === "c2607015-0017-4888-a001-512684732761",
-  );
-  if (!hasJayant) {
-    sanitizedTransactions.push({
-      id: "c2607015-0017-4888-a001-512684732761",
-      userId,
-      kind: "income",
-      status: "posted",
-      amount: "1500.00",
-      currency: "INR",
-      occurredOn: "2026-10-25",
-      fromAccountId: null,
-      toAccountId: iciciAccountId,
-      category: null,
-      merchant: "Jayant Kumar (Pralad)",
-      description: "UPI/JAYANT KUM/XX6686@axl/Payment fr/UNION BANK/512684732761",
-      externalReference: iciciJayantRef,
-      notes: "Income from friend Pralad aka Jayant Kumar via UPI (UTR 512684732761).",
-    });
+  // 1. Ensure ICICI statement entries from 25 Oct 2026 are present if user owns ICICI account
+  if (hasIcici) {
+    const iciciJayantRef = "512684732761";
+    const iciciSwiggyRef = "588091285703";
+
+    const hasJayant = sanitizedTransactions.some(
+      (t) =>
+        t.externalReference === iciciJayantRef ||
+        t.id === "c2607015-0017-4888-a001-512684732761",
+    );
+    if (!hasJayant) {
+      sanitizedTransactions.push({
+        id: "c2607015-0017-4888-a001-512684732761",
+        userId,
+        kind: "income",
+        status: "posted",
+        amount: "1500.00",
+        currency: "INR",
+        occurredOn: "2026-10-25",
+        fromAccountId: null,
+        toAccountId: iciciAccountId,
+        category: null,
+        merchant: "Jayant Kumar (Pralad)",
+        description: "UPI/JAYANT KUM/XX6686@axl/Payment fr/UNION BANK/512684732761",
+        externalReference: iciciJayantRef,
+        notes: "Income from friend Pralad aka Jayant Kumar via UPI (UTR 512684732761).",
+      });
+    }
+
+    const hasSwiggy = sanitizedTransactions.some(
+      (t) =>
+        t.externalReference === iciciSwiggyRef ||
+        t.id === "c2607015-0018-4888-a002-588091285703",
+    );
+    if (!hasSwiggy) {
+      sanitizedTransactions.push({
+        id: "c2607015-0018-4888-a002-588091285703",
+        userId,
+        kind: "expense",
+        status: "posted",
+        amount: "67.00",
+        currency: "INR",
+        occurredOn: "2026-10-25",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Food",
+        platform: "Swiggy",
+        merchant: "Swiggy / P Nilancha",
+        description: "Swiggy — Food expense paid to P Nilancha",
+        externalReference: iciciSwiggyRef,
+        notes: "Food expense on Swiggy paid to friend P Nilancha via UPI (UTR 588091285703).",
+      });
+    }
   }
 
-  const hasSwiggy = sanitizedTransactions.some(
-    (t) =>
-      t.externalReference === iciciSwiggyRef ||
-      t.id === "c2607015-0018-4888-a002-588091285703",
-  );
-  if (!hasSwiggy) {
-    sanitizedTransactions.push({
-      id: "c2607015-0018-4888-a002-588091285703",
-      userId,
-      kind: "expense",
-      status: "posted",
-      amount: "67.00",
-      currency: "INR",
-      occurredOn: "2026-10-25",
-      fromAccountId: iciciAccountId,
-      toAccountId: null,
-      category: "Food",
-      platform: "Swiggy",
-      merchant: "Swiggy / P Nilancha",
-      description: "Swiggy — Food expense paid to P Nilancha",
-      externalReference: iciciSwiggyRef,
-      notes: "Food expense on Swiggy paid to friend P Nilancha via UPI (UTR 588091285703).",
-    });
+  // 2. Ensure IDFC Cashback Statement Credit on 19 Oct 2026 if user owns IDFC Hello Cashback card
+  if (hasIdfc) {
+    const idfcCashbackId = "c2607015-0019-4888-a003-191020260048";
+    const hasCashback = sanitizedTransactions.some(
+      (t) =>
+        t.id === idfcCashbackId ||
+        (t.toAccountId === idfcAccountId &&
+          t.amount === "48.90" &&
+          t.occurredOn === "2026-10-19"),
+    );
+    if (!hasCashback) {
+      sanitizedTransactions.push({
+        id: idfcCashbackId,
+        userId,
+        kind: "adjustment",
+        status: "posted",
+        amount: "48.90",
+        currency: "INR",
+        occurredOn: "2026-10-19",
+        fromAccountId: null,
+        toAccountId: idfcAccountId,
+        category: null,
+        merchant: "IDFC FIRST Bank",
+        description: "IDFC FIRST Hello Cashback — ₹48.90 cashback statement credit applied",
+        notes: "Cashback statement credit of ₹48.90 clears card outstanding to ₹0.00 prior to card closure.",
+      });
+    }
   }
 
+  // 3. Ensure SBI Mini-Statement items on 25 Oct 2026 if user owns SBI account
+  if (hasSbi) {
+    // 3a. Rapido expense ₹50.00
+    const rapidoId = "c2607015-0020-4888-a004-251020260050";
+    const hasRapido = sanitizedTransactions.some(
+      (t) =>
+        t.id === rapidoId ||
+        (t.fromAccountId === sbiAccountId &&
+          t.amount === "50.00" &&
+          t.occurredOn === "2026-10-25" &&
+          t.description?.toLowerCase().includes("rapido")),
+    );
+    if (!hasRapido) {
+      sanitizedTransactions.push({
+        id: rapidoId,
+        userId,
+        kind: "expense",
+        status: "posted",
+        amount: "50.00",
+        currency: "INR",
+        occurredOn: "2026-10-25",
+        fromAccountId: sbiAccountId,
+        toAccountId: null,
+        category: "Transport",
+        platform: "Rapido",
+        merchant: "Rapido",
+        description: "Rapido — Ride payment",
+        notes: "Rapido ride expense paid from SBI.",
+      });
+    }
+
+    // 3b. FD withdrawal into SBI ₹10,289.00
+    const fdWithdrawalId = "c2607015-0021-4888-a005-251010289000";
+    const hasFdWithdrawal = sanitizedTransactions.some(
+      (t) =>
+        t.id === fdWithdrawalId ||
+        (t.toAccountId === sbiAccountId &&
+          t.amount === "10289.00" &&
+          t.occurredOn === "2026-10-25"),
+    );
+    if (!hasFdWithdrawal) {
+      sanitizedTransactions.push({
+        id: fdWithdrawalId,
+        userId,
+        kind: "transfer",
+        status: "posted",
+        amount: "10289.00",
+        currency: "INR",
+        occurredOn: "2026-10-25",
+        fromAccountId: null,
+        toAccountId: sbiAccountId,
+        category: null,
+        merchant: "IDFC FIRST Bank",
+        description: "BY TRFR — IDFC Fixed Deposit withdrawal (₹10,000 principal + ₹289 interest)",
+        notes: "Fixed deposit encashment credited into SBI upon IDFC card closure.",
+      });
+    }
+
+    // 3c. Bank verification credit ₹1.00
+    const bankVerificationId = "c2607015-0022-4888-a006-251000000001";
+    const hasBankVerification = sanitizedTransactions.some(
+      (t) =>
+        t.id === bankVerificationId ||
+        (t.toAccountId === sbiAccountId &&
+          t.amount === "1.00" &&
+          t.occurredOn === "2026-10-25" &&
+          t.description?.toLowerCase().includes("verification")),
+    );
+    if (!hasBankVerification) {
+      sanitizedTransactions.push({
+        id: bankVerificationId,
+        userId,
+        kind: "adjustment",
+        status: "posted",
+        amount: "1.00",
+        currency: "INR",
+        occurredOn: "2026-10-25",
+        fromAccountId: null,
+        toAccountId: sbiAccountId,
+        category: null,
+        merchant: "Bank Verification",
+        description: "BY TRFR for bank verification",
+        notes: "Bank penny-drop verification credit into SBI.",
+      });
+    }
+  }
+
+  // Sanitize accounts (SBI notes + IDFC card closure)
   const sanitizedAccounts = workspace.accounts?.map((a) => {
-    if (a.id === "a4efa024-1d0c-59a2-aabd-c330a661be77") {
+    if (a.id === sbiAccountId) {
       return {
         ...a,
         notes:
-          "Statement period 1–21 October 2026. Opening balance ₹1,089.32; verified closing balance ₹6,469.45 (60 debits, 23 credits).",
+          "Statement period 1–21 October 2026. Opening balance ₹1,089.32; verified closing balance ₹6,469.45 (60 debits, 23 credits). Mini-statement available balance ₹18,575.85 as of 25 Oct 2026 (23:43).",
+      };
+    }
+    if (a.id === idfcAccountId) {
+      return {
+        ...a,
+        active: false,
+        notes: "Card closed on 25 Oct 2026 upon ₹48.90 cashback statement credit and FD encashment.",
       };
     }
     return a;
   });
 
+  // Sanitize snapshots (SBI available balance snapshot + IDFC zero balance snapshot)
+  let sanitizedSnapshots = workspace.snapshots;
+  if (Array.isArray(workspace.snapshots) && (hasSbi || hasIdfc)) {
+    sanitizedSnapshots = [...workspace.snapshots];
+    if (hasSbi) {
+      const sbiSnapshotId = "c2607015-0023-4888-a007-251018575850";
+      if (!sanitizedSnapshots.some((s) => s.id === sbiSnapshotId)) {
+        sanitizedSnapshots.push({
+          id: sbiSnapshotId,
+          userId,
+          accountId: sbiAccountId,
+          asOf: "2026-10-25T23:43:00Z",
+          reportedBalance: "18575.85",
+          source: "bank_statement",
+          verifiedByUser: true,
+        });
+      }
+    }
+    if (hasIdfc) {
+      const idfcSnapshotId = "c2607015-0024-4888-a008-251000000000";
+      if (!sanitizedSnapshots.some((s) => s.id === idfcSnapshotId)) {
+        sanitizedSnapshots.push({
+          id: idfcSnapshotId,
+          userId,
+          accountId: idfcAccountId,
+          asOf: "2026-10-25T23:43:00Z",
+          reportedBalance: "0.00",
+          reportedOutstanding: "0.00",
+          source: "bank_statement",
+          verifiedByUser: true,
+        });
+      }
+    }
+  }
+
+  // Sanitize fixed deposits (unpledge IDFC FD and record encashment value)
+  const sanitizedFixedDeposits = workspace.fixedDeposits?.map((fd) => {
+    if (fd.id === "0ed85bdd-233c-508d-ac8d-b6722773ff34") {
+      return {
+        ...fd,
+        pledged: false,
+        payoutAccountId: sbiAccountId,
+        reportedEncashmentValue: "10289.00",
+        reportedAsOf: "2026-10-25",
+        notes:
+          "Encashed/withdrawn into SBI on 25 Oct 2026 upon closure of IDFC card (₹10,000 principal + ₹289 interest).",
+      };
+    }
+    return fd;
+  });
+
   return {
     ...workspace,
     accounts: sanitizedAccounts || workspace.accounts,
+    snapshots: sanitizedSnapshots || workspace.snapshots,
+    fixedDeposits: sanitizedFixedDeposits || workspace.fixedDeposits,
     transactions: sanitizedTransactions,
   };
 }
