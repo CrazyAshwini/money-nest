@@ -102,6 +102,37 @@ export function sanitizeWorkspaceTransactions(workspace: WorkspaceData): Workspa
         };
       }
 
+      // Amazon Pay Later ₹380 purchase on 2 Oct
+      if (
+        t.id === "3941fe6a-57a2-5c29-a768-b748102b2f33" ||
+        (t.fromAccountId === "476fa60a-ab35-5769-a18c-839e8a88d283" &&
+          t.amount === "380.00" &&
+          t.occurredOn === "2026-10-02" &&
+          t.kind === "expense")
+      ) {
+        return {
+          ...t,
+          description: "Amazon Pay Later — Amazon purchase ₹380 (item unknown)",
+          notes: "Amazon purchase ₹380 | Other | Amazon Pay Later - refunded on same day (2 Oct 2026).",
+        };
+      }
+
+      // Amazon Pay Later ₹380 refund -> link to purchase & set occurredOn to 2026-10-02 (same day)
+      if (
+        t.id === "1431fa01-5395-4515-ad3b-a1312ce6cb92" ||
+        (t.toAccountId === "476fa60a-ab35-5769-a18c-839e8a88d283" &&
+          t.amount === "380.00" &&
+          t.kind === "refund")
+      ) {
+        return {
+          ...t,
+          occurredOn: "2026-10-02",
+          refundOfTransactionId: "3941fe6a-57a2-5c29-a768-b748102b2f33",
+          description: "Amazon Pay Later — ₹380 refund received",
+          notes: "Confirmed same-day refund for 2 Oct 2026 Amazon purchase ₹380.",
+        };
+      }
+
       return t;
     });
 
