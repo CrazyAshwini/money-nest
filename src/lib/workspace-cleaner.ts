@@ -136,6 +136,64 @@ export function sanitizeWorkspaceTransactions(workspace: WorkspaceData): Workspa
       return t;
     });
 
+  // Ensure ICICI statement entries from 25 Oct 2026 are present
+  const iciciJayantRef = "512684732761";
+  const iciciSwiggyRef = "588091285703";
+  const iciciAccountId = "2e84b7fc-dc55-4052-a087-7910619c3f2e";
+  const userId =
+    workspace.accounts?.find((a) => a.id === iciciAccountId)?.userId ||
+    workspace.transactions[0]?.userId ||
+    "4aed7ac5-23e7-4878-aa7a-13ad6d24b597";
+
+  const hasJayant = sanitizedTransactions.some(
+    (t) =>
+      t.externalReference === iciciJayantRef ||
+      t.id === "c2607015-0017-4888-a001-512684732761",
+  );
+  if (!hasJayant) {
+    sanitizedTransactions.push({
+      id: "c2607015-0017-4888-a001-512684732761",
+      userId,
+      kind: "income",
+      status: "posted",
+      amount: "1500.00",
+      currency: "INR",
+      occurredOn: "2026-10-25",
+      fromAccountId: null,
+      toAccountId: iciciAccountId,
+      category: null,
+      merchant: "Jayant Kumar (Pralad)",
+      description: "UPI/JAYANT KUM/XX6686@axl/Payment fr/UNION BANK/512684732761",
+      externalReference: iciciJayantRef,
+      notes: "Income from friend Pralad aka Jayant Kumar via UPI (UTR 512684732761).",
+    });
+  }
+
+  const hasSwiggy = sanitizedTransactions.some(
+    (t) =>
+      t.externalReference === iciciSwiggyRef ||
+      t.id === "c2607015-0018-4888-a002-588091285703",
+  );
+  if (!hasSwiggy) {
+    sanitizedTransactions.push({
+      id: "c2607015-0018-4888-a002-588091285703",
+      userId,
+      kind: "expense",
+      status: "posted",
+      amount: "67.00",
+      currency: "INR",
+      occurredOn: "2026-10-25",
+      fromAccountId: iciciAccountId,
+      toAccountId: null,
+      category: "Food",
+      platform: "Swiggy",
+      merchant: "Swiggy / P Nilancha",
+      description: "Swiggy — Food expense paid to P Nilancha",
+      externalReference: iciciSwiggyRef,
+      notes: "Food expense on Swiggy paid to friend P Nilancha via UPI (UTR 588091285703).",
+    });
+  }
+
   return {
     ...workspace,
     transactions: sanitizedTransactions,
