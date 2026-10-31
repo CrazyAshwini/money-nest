@@ -15,7 +15,6 @@ import { resolveAppPage } from "@/lib/page-metadata";
 import type { WorkspaceData, OwnedRecord } from "@/lib/types";
 import type { UserProfile } from "@/lib/profile-types";
 import type { WorkspaceLoadingStage } from "./workspace-loading";
-import { sanitizeWorkspaceTransactions } from "@/lib/workspace-cleaner";
 
 const STORAGE_KEY = "finance-os:fictional-demo:v1";
 const WORKSPACE_LOAD_TIMEOUT_MS = 30_000;
@@ -265,7 +264,7 @@ export function FinanceProvider({
         setMonth(localDate().slice(0, 7));
       }
       activeIdentity.current = identity;
-      replaceData(sanitizeWorkspaceTransactions(result.workspace));
+      replaceData(result.workspace);
       setAuthUserId(result.userId);
       setProfile(result.profile ?? null);
       needsLoadingScreen.current = false;

@@ -81,6 +81,8 @@ async function mockSessions(
     emptyB?: boolean;
     signupEnabled?: boolean;
     allowSingleASave?: boolean;
+    duplicateARecords?: boolean;
+    backend?: "local" | "supabase";
   } = {},
 ) {
   const state = {
@@ -98,6 +100,19 @@ async function mockSessions(
     A: workspaceFor("A"),
     B: options.emptyB ? emptyWorkspace() : workspaceFor("B"),
   };
+  if (options.duplicateARecords) {
+    // A previous owner-specific read repair removed any matching merchant/date/amount,
+    // even when these are distinct purchases belonging to a different synthetic user.
+    Object.assign(workspaces.A.transactions[0], {
+      amount: "32990.00",
+      occurredOn: "2026-10-18",
+      merchant: "DAWNTECH synthetic merchant example",
+    });
+    workspaces.A.transactions.push({
+      ...workspaces.A.transactions[0],
+      id: "30000000-0000-4000-8000-000000000009",
+    });
+  }
   function workspaceReply() {
     const user = state.user;
     return {
@@ -105,7 +120,7 @@ async function mockSessions(
       json: {
         configured: true,
         authenticated: Boolean(user),
-        backend: "supabase",
+        backend: options.backend ?? "supabase",
         signupEnabled: options.signupEnabled !== false,
         ...(user
           ? {
@@ -252,6 +267,29 @@ async function signIn(page: Page, user: User) {
   await expect(page).toHaveURL(/\/dashboard$/);
   await expectOnlyUser(page, user);
 }
+
+for (const backend of ["supabase", "local"] as const)
+  test(`${backend} loads preserve separately recorded matching purchases without browser persistence or repair writes`, async ({ page }) => {
+    const state = await mockSessions(page, {
+      initialUser: "A", duplicateARecords: true, backend,
+    });
+    const recordedPurchases = page.getByRole("button", {
+      name: "View transaction: DAWNTECH synthetic merchant example",
+      exact: true,
+    });
+    await page.goto("/transactions?period=all");
+    await expect(recordedPurchases).toHaveCount(2);
+    await expect(page.getByRole("region", { name: "Transaction activity summary" }))
+      .toContainText("₹65,980.00");
+    await expectOnlyUser(page, "A");
+    await page.reload();
+    await expect(recordedPurchases).toHaveCount(2);
+    await expect(page.getByRole("region", { name: "Transaction activity summary" }))
+      .toContainText("₹65,980.00");
+    await expectOnlyUser(page, "A");
+    expect(state.workspaceReads).toBeGreaterThanOrEqual(2);
+    expect(state.unexpectedWrites).toEqual([]);
+  });
 
 test("A logout then B six-digit signup opens an empty private workspace, including reload and Back", async ({
   page,

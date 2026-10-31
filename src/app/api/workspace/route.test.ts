@@ -195,6 +195,42 @@ describe("authenticated cloud workspace boundary", () => {
       });
     },
   );
+  it("returns stored accounts, reports and transactions unchanged without saving repairs during GET", async () => {
+    const stored = workspace();
+    stored.accounts = [{ ...account(), notes: "Keep the recorded account note.", active: true }];
+    stored.transactions = [1, 2].map((n) => ({
+      id: `30000000-0000-4000-8000-00000000000${n}`,
+      userId: a,
+      amount: "32990.00",
+      currency: "INR",
+      kind: "expense" as const,
+      status: "posted" as const,
+      occurredOn: "2026-10-18",
+      description: "Two separately recorded synthetic purchases",
+      merchant: "DAWNTECH synthetic merchant example",
+      fromAccountId: bankA,
+      toAccountId: null,
+      notes: `Keep source evidence ${n}.`,
+      updatedAt: "2028-03-10T12:00:00.123456+00:00",
+    }));
+    stored.snapshots = [{
+      id: "40000000-0000-4000-8000-000000000001", userId: a,
+      accountId: bankA, asOf: "2028-03-10T12:00:00Z", reportedBalance: "456.78",
+      source: "user_report", verifiedByUser: false,
+    }];
+    const before = structuredClone(stored);
+    mocks.readState.mockResolvedValue({
+      workspace: stored, commerce: { orders: [], refunds: [], operations: [] }, revision: "12",
+    });
+    for (let read = 0; read < 2; read++) {
+      const result = await GET(request());
+      expect(result.status).toBe(200);
+      expect((await result.json()).workspace).toEqual(before);
+    }
+    expect(stored).toEqual(before);
+    expect(mocks.upsert).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
   it("refuses forged ownership before loading or changing either workspace", async () => {
     session(b);
     expect(

@@ -385,6 +385,38 @@ export function confirmTransactionPost(
   return transaction;
 }
 
+function recordedAccountHistory(
+  data: WorkspaceData,
+  userId: string,
+  accountId: string,
+  today: string,
+) {
+  const rows = data.transactions
+    .filter((row) => row.userId === userId &&
+      (row.fromAccountId === accountId || row.toAccountId === accountId) &&
+      (!row.occurredOn || row.occurredOn <= today))
+    .toSorted((a, b) => (b.occurredOn || "").localeCompare(a.occurredOn || ""))
+    .slice(0, 10);
+  if (!rows.length) return "No transaction history is recorded for this account.";
+  return "**Recent Recorded Transactions (up to 10):**\n" + rows.map((row) =>
+    `- ${row.occurredOn ? formatDate(row.occurredOn) : "Date unconfirmed"}: ${row.description} · ${formatMoney(row.amount)} · ${row.kind} · ${row.status}`,
+  ).join("\n");
+}
+
+function recordedLoanReports(data: WorkspaceData, userId: string, query: string) {
+  const loans = data.loans.filter((loan) => loan.userId === userId &&
+    (loan.kind === "borrowed" || loan.kind === "institutional"));
+  const matched = loans.filter((loan) => [loan.name, loan.lender].some((label) =>
+    label.trim().length > 1 && query.includes(label.trim().toLowerCase()),
+  ));
+  const reports = matched.length ? matched : loans;
+  if (!reports.length)
+    return "No borrowed or institutional loans are recorded. Review shared expenses for recorded settlements.";
+  return "**Recorded Loan Reports:**\n" + reports.map((loan) =>
+    `- **${loan.name}** (${loan.lender}): Reported outstanding ${loan.reportedOutstanding == null ? "Unknown" : formatMoney(loan.reportedOutstanding)}; report date ${loan.reportedAsOf ? formatDate(loan.reportedAsOf, { year: "numeric" }) : "Unknown"}.`,
+  ).join("\n");
+}
+
 /**
  * Generates an answer to the user query using data tools and AI (or deterministic financial fallback).
  */
@@ -534,7 +566,7 @@ ${upcomingDues.length > 0 ? upcomingDues.map((b) => `  * ${b.accountName}: ₹${
 Instructions:
 1. Answer the user's query directly and factually using the data above.
 2. If the user asks to add a transaction, output the details and indicate you are proposing it for confirmation before saving.
-3. If the user asks about a person they owe (e.g. Bikash), check loans/groups and state the verified debt or if no record exists.
+3. If the user asks about a person they owe, check loans/groups and state the verified debt or if no record exists.
 4. Never execute financial mutations without explicit confirmation.`;
 
       const prompt = payload.message;
@@ -569,27 +601,21 @@ Instructions:
   // Truthful deterministic financial answers when AI is unconfigured or offline:
   let reply = "";
   if (query.includes("how much money") || query.includes("balance") || query.includes("cash")) {
-    reply = `You have **₹${formatMoney(accountsOverview.totalBankMoney)}** across your active bank accounts:\n` +
-      accountsOverview.bankAccounts.map((a) => `- **${a.name}**: ₹${formatMoney(a.currentBalance || "0.00")}`).join("\n");
+    reply = `You have **${formatMoney(accountsOverview.totalBankMoney)}** across your active bank accounts:\n` +
+      accountsOverview.bankAccounts.map((a) => `- **${a.name}**: ${a.currentBalance === null ? "Unknown" : `${formatMoney(a.currentBalance)}`}`).join("\n");
   } else if (query.includes("spend") || query.includes("spending")) {
-    reply = `This month (${currentMonth}), your gross spending is **₹${formatMoney(spendingAnalysis.grossSpending)}**, with **₹${formatMoney(spendingAnalysis.refunds)}** in refunds, making net spending **₹${formatMoney(spendingAnalysis.netSpending)}**.\nTop categories: ` +
-      spendingAnalysis.topCategories.map((c) => `${c.category} (₹${formatMoney(c.amount)})`).join(", ");
+    reply = `This month (${currentMonth}), your gross spending is **${formatMoney(spendingAnalysis.grossSpending)}**, with **${formatMoney(spendingAnalysis.refunds)}** in refunds, making net spending **${formatMoney(spendingAnalysis.netSpending)}**.\nTop categories: ` +
+      spendingAnalysis.topCategories.map((c) => `${c.category} (${formatMoney(c.amount)})`).join(", ");
   } else if (query.includes("amazon")) {
     const amazon = accountsOverview.creditAccounts.find(
       (c) => c.name.toLowerCase().includes("amazon") || c.institution.toLowerCase().includes("amazon"),
     );
     if (amazon) {
-      const avail = amazon.availableCredit ? `₹${formatMoney(amazon.availableCredit)}` : amazon.estimatedAvailableCredit ? `Estimated ₹${formatMoney(amazon.estimatedAvailableCredit)}` : "Unknown";
-      let baseReply = `**Amazon Pay Later Account Status:**\n- Approved Credit Limit: ₹${formatMoney(amazon.creditLimit || "35000.00")}\n- Available Credit: ${avail}\n- Outstanding Liability: ₹${formatMoney(amazon.currentOutstanding || "0.00")}\n- Statement Due Date: ${amazon.dueDate ? formatDate(amazon.dueDate) : "5th of the month"}\n\n*Note: Under Amazon Pay Later rules, only financed principal consumes available credit upfront. Future EMI interest is unbilled until your statement is generated on the 1st.*`;
+      const avail = amazon.availableCredit ? `${formatMoney(amazon.availableCredit)}` : amazon.estimatedAvailableCredit ? `Estimated ${formatMoney(amazon.estimatedAvailableCredit)}` : "Unknown";
+      let baseReply = `**${amazon.name} Account Status:**\n- Approved Credit Limit: ${amazon.creditLimit === null ? "Unknown" : `${formatMoney(amazon.creditLimit)}`}\n- Available Credit: ${avail}\n- Outstanding Liability: ${amazon.currentOutstanding === null ? "Unknown" : `${formatMoney(amazon.currentOutstanding)}`}\n- Statement Due Date: ${amazon.dueDate ? formatDate(amazon.dueDate) : "Unknown"}`;
 
       if (query.includes("tx") || query.includes("transaction") || query.includes("history") || query.includes("order") || query.includes("refund")) {
-        baseReply += `\n\n**Attached Transaction History:**\n` +
-          `- 01 Oct 2026: Amazon purchase (pre-checkpoint) · ₹1,000.00\n` +
-          `- 05 Oct 2026: Checkpoint balance snapshot · ₹3,182.68\n` +
-          `- 07 Oct 2026: Confirmed refund · -₹380.00\n` +
-          `- 13 Oct 2026: POND'S Gel refund · -₹353.00\n` +
-          `- 18 Oct 2026: Samsung 43" TV EMI agreement (Orders 406-2479955-3587539 / 406-6855707-5582708 / 406-0628731-9190704) · ₹30,509.79 financed principal (9 mo @ ₹3,678.70/mo)\n` +
-          `- Provider statement repayment · ₹6,954.15 (awaiting bank/date confirmation)`;
+        baseReply += `\n\n${recordedAccountHistory(data, userId, amazon.id, today)}`;
       }
       reply = baseReply;
     } else {
@@ -600,22 +626,24 @@ Instructions:
       (c) => c.name.toLowerCase().includes("zet") || c.institution.toLowerCase().includes("iob"),
     );
     if (zet) {
-      reply = `**IOB ZET Credit Card Status:**\n- Credit Limit: ₹${formatMoney(zet.creditLimit || "2250.00")}\n- Outstanding Liability: ₹${formatMoney(zet.currentOutstanding || "0.00")}\n- Available Credit: ${zet.availableCredit ? `₹${formatMoney(zet.availableCredit)}` : zet.estimatedAvailableCredit ? `Estimated ₹${formatMoney(zet.estimatedAvailableCredit)}` : "Unknown"}\n- Recent Payment: ₹675.00 BBPS payment from SBI recorded as a card repayment reducing liability.`;
+      reply = `**${zet.name} Credit Card Status:**\n- Credit Limit: ${zet.creditLimit === null ? "Unknown" : `${formatMoney(zet.creditLimit)}`}\n- Outstanding Liability: ${zet.currentOutstanding === null ? "Unknown" : `${formatMoney(zet.currentOutstanding)}`}\n- Available Credit: ${zet.availableCredit ? `${formatMoney(zet.availableCredit)}` : zet.estimatedAvailableCredit ? `Estimated ${formatMoney(zet.estimatedAvailableCredit)}` : "Unknown"}`;
+      if (query.includes("transaction") || query.includes("history") || query.includes("payment"))
+        reply += `\n\n${recordedAccountHistory(data, userId, zet.id, today)}`;
     } else {
       reply = "No active IOB ZET credit card found in your workspace.";
     }
   } else if (query.includes("credit") || query.includes("outstanding") || query.includes("card")) {
     reply = `Here is your credit and Pay Later status:\n` +
-      accountsOverview.creditAccounts.map((c) => `- **${c.name}**: Outstanding ₹${formatMoney(c.currentOutstanding || "0.00")}, Limit ₹${formatMoney(c.creditLimit || "0.00")}, Available: ${c.availableCredit ? `₹${formatMoney(c.availableCredit)}` : c.estimatedAvailableCredit ? `Estimated ₹${formatMoney(c.estimatedAvailableCredit)}` : "Unknown"}`).join("\n");
+      accountsOverview.creditAccounts.map((c) => `- **${c.name}**: Outstanding ${c.currentOutstanding === null ? "Unknown" : `${formatMoney(c.currentOutstanding)}`}, Limit ${c.creditLimit === null ? "Unknown" : `${formatMoney(c.creditLimit)}`}, Available: ${c.availableCredit ? `${formatMoney(c.availableCredit)}` : c.estimatedAvailableCredit ? `Estimated ${formatMoney(c.estimatedAvailableCredit)}` : "Unknown"}`).join("\n");
   } else if (query.includes("bill") || query.includes("due")) {
     if (upcomingDues.length === 0) {
       reply = "You have no unpaid bills currently recorded.";
     } else {
       reply = `Upcoming dues:\n` +
-        upcomingDues.map((b) => `- **${b.accountName}**: ₹${formatMoney(b.remainingAmount)} due on ${formatDate(b.dueDate)} (${b.status})`).join("\n");
+        upcomingDues.map((b) => `- **${b.accountName}**: ${formatMoney(b.remainingAmount)} due on ${formatDate(b.dueDate)} (${b.status})`).join("\n");
     }
-  } else if (query.includes("bikash") || query.includes("owe")) {
-    reply = "I checked your loans, shared groups, and recent transactions. No outstanding debt to Bikash is currently recorded in your workspace.";
+  } else if (query.includes("owe")) {
+    reply = recordedLoanReports(data, userId, query);
   } else {
     reply = config
       ? "I am Money Nest Bot. Ask me about your account balances, spending, credit limits, upcoming bills, or upload a payment screenshot to add a transaction."

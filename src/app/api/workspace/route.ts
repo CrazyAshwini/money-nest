@@ -25,7 +25,6 @@ import {
   privateWorkspacePOST,
   privateWorkspaceDELETE,
 } from "@/lib/private-profile-http";
-import { sanitizeWorkspaceTransactions } from "@/lib/workspace-cleaner";
 
 export const dynamic = "force-dynamic";
 const response = (body: unknown, status = 200) =>
@@ -100,7 +99,7 @@ export async function GET(request: NextRequest) {
     backend: "supabase",
     signupEnabled: cloudSignupEnabled(),
     userId: user.id,
-    workspace: sanitizeWorkspaceTransactions(loaded[0].workspace),
+    workspace: loaded[0].workspace,
     profile: loaded[1],
     transactionSourceIds: Object.fromEntries(
       loaded[0].workspace.transactions.map((row) => [
