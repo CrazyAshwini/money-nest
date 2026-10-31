@@ -835,12 +835,6 @@ export function LoginPage() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (
-      url.searchParams.get("demo") === "true" ||
-      url.searchParams.get("demo") === "1"
-    ) {
-      void loginDemo();
-    }
     const authError = url.searchParams.get("auth_error");
     if (authError === "confirmation" || authError === "recovery") {
       // Synchronize the server's safe callback result, then clear it from the address.
@@ -856,7 +850,6 @@ export function LoginPage() {
       url.searchParams.delete("auth_error");
       window.history.replaceState(null, "", url.pathname + url.search);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1085,6 +1078,19 @@ export function LoginPage() {
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (
+        url.searchParams.get("demo") === "true" ||
+        url.searchParams.get("demo") === "1"
+      ) {
+        void loginDemo();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function resend() {
     if (working || retrySeconds > 0 || !pendingEmail) return;
@@ -1382,29 +1388,6 @@ export function LoginPage() {
             Access is limited to your authorized MoneyNest account.
           </p>
         )}
-        {!recovering && !creating && !verifying && !verified && (
-          <div className="demo-login-card">
-            <div className="demo-login-header">
-              <span className="demo-login-badge">🤖 AI Agent &amp; Tester Demo</span>
-            </div>
-            <p className="demo-login-text">
-              Test all Money Nest features (Accounts, Credit Cards, EMIs, Loans, Analytics, Split Bills) with fully loaded synthetic data.
-            </p>
-            <div className="demo-login-creds">
-              <span><strong>Email:</strong> <code>demo@moneynest.com</code></span>
-              <span><strong>Password:</strong> <code>demo1234</code></span>
-            </div>
-            <button
-              type="button"
-              className="button secondary demo-login-button"
-              disabled={working}
-              onClick={() => void loginDemo()}
-            >
-              Sign in as Demo Agent
-            </button>
-          </div>
-        )}
-
         {!recovering && !creating && !verifying && !verified && (
           <p className="login-help">
             Your computer-only profile password is separate from your cloud
