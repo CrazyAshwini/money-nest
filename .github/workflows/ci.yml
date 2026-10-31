@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      FINANCE_PRIVATE_ENABLED: "false"
+      FINANCE_E2E_FIXTURES: "0"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          lfs: true
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --include=optional --no-audit --no-fund
+      - name: Build application and generated route types
+        run: npm run build
+      - name: Check TypeScript
+        run: npm run typecheck
+      - name: Lint source
+        run: npm run lint
+      - name: Run unit and database regressions
+        run: npm test -- --maxWorkers=2 --testTimeout=30000 --hookTimeout=120000
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
