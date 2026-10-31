@@ -16,6 +16,7 @@ import {
 import { formatDate, formatMoney } from "@/lib/finance";
 import type { Transaction, TransactionKind, WorkspaceData } from "@/lib/types";
 import { TransactionIcon } from "./transaction-icon";
+import { extractProductName } from "@/lib/transactions-view";
 import "./financial-card-carousel.css";
 import "./recent-account-transactions.css";
 
@@ -111,6 +112,11 @@ function GroupedAccountHistory({
                   </span>
                   <span className="recent-account-row-description">
                     <strong title={description}>{description}</strong>
+                    {extractProductName(transaction) && (
+                      <span className="recent-account-product-name" title={extractProductName(transaction)!}>
+                        {extractProductName(transaction)}
+                      </span>
+                    )}
                     <span title={metadata}>{metadata}</span>
                     {flow && <span title={flow}>{flow}</span>}
                     {transaction.status !== "posted" && (

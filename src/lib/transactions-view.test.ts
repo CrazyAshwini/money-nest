@@ -7,6 +7,7 @@ import {
 } from "./category-platforms";
 import { monthlySummary } from "./finance";
 import {
+  extractProductName,
   getTransactionView,
   isTransferActivity,
   parseTransactionFilters,
@@ -660,5 +661,67 @@ describe("canonical transaction summaries and list scoping", () => {
       transfers: "0.00",
       count: 0,
     });
+  });
+});
+
+
+describe("extractProductName", () => {
+  it("extracts clean product names from marketplace descriptions by stripping platform prefixes", () => {
+    const t = record("t1", {
+      merchant: "Flipkart · SuperComNet",
+      description: "Flipkart — Cycle Pure Ghee Tealight Diyas 100 Pcs (Pack of 2)",
+      platform: "Flipkart",
+      category: "Shopping",
+    });
+    expect(extractProductName(t)).toBe("Cycle Pure Ghee Tealight Diyas 100 Pcs (Pack of 2)");
+  });
+
+  it("extracts clean food items from restaurant and delivery descriptions", () => {
+    const t = record("t2", {
+      merchant: "Dominospizza",
+      description: "Domino's — Pepper Barbecue Chicken pizzas",
+      platform: "Domino's",
+      category: "Food",
+    });
+    expect(extractProductName(t)).toBe("Pepper Barbecue Chicken pizzas");
+  });
+
+  it("returns null for raw bank and UPI narratives to prevent ugly codes in product name line", () => {
+    const t1 = record("t3", {
+      merchant: "Navi Loans",
+      description: "WDL TFR UPI/DR/144089859407/NaviLoans/ICIC/naviloans@/Pa",
+    });
+    expect(extractProductName(t1)).toBeNull();
+
+    const t2 = record("t4", {
+      merchant: "Ramswrup",
+      description: "DEP TFR UPI/CR/317744804593/RAMSWRUP/UBIN/ashwini.sa/Paym",
+    });
+    expect(extractProductName(t2)).toBeNull();
+
+    const t3 = record("t5", {
+      merchant: "ICICI Bank",
+      description: "Cashchgs_Deposit_2026-07-17",
+    });
+    expect(extractProductName(t3)).toBeNull();
+  });
+
+  it("falls back to structured notes when description is a generic or bank narrative", () => {
+    const t = record("t6", {
+      merchant: "Flipkart",
+      description: "POS ATM PURCH OTHPG 630102973493FLIPKART PAYMENTS",
+      notes: "Flipkart order OD439018210263725100: Cycle Pure Ghee Tealight Diyas 100 Pcs (Qty: 2).",
+    });
+    expect(extractProductName(t)).toBe("Cycle Pure Ghee Tealight Diyas 100 Pcs");
+  });
+
+  it("returns null when description is identical to merchant or category", () => {
+    const t = record("t7", {
+      merchant: "Amazon",
+      description: "Amazon",
+      platform: "Amazon",
+      category: "Shopping",
+    });
+    expect(extractProductName(t)).toBeNull();
   });
 });

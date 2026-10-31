@@ -377,3 +377,80 @@ export function getTransactionView(
     periodLabel,
   };
 }
+
+
+/**
+ * Extracts a clean, human-readable product or item name from a transaction's
+ * description or notes, omitting redundant merchant/platform prefixes or raw banking narratives.
+ */
+export function extractProductName(transaction: Transaction): string | null {
+  const desc = transaction.description?.trim();
+  const merchant = transaction.merchant?.trim();
+
+  let product: string | null = null;
+  if (desc) {
+    // Ignore raw bank and UPI statement narratives
+    const rawNarrativePattern =
+      /^(?:UPI\/|WDL\s+TFR|DEP\s+TFR|POS\s+ATM|BY\s+TRFR|MMT\/IMPS|ECSRTN|Cashchgs|CashDep|DCARDFEE|SMSChgs|APBS\/|NEFT\*|RTGS\*)/i;
+    if (!rawNarrativePattern.test(desc)) {
+      // Ignore generic transaction action descriptions
+      if (
+        !/^(?:Payment\s+(?:to|for|from)|Transfer\s+(?:to|from)|Bill\s+payment\s+for|Credit\s+Card\s+Bill\s+Payment)\b/i.test(
+          desc,
+        )
+      ) {
+        // Strip marketplace/app prefixes: "Flipkart — ", "Amazon — ", "Swiggy — ", etc.
+        let cleaned = desc.replace(
+          /^(?:Flipkart|Amazon|Swiggy|Zomato|Blinkit|Meesho|Myntra|Domino's|Dominos|Uber|Rapido)\s*[—–-]\s*/i,
+          "",
+        );
+
+        // Strip seller suffix or prefix if present
+        if (merchant) {
+          const escapedMerchant = merchant.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&",
+          );
+          cleaned = cleaned
+            .replace(new RegExp(`\\s*[·|—–-]\\s*${escapedMerchant}$`, "i"), "")
+            .replace(new RegExp(`^${escapedMerchant}\\s*[·|—–-]\\s*`, "i"), "");
+        }
+
+        cleaned = cleaned.trim();
+        if (cleaned) {
+          const lower = cleaned.toLowerCase();
+          const merchantLower = merchant?.toLowerCase();
+          const platformLower = transaction.platform?.toLowerCase();
+          const categoryLower = transaction.category?.toLowerCase();
+
+          if (
+            lower !== merchantLower &&
+            lower !== platformLower &&
+            lower !== categoryLower &&
+            lower !== "unspecified merchant"
+          ) {
+            product = cleaned;
+          }
+        }
+      }
+    }
+  }
+
+  // Fallback: check notes if product is not found yet
+  if (!product && transaction.notes) {
+    const notes = transaction.notes.trim();
+    const orderItemMatch = notes.match(
+      /(?:order\s+[A-Za-z0-9_-]+:\s*)([^.(]+)/i,
+    );
+    if (orderItemMatch && orderItemMatch[1]?.trim()) {
+      product = orderItemMatch[1].trim();
+    } else {
+      const itemMatch = notes.match(/(?:item|product):\s*([^.\n]+)/i);
+      if (itemMatch && itemMatch[1]?.trim()) {
+        product = itemMatch[1].trim();
+      }
+    }
+  }
+
+  return product;
+}
