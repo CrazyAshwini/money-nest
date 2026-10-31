@@ -158,7 +158,11 @@ describe("workspace-cleaner", () => {
     expect(result.transactions.some((t) => t.amount === "2001.15" && t.toAccountId === sbiAccountId)).toBe(true);
     expect(result.transactions.some((t) => t.amount === "137.00" && t.fromAccountId === sbiAccountId)).toBe(true);
     expect(result.transactions.some((t) => t.amount === "2.00" && t.fromAccountId === sbiAccountId)).toBe(true);
-    expect(result.transactions.some((t) => t.amount === "270.00" && t.fromAccountId === sbiAccountId)).toBe(true);
+    const flipkartDiyaTx = result.transactions.find((t) => t.amount === "270.00" && t.fromAccountId === sbiAccountId);
+    expect(flipkartDiyaTx).toBeDefined();
+    expect(flipkartDiyaTx?.description).toContain("Cycle Pure Ghee Tealight Diyas");
+    expect(flipkartDiyaTx?.merchant).toContain("SuperComNet");
+    expect(flipkartDiyaTx?.notes).toContain("OD439018210263725100");
     expect(result.transactions.some((t) => t.amount === "3500.00" && t.fromAccountId === sbiAccountId)).toBe(true);
     expect(result.transactions.some((t) => t.amount === "1100.00" && t.toAccountId === sbiAccountId)).toBe(true);
 

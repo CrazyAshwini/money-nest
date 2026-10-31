@@ -178,6 +178,25 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         };
       }
 
+      // Flipkart Cycle Pure Ghee Tealight Diyas 100 Pcs (Qty 2) ₹270 order on 30 Oct 2026
+      if (
+        t.amount === "270.00" &&
+        (t.externalReference === "075125948899" ||
+          (t.occurredOn === "2026-10-30" &&
+            (t.merchant?.toLowerCase().includes("flipkart") ||
+              t.description?.toLowerCase().includes("flipkart"))))
+      ) {
+        return {
+          ...t,
+          category: "Shopping",
+          platform: "Flipkart",
+          merchant: "Flipkart · SuperComNet",
+          description: "Flipkart — Cycle Pure Ghee Tealight Diyas 100 Pcs (Pack of 2)",
+          notes:
+            "Flipkart order OD439018210263725100: Cycle Pure Ghee Tealight Diyas 100 Pcs (Qty: 2 @ ₹135 each = ₹270 + 12 SuperCoins). Seller SuperComNet. Debited from SBI Savings via UPI (UTR 075125948899). Delivery tracking 9204944628.",
+        };
+      }
+
       return t;
     });
 
@@ -807,10 +826,11 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         toAccountId: null,
         category: "Shopping",
         platform: "Flipkart",
-        merchant: "Flipkart",
-        description: "WDL TFRUPI/DR/075125948899/Flipkart/YE SB/paytm-5650",
+        merchant: "Flipkart · SuperComNet",
+        description: "Flipkart — Cycle Pure Ghee Tealight Diyas 100 Pcs (Pack of 2)",
         externalReference: "075125948899",
-        notes: "Flipkart order payment via SBI UPI.",
+        notes:
+          "Flipkart order OD439018210263725100: Cycle Pure Ghee Tealight Diyas 100 Pcs (Qty: 2 @ ₹135 each = ₹270 + 12 SuperCoins). Seller SuperComNet. Debited from SBI Savings via UPI (UTR 075125948899). Delivery tracking 9204944628.",
       },
       {
         id: "a4efa024-0005-4888-8000-000000000005",
