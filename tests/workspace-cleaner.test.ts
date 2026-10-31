@@ -134,6 +134,49 @@ describe("workspace-cleaner", () => {
 
     const idfcSnap = result.snapshots.find((s) => s.accountId === idfcAccountId && s.reportedBalance === "0.00");
     expect(idfcSnap).toBeDefined();
+
+    // Snapshots should include SBI 19,000.00 and ICICI 283.74 as of 31 Oct 2026
+    const sbiSnap31 = result.snapshots.find(
+      (s) => s.accountId === sbiAccountId && s.reportedBalance === "19000.00" && s.asOf.startsWith("2026-10-31"),
+    );
+    expect(sbiSnap31).toBeDefined();
+    expect(sbiSnap31?.verifiedByUser).toBe(true);
+
+    const iciciSnap31 = result.snapshots.find(
+      (s) => s.accountId === iciciAccountId && s.reportedBalance === "283.74" && s.asOf.startsWith("2026-10-31"),
+    );
+    expect(iciciSnap31).toBeDefined();
+    expect(iciciSnap31?.verifiedByUser).toBe(true);
+
+    // ICICI transactions should contain the full 28 statement entries
+    const iciciTxs = result.transactions.filter(
+      (t) => t.fromAccountId === iciciAccountId || t.toAccountId === iciciAccountId,
+    );
+    expect(iciciTxs.length).toBeGreaterThanOrEqual(28);
+
+    // SBI new transactions should contain Utkarsh maturity, Meesho, Flipkart, Navi Loans, Ramswrup
+    expect(result.transactions.some((t) => t.amount === "2001.15" && t.toAccountId === sbiAccountId)).toBe(true);
+    expect(result.transactions.some((t) => t.amount === "137.00" && t.fromAccountId === sbiAccountId)).toBe(true);
+    expect(result.transactions.some((t) => t.amount === "2.00" && t.fromAccountId === sbiAccountId)).toBe(true);
+    expect(result.transactions.some((t) => t.amount === "270.00" && t.fromAccountId === sbiAccountId)).toBe(true);
+    expect(result.transactions.some((t) => t.amount === "3500.00" && t.fromAccountId === sbiAccountId)).toBe(true);
+    expect(result.transactions.some((t) => t.amount === "1100.00" && t.toAccountId === sbiAccountId)).toBe(true);
+
+    // Self-transfers should connect SBI and ICICI cleanly
+    const sbiToIcici2500 = result.transactions.find(
+      (t) => t.amount === "2500.00" && t.fromAccountId === sbiAccountId && t.toAccountId === iciciAccountId,
+    );
+    expect(sbiToIcici2500).toBeDefined();
+
+    const iciciToSbi1555 = result.transactions.find(
+      (t) => t.amount === "1555.00" && t.fromAccountId === iciciAccountId && t.toAccountId === sbiAccountId,
+    );
+    expect(iciciToSbi1555).toBeDefined();
+
+    const sbiToIcici323 = result.transactions.find(
+      (t) => t.amount === "323.00" && t.fromAccountId === sbiAccountId && t.toAccountId === iciciAccountId,
+    );
+    expect(sbiToIcici323).toBeDefined();
   });
 
   it("attaches Samsung TV EMI agreement, loan, and 9 installments when Amazon Pay Later account exists", () => {

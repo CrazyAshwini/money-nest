@@ -1,4 +1,4 @@
-import type { WorkspaceData, WorkspaceDataWithEmi } from "./types";
+import type { Transaction, WorkspaceData, WorkspaceDataWithEmi } from "./types";
 import { generateEmiSchedule } from "./emi";
 
 export const SAMSUNG_TV_LOAN_ID = "e3b0c442-98fc-4c14-9afe-632c7a8f095b";
@@ -139,6 +139,25 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         };
       }
 
+      // Amazon Pay Later ₹6,954.15 repayment confirmed debited from SBI on 02 Oct 2026 (UTR 627516147601)
+      if (
+        t.id === "tx-amzn-repayment-screenshot" ||
+        (t.amount === "6954.15" &&
+          (t.merchant?.toLowerCase().includes("amazon pay later") ||
+            t.description?.toLowerCase().includes("amazon pay later statement repayment")))
+      ) {
+        return {
+          ...t,
+          occurredOn: "2026-10-02",
+          status: "posted" as const,
+          fromAccountId: sbiAccountId,
+          toAccountId: amazonAccountId,
+          externalReference: "627516147601",
+          notes:
+            "Confirmed Amazon Pay Later repayment debited from SBI Savings on 02 Oct 2026 (UTR 627516147601).",
+        };
+      }
+
       return t;
     });
 
@@ -158,20 +177,241 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     workspace.transactions[0]?.userId ||
     ownerUserId;
 
-  // 1. Ensure ICICI statement entries from 25 Oct 2026 are present if user owns ICICI account
+  // 1. Ensure ICICI statement entries (28 total through 31 Oct 2026) are present if user owns ICICI account
   if (hasIcici) {
-    const iciciJayantRef = "512684732761";
-    const iciciSwiggyRef = "588091285703";
-
-    const hasJayant = sanitizedTransactions.some(
-      (t) =>
-        t.externalReference === iciciJayantRef ||
-        t.id === "c2607015-0017-4888-a001-512684732761",
-    );
-    if (!hasJayant) {
-      sanitizedTransactions.push({
+    const iciciTransactions: Omit<Transaction, "userId">[] = [
+      {
+        id: "c2607015-0001-4888-8000-000000000001",
+        kind: "income",
+        status: "posted",
+        amount: "1.00",
+        currency: "INR",
+        occurredOn: "2026-10-06",
+        fromAccountId: null,
+        toAccountId: iciciAccountId,
+        category: null,
+        merchant: "Amjani Arya",
+        description: "UPI/AMJANI ARY/XXi875@pingpay/UPI/Punjab Nat/966396802796/AXIbc1c388d82fe4541bba04a546eb1a6a0",
+        externalReference: "966396802796",
+        notes: "UPI credit from Amjani Arya into ICICI (test/transfer).",
+      },
+      {
+        id: "c2607015-0002-4888-8000-000000000002",
+        kind: "expense",
+        status: "posted",
+        amount: "1.00",
+        currency: "INR",
+        occurredOn: "2026-10-06",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Bills",
+        merchant: "ICICI Bank",
+        description: "Cashchgs_Deposit_2026-07-17",
+        notes: "ICICI Bank cash deposit charge for July 2026.",
+      },
+      {
+        id: "c2607015-0003-4888-8000-000000000003",
+        kind: "income",
+        status: "posted",
+        amount: "79.26",
+        currency: "INR",
+        occurredOn: "2026-10-13",
+        fromAccountId: null,
+        toAccountId: iciciAccountId,
+        category: "Income",
+        merchant: "IOCL LPG Subsidy",
+        description: "APBS/IOCL LPG SUBSIDY/P1026023C7EB6",
+        externalReference: "P1026023C7EB6",
+        notes: "IOCL LPG gas cylinder government subsidy credited via APBS.",
+      },
+      {
+        id: "c2607015-0004-4888-8000-000000000004",
+        kind: "expense",
+        status: "posted",
+        amount: "66.82",
+        currency: "INR",
+        occurredOn: "2026-10-13",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Bills",
+        merchant: "ICICI Bank",
+        description: "Cashchgs_Deposit_2026-07-17",
+        notes: "ICICI Bank cash deposit charge for July 2026.",
+      },
+      {
+        id: "c2607015-0005-4888-8000-000000000005",
+        kind: "expense",
+        status: "posted",
+        amount: "12.43",
+        currency: "INR",
+        occurredOn: "2026-10-13",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Bills",
+        merchant: "ICICI Bank",
+        description: "ECSRTN1_1009267011904245002235",
+        notes: "ICICI Bank ECS return debit penalty.",
+      },
+      {
+        id: "c2607015-0006-4888-8000-000000000006",
+        kind: "transfer",
+        status: "posted",
+        amount: "19000.00",
+        currency: "INR",
+        occurredOn: "2026-10-24",
+        fromAccountId: null,
+        toAccountId: iciciAccountId,
+        category: null,
+        merchant: "Priyanka Kumari",
+        description: "MMT/IMPS/629716699605/IMPS/PRIYANKAKU/Axis Bank",
+        externalReference: "629716699605",
+        notes: "Pass-through fund transfer in from Priyanka Kumari; paired with outgoing transfer to MD Mukh.",
+      },
+      {
+        id: "c2607015-0007-4888-8000-000000000007",
+        kind: "expense",
+        status: "posted",
+        amount: "577.55",
+        currency: "INR",
+        occurredOn: "2026-10-24",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Bills",
+        merchant: "ICICI Bank",
+        description: "ECSRTN1_1009267011904245002235",
+        notes: "ICICI Bank ECS return fee.",
+      },
+      {
+        id: "c2607015-0008-4888-8000-000000000008",
+        kind: "expense",
+        status: "posted",
+        amount: "590.00",
+        currency: "INR",
+        occurredOn: "2026-10-24",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Bills",
+        merchant: "ICICI Bank",
+        description: "ECSRTN2_1009267011904245002235",
+        notes: "ICICI Bank ECS return fee.",
+      },
+      {
+        id: "c2607015-0009-4888-8000-000000000009",
+        kind: "expense",
+        status: "posted",
+        amount: "32.73",
+        currency: "INR",
+        occurredOn: "2026-10-24",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Bills",
+        merchant: "ICICI Bank",
+        description: "SMSChgsApr26-Jun26+GST",
+        notes: "ICICI Bank SMS alert charges Apr–Jun 2026 + GST.",
+      },
+      {
+        id: "c2607015-0010-4888-8000-000000000010",
+        kind: "expense",
+        status: "posted",
+        amount: "177.00",
+        currency: "INR",
+        occurredOn: "2026-10-24",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Bills",
+        merchant: "ICICI Bank",
+        description: "Cashchgs_Deposit_2026-08-04",
+        notes: "ICICI Bank cash deposit charge for August 2026.",
+      },
+      {
+        id: "c2607015-0011-4888-8000-000000000011",
+        kind: "expense",
+        status: "posted",
+        amount: "531.00",
+        currency: "INR",
+        occurredOn: "2026-10-24",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Bills",
+        merchant: "ICICI Bank",
+        description: "CashDep Chgs 01-31JUL26+GST",
+        notes: "ICICI Bank cash deposit charges for July 2026 + GST.",
+      },
+      {
+        id: "c2607015-0012-4888-8000-000000000012",
+        kind: "expense",
+        status: "posted",
+        amount: "236.00",
+        currency: "INR",
+        occurredOn: "2026-10-24",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Bills",
+        merchant: "ICICI Bank",
+        description: "CashDep Chgs 01-31AUG26+GST",
+        notes: "ICICI Bank cash deposit charges for August 2026 + GST.",
+      },
+      {
+        id: "c2607015-0013-4888-8000-000000000013",
+        kind: "expense",
+        status: "posted",
+        amount: "354.00",
+        currency: "INR",
+        occurredOn: "2026-10-24",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Bills",
+        merchant: "ICICI Bank",
+        description: "DCARDFEE1614AUG26-JUL27+GST",
+        notes: "ICICI Bank debit card annual fee for Aug 2026 – Jul 2027 + GST.",
+      },
+      {
+        id: "c2607015-0014-4888-8000-000000000014",
+        kind: "transfer",
+        status: "posted",
+        amount: "1.00",
+        currency: "INR",
+        occurredOn: "2026-10-24",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: null,
+        merchant: "Mr MD Mukh",
+        description: "UPI/Mr MD MUKH/XX6977@ybl/Payment fr/Allahabad/238104153184/IBLd48c87bc4f26483bad14f5491c01cfea",
+        externalReference: "238104153184",
+        notes: "UPI penny test payment to MD Mukh.",
+      },
+      {
+        id: "c2607015-0015-4888-8000-000000000015",
+        kind: "transfer",
+        status: "posted",
+        amount: "2500.00",
+        currency: "INR",
+        occurredOn: "2026-10-24",
+        fromAccountId: sbiAccountId,
+        toAccountId: iciciAccountId,
+        category: null,
+        merchant: "Self-transfer",
+        description: "UPI/Ashwini Sa/XX10-7@axl/Payment fr/State Bank/694081863197/AXL9951b07c1da045a294c1e01211f8e177",
+        externalReference: "694081863197",
+        notes: "Internal self-transfer: SBI Savings to ICICI Bank (UTR 694081863197).",
+      },
+      {
+        id: "c2607015-0016-4888-8000-000000000016",
+        kind: "transfer",
+        status: "posted",
+        amount: "19000.00",
+        currency: "INR",
+        occurredOn: "2026-10-24",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: null,
+        merchant: "Mr MD Mukh",
+        description: "UPI/Mr MD MUKH/XX6977@ybl/Payment fr/Allahabad/341940340450/IBLbc655a7ae5c540fe94bbabe122b3958d",
+        externalReference: "341940340450",
+        notes: "Pass-through fund transfer out to MD Mukh; forwards ₹19,000 received from Priyanka Kumari.",
+      },
+      {
         id: "c2607015-0017-4888-a001-512684732761",
-        userId,
         kind: "income",
         status: "posted",
         amount: "1500.00",
@@ -182,20 +422,11 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         category: null,
         merchant: "Jayant Kumar (Pralad)",
         description: "UPI/JAYANT KUM/XX6686@axl/Payment fr/UNION BANK/512684732761",
-        externalReference: iciciJayantRef,
+        externalReference: "512684732761",
         notes: "Income from friend Pralad aka Jayant Kumar via UPI (UTR 512684732761).",
-      });
-    }
-
-    const hasSwiggy = sanitizedTransactions.some(
-      (t) =>
-        t.externalReference === iciciSwiggyRef ||
-        t.id === "c2607015-0018-4888-a002-588091285703",
-    );
-    if (!hasSwiggy) {
-      sanitizedTransactions.push({
+      },
+      {
         id: "c2607015-0018-4888-a002-588091285703",
-        userId,
         kind: "expense",
         status: "posted",
         amount: "67.00",
@@ -207,9 +438,177 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         platform: "Swiggy",
         merchant: "Swiggy / P Nilancha",
         description: "Swiggy — Food expense paid to P Nilancha",
-        externalReference: iciciSwiggyRef,
+        externalReference: "588091285703",
         notes: "Food expense on Swiggy paid to friend P Nilancha via UPI (UTR 588091285703).",
-      });
+      },
+      {
+        id: "c2607015-0019-4888-8000-000000000019",
+        kind: "expense",
+        status: "posted",
+        amount: "35.00",
+        currency: "INR",
+        occurredOn: "2026-10-26",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Other",
+        merchant: "Aman Enterprises",
+        description: "UPI/AMAN ENTER/XX1928@unitype/Pay to Bha/UNITY SMAL/666579421781",
+        externalReference: "666579421781",
+        notes: "UPI payment to Aman Enterprises from ICICI.",
+      },
+      {
+        id: "c2607015-0020-4888-8000-000000000020",
+        kind: "income",
+        status: "posted",
+        amount: "65.00",
+        currency: "INR",
+        occurredOn: "2026-10-28",
+        fromAccountId: null,
+        toAccountId: iciciAccountId,
+        category: null,
+        merchant: "Amjani Arya",
+        description: "UPI/AMJANI ARY/XX7458@waicici/na/Punjab Nat/111026356183",
+        externalReference: "111026356183",
+        notes: "UPI payment from Amjani Arya into ICICI.",
+      },
+      {
+        id: "c2607015-0021-4888-8000-000000000021",
+        kind: "expense",
+        status: "posted",
+        amount: "69.00",
+        currency: "INR",
+        occurredOn: "2026-10-28",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Other",
+        merchant: "Nihar Chandra",
+        description: "UPI/Nihar Chan/XXnics@okhdfcb/UPI/State Bank/630165787797",
+        externalReference: "630165787797",
+        notes: "UPI expense to Nihar Chandra from ICICI.",
+      },
+      {
+        id: "c2607015-0022-4888-8000-000000000022",
+        kind: "expense",
+        status: "posted",
+        amount: "116.00",
+        currency: "INR",
+        occurredOn: "2026-10-29",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Food",
+        platform: "Swiggy",
+        merchant: "Swiggy Instamart",
+        description: "UPI/SWIGGY INS/XXmart@axb/Pay for In/AXIS BANK/630229480649",
+        externalReference: "630229480649",
+        notes: "Swiggy Instamart groceries/food expense paid via ICICI UPI.",
+      },
+      {
+        id: "c2607015-0023-4888-8000-000000000023",
+        kind: "refund",
+        status: "posted",
+        amount: "277.00",
+        currency: "INR",
+        occurredOn: "2026-10-30",
+        fromAccountId: null,
+        toAccountId: iciciAccountId,
+        category: "Shopping",
+        platform: "Myntra",
+        merchant: "Myntra Designs",
+        description: "MMT/IMPS/630314354684/RyY601x4LS/MYNTRA DES/HSBC Bank",
+        externalReference: "630314354684",
+        notes: "Myntra order refund credited into ICICI Bank (IMPS 630314354684).",
+      },
+      {
+        id: "c2607015-0024-4888-8000-000000000024",
+        kind: "transfer",
+        status: "posted",
+        amount: "1555.00",
+        currency: "INR",
+        occurredOn: "2026-10-30",
+        fromAccountId: iciciAccountId,
+        toAccountId: sbiAccountId,
+        category: null,
+        merchant: "Self-transfer",
+        description: "UPI/Ashwini Sa/XX10-7@ibl/Payment fr/State Bank/610717539892",
+        externalReference: "610717539892",
+        notes: "Internal self-transfer: ICICI Bank to SBI Savings (UTR 610717539892).",
+      },
+      {
+        id: "c2607015-0025-4888-8000-000000000025",
+        kind: "transfer",
+        status: "posted",
+        amount: "323.00",
+        currency: "INR",
+        occurredOn: "2026-10-30",
+        fromAccountId: sbiAccountId,
+        toAccountId: iciciAccountId,
+        category: null,
+        merchant: "Self-transfer",
+        description: "UPI/Ashwini Sa/XX10-7@axl/Payment fr/State Bank/987682082631",
+        externalReference: "987682082631",
+        notes: "Internal self-transfer: SBI Savings to ICICI Bank (UTR 987682082631).",
+      },
+      {
+        id: "c2607015-0026-4888-8000-000000000026",
+        kind: "expense",
+        status: "posted",
+        amount: "40.00",
+        currency: "INR",
+        occurredOn: "2026-10-30",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Other",
+        merchant: "Deepak Kushwaha",
+        description: "UPI/DEEPAK KUS/XXtvha@ptys/Paid via S/YES BANK L/630336792300",
+        externalReference: "630336792300",
+        notes: "UPI payment to Deepak Kushwaha from ICICI.",
+      },
+      {
+        id: "c2607015-0027-4888-8000-000000000027",
+        kind: "transfer",
+        status: "posted",
+        amount: "200.00",
+        currency: "INR",
+        occurredOn: "2026-10-30",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: null,
+        merchant: "Amjani Arya",
+        description: "UPI/AMJANI ARY/XX7458@ptaxis/UPI/Punjab Nat/666901570625",
+        externalReference: "666901570625",
+        notes: "Transfer out to Amjani Arya (short-term advance; returned next day).",
+      },
+      {
+        id: "c2607015-0028-4888-8000-000000000028",
+        kind: "transfer",
+        status: "posted",
+        amount: "200.00",
+        currency: "INR",
+        occurredOn: "2026-10-31",
+        fromAccountId: null,
+        toAccountId: iciciAccountId,
+        category: null,
+        merchant: "Amjani Arya",
+        description: "UPI/AMJANI ARY/XX7458@waicici/na/Punjab Nat/111046378803",
+        externalReference: "111046378803",
+        notes: "Round-trip transfer return from Amjani Arya (returns 30 Oct ₹200 advance, net ₹0.00).",
+      },
+    ];
+
+    for (const tx of iciciTransactions) {
+      const exists = sanitizedTransactions.some(
+        (t) =>
+          t.id === tx.id ||
+          (tx.externalReference && t.externalReference === tx.externalReference) ||
+          (t.amount === tx.amount &&
+            t.occurredOn === tx.occurredOn &&
+            ((tx.fromAccountId && t.fromAccountId === tx.fromAccountId) ||
+              (tx.toAccountId && t.toAccountId === tx.toAccountId)) &&
+            (t.description === tx.description || t.merchant === tx.merchant)),
+      );
+      if (!exists) {
+        sanitizedTransactions.push({ ...tx, userId });
+      }
     }
   }
 
@@ -327,15 +726,162 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         notes: "Bank penny-drop verification credit into SBI.",
       });
     }
+
+    // 3d. Post-25 Oct SBI statement entries through 31 Oct 2026
+    const sbiNewTransactions: Omit<Transaction, "userId">[] = [
+      {
+        id: "a4efa024-0001-4888-8000-000000000001",
+        kind: "transfer",
+        status: "posted",
+        amount: "2001.15",
+        currency: "INR",
+        occurredOn: "2026-10-28",
+        fromAccountId: null,
+        toAccountId: sbiAccountId,
+        category: null,
+        merchant: "Utkarsh Small Finance Bank",
+        description: "DEP TFR NEFT*UTKS0000002*UTKSN26301096846*UTKARSH BANK",
+        externalReference: "UTKSN26301096846",
+        notes: "Utkarsh Small Finance Bank deposit maturity return (₹2,000.00 principal + ₹1.15 interest).",
+      },
+      {
+        id: "a4efa024-0002-4888-8000-000000000002",
+        kind: "expense",
+        status: "posted",
+        amount: "137.00",
+        currency: "INR",
+        occurredOn: "2026-10-28",
+        fromAccountId: sbiAccountId,
+        toAccountId: null,
+        category: "Shopping",
+        platform: "Meesho",
+        merchant: "Meesho",
+        description: "WDL TFRUPI/DR/171646486655/Meesho T/UTIB/meeshotech",
+        externalReference: "171646486655",
+        notes: "Meesho online shopping expense paid via SBI UPI.",
+      },
+      {
+        id: "a4efa024-0003-4888-8000-000000000003",
+        kind: "expense",
+        status: "posted",
+        amount: "2.00",
+        currency: "INR",
+        occurredOn: "2026-10-29",
+        fromAccountId: sbiAccountId,
+        toAccountId: null,
+        category: "Shopping",
+        platform: "Flipkart",
+        merchant: "Flipkart",
+        description: "POS ATM PURCH OTHPG 630102973493FLIPKART PAYMENTS",
+        externalReference: "630102973493",
+        notes: "Flipkart nominal verification payment via debit card POS.",
+      },
+      {
+        id: "a4efa024-0004-4888-8000-000000000004",
+        kind: "expense",
+        status: "posted",
+        amount: "270.00",
+        currency: "INR",
+        occurredOn: "2026-10-30",
+        fromAccountId: sbiAccountId,
+        toAccountId: null,
+        category: "Shopping",
+        platform: "Flipkart",
+        merchant: "Flipkart",
+        description: "WDL TFRUPI/DR/075125948899/Flipkart/YE SB/paytm-5650",
+        externalReference: "075125948899",
+        notes: "Flipkart order payment via SBI UPI.",
+      },
+      {
+        id: "a4efa024-0005-4888-8000-000000000005",
+        kind: "bill_payment",
+        status: "posted",
+        amount: "3500.00",
+        currency: "INR",
+        occurredOn: "2026-10-30",
+        fromAccountId: sbiAccountId,
+        toAccountId: null,
+        category: "Bills",
+        merchant: "Navi Loans",
+        description: "WDL TFR UPI/DR/144089859407/NaviLoans/ICIC/naviloans@/Pa",
+        externalReference: "144089859407",
+        notes: "Navi personal loan monthly EMI repayment debited from SBI.",
+      },
+      {
+        id: "a4efa024-0006-4888-8000-000000000006",
+        kind: "income",
+        status: "posted",
+        amount: "1100.00",
+        currency: "INR",
+        occurredOn: "2026-10-30",
+        fromAccountId: null,
+        toAccountId: sbiAccountId,
+        category: null,
+        merchant: "Ramswrup",
+        description: "DEP TFR UPI/CR/317744804593/RAMSWRUP/UBIN/ashwini.sa/Paym",
+        externalReference: "317744804593",
+        notes: "UPI credit from Ramswrup into SBI (unconfirmed receipt: income or friend repayment).",
+      },
+    ];
+
+    for (const tx of sbiNewTransactions) {
+      const exists = sanitizedTransactions.some(
+        (t) =>
+          t.id === tx.id ||
+          (tx.externalReference && t.externalReference === tx.externalReference) ||
+          (t.amount === tx.amount &&
+            t.occurredOn === tx.occurredOn &&
+            ((tx.fromAccountId && t.fromAccountId === tx.fromAccountId) ||
+              (tx.toAccountId && t.toAccountId === tx.toAccountId))),
+      );
+      if (!exists) {
+        sanitizedTransactions.push({ ...tx, userId });
+      }
+    }
+
+    // 3e. Ensure Amazon Pay Later repayment debited from SBI on 02 Oct 2026 is present
+    const amazonRepaymentRef = "627516147601";
+    const hasAmazonRepayment = sanitizedTransactions.some(
+      (t) =>
+        t.externalReference === amazonRepaymentRef ||
+        (t.amount === "6954.15" && t.occurredOn === "2026-10-02"),
+    );
+    if (!hasAmazonRepayment && hasAmazon) {
+      sanitizedTransactions.push({
+        id: "tx-amzn-repayment-screenshot",
+        userId,
+        amount: "6954.15",
+        currency: "INR",
+        kind: "bill_payment",
+        status: "posted",
+        occurredOn: "2026-10-02",
+        merchant: "Amazon Pay Later",
+        description: "UPI/DR/627516147601/Amazon Pay/YESB/amazonpayl/Re",
+        category: "Bills",
+        platform: "Amazon",
+        fromAccountId: sbiAccountId,
+        toAccountId: amazonAccountId,
+        externalReference: amazonRepaymentRef,
+        notes:
+          "Confirmed Amazon Pay Later repayment debited from SBI Savings on 02 Oct 2026 (UTR 627516147601).",
+      });
+    }
   }
 
-  // Sanitize accounts (SBI notes + IDFC card closure)
+  // Sanitize accounts (SBI notes, ICICI notes, + IDFC card closure)
   const sanitizedAccounts = workspace.accounts?.map((a) => {
     if (a.id === sbiAccountId) {
       return {
         ...a,
         notes:
-          "Statement period 1–21 October 2026. Opening balance ₹1,089.32; verified closing balance ₹6,469.45 (60 debits, 23 credits). Mini-statement available balance ₹18,575.85 as of 25 Oct 2026 (23:43).",
+          "Statement period 1–31 October 2026. Opening balance ₹1,089.32; verified closing balance ₹19,000.00 CR (75 debits totaling ₹73,488.12, 35 credits totaling ₹91,398.80). Mini-statement available balance ₹18,575.85 as of 25 Oct 2026 (23:43).",
+      };
+    }
+    if (a.id === iciciAccountId) {
+      return {
+        ...a,
+        notes:
+          "Statement period 1–31 October 2026. Opening balance ₹0.01; verified closing balance ₹283.74 CR (28 statement transactions).",
       };
     }
     if (a.id === idfcAccountId) {
@@ -348,9 +894,9 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     return a;
   });
 
-  // Sanitize snapshots (SBI available balance snapshot + IDFC zero balance snapshot)
+  // Sanitize snapshots (SBI and ICICI verified 31 Oct balances + IDFC zero balance snapshot)
   let sanitizedSnapshots = workspace.snapshots;
-  if (Array.isArray(workspace.snapshots) && (hasSbi || hasIdfc)) {
+  if (Array.isArray(workspace.snapshots) && (hasSbi || hasIdfc || hasIcici)) {
     sanitizedSnapshots = [...workspace.snapshots];
     if (hasSbi) {
       const sbiSnapshotId = "c2607015-0023-4888-a007-251018575850";
@@ -361,6 +907,32 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
           accountId: sbiAccountId,
           asOf: "2026-10-25T23:43:00Z",
           reportedBalance: "18575.85",
+          source: "bank_statement",
+          verifiedByUser: true,
+        });
+      }
+      const sbiSnapshot31Id = "a4efa024-0031-4888-8000-000031101900";
+      if (!sanitizedSnapshots.some((s) => s.id === sbiSnapshot31Id)) {
+        sanitizedSnapshots.push({
+          id: sbiSnapshot31Id,
+          userId,
+          accountId: sbiAccountId,
+          asOf: "2026-10-31T23:59:59Z",
+          reportedBalance: "19000.00",
+          source: "bank_statement",
+          verifiedByUser: true,
+        });
+      }
+    }
+    if (hasIcici) {
+      const iciciSnapshot31Id = "c2607015-0031-4888-8000-000031100283";
+      if (!sanitizedSnapshots.some((s) => s.id === iciciSnapshot31Id)) {
+        sanitizedSnapshots.push({
+          id: iciciSnapshot31Id,
+          userId,
+          accountId: iciciAccountId,
+          asOf: "2026-10-31T23:59:59Z",
+          reportedBalance: "283.74",
           source: "bank_statement",
           verifiedByUser: true,
         });
