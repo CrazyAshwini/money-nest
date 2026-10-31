@@ -8,6 +8,11 @@ import {
 } from "@/lib/ai-owner-auth";
 import { privateResponse } from "@/lib/private-profile-http";
 import {
+  requireRouteRateLimit,
+  RouteRateLimitError,
+  routeRateLimitResponse,
+} from "@/lib/rate-limit";
+import {
   acquireReceiptScan,
   receiptProviderMetadata,
   ReceiptAIError,
@@ -27,6 +32,7 @@ export async function POST(request: NextRequest) {
   try {
     // Authenticate and require a configured key before reading uploads or spending provider credits.
     const { ownerId, cloud } = await authenticateAIOwnerRequest(request);
+    await requireRouteRateLimit("receipt", { ownerId, cloud });
     const configuration = readReceiptAIConfiguration();
     if (!configuration)
       throw new ReceiptAIError(
@@ -61,6 +67,8 @@ export async function POST(request: NextRequest) {
       model: configuration.model,
     });
   } catch (error) {
+    if (error instanceof RouteRateLimitError)
+      return routeRateLimitResponse(error);
     if (error instanceof AIOwnerAuthenticationError)
       return privateResponse(
         { error: error.message, code: error.code },
@@ -71,11 +79,15 @@ export async function POST(request: NextRequest) {
         { error: "Sign in to your profile.", code: "authentication_required" },
         401,
       );
-    if (error instanceof ReceiptAIError)
-      return privateResponse(
+    if (error instanceof ReceiptAIError) {
+      const response = privateResponse(
         { error: error.message, code: error.code },
         error.status,
       );
+      if (error.code === "scan_in_progress")
+        response.headers.set("Retry-After", "1");
+      return response;
+    }
     return privateResponse(
       {
         error: "The receipt scan could not be completed. Please retry.",

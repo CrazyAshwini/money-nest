@@ -4,6 +4,11 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { fromDatabase } from "@/lib/supabase/validation";
 import { cloudRequestAllowed } from "@/lib/cloud-request";
 import { cloudUserAllowed } from "@/lib/cloud-owner";
+import {
+  requireRouteRateLimit,
+  RouteRateLimitError,
+  routeRateLimitResponse,
+} from "@/lib/rate-limit";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -44,6 +49,17 @@ export async function POST(request: NextRequest) {
       { error: "This account cannot access the workspace." },
       { status: 403 },
     );
+  try {
+    await requireRouteRateLimit(
+      "documents",
+      { ownerId: user.id, cloud: true },
+      supabase,
+    );
+  } catch (error) {
+    if (error instanceof RouteRateLimitError)
+      return routeRateLimitResponse(error);
+    throw error;
+  }
   if (Number(request.headers.get("content-length") || 0) > 11 * 1024 * 1024)
     return NextResponse.json(
       { error: "Maximum upload size is 10 MB." },

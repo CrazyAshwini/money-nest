@@ -6,6 +6,11 @@ import {
 } from "@/lib/ai-owner-auth";
 import { privateResponse } from "@/lib/private-profile-http";
 import {
+  requireRouteRateLimit,
+  RouteRateLimitError,
+  routeRateLimitResponse,
+} from "@/lib/rate-limit";
+import {
   PrivateProfileError,
   privateProfileEnabled,
   readPrivateProfile,
@@ -52,6 +57,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { ownerId, cloud } = await authenticateAIOwnerRequest(request, true);
+    await requireRouteRateLimit("bot", { ownerId, cloud });
     const body = (await request
       .json()
       .catch(() => null)) as BotRequestPayload | null;
@@ -146,6 +152,8 @@ export async function POST(request: NextRequest) {
     const result = await executeNestBotQuery(workspace, ownerId, body);
     return privateResponse(result);
   } catch (error) {
+    if (error instanceof RouteRateLimitError)
+      return routeRateLimitResponse(error);
     if (error instanceof AIOwnerAuthenticationError) {
       return privateResponse(
         { error: error.message, code: error.code },

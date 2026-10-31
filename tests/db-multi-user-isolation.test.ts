@@ -470,7 +470,7 @@ describe("all checked-in migrations with separate authenticated workspaces", () 
     }
   });
 
-  it("keeps RPCs caller-scoped and the sole privileged audit trigger inaccessible", async () => {
+  it("keeps RPCs caller-scoped, the audit trigger inaccessible, and quota counters private", async () => {
     await db.exec("reset role");
     const functions = await db.query<{
       name: string;
@@ -487,6 +487,7 @@ describe("all checked-in migrations with separate authenticated workspaces", () 
       "bootstrap_finance_cloud",
       "commit_finance_commerce",
       "commit_reviewed_import",
+      "consume_finance_rate_limit",
       "merge_finance_handoff",
       "merge_private_profile_cloud",
       "read_finance_cloud_state",
@@ -502,10 +503,11 @@ describe("all checked-in migrations with separate authenticated workspaces", () 
       config: string[];
       callable: boolean;
     }>(
-      "select p.proname as name,p.proconfig as config,has_function_privilege('authenticated',p.oid,'EXECUTE') as callable from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='private' and p.prosecdef",
+      "select p.proname as name,p.proconfig as config,has_function_privilege('authenticated',p.oid,'EXECUTE') as callable from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='private' and p.prosecdef order by p.proname",
     );
     expect(privileged.rows).toEqual([
       { name: "audit_change", config: ['search_path=""'], callable: false },
+      { name: "consume_finance_rate_limit", config: ['search_path=""'], callable: true },
     ]);
     expect(
       (
@@ -513,7 +515,13 @@ describe("all checked-in migrations with separate authenticated workspaces", () 
           "select has_schema_privilege('authenticated','private','USAGE') as allowed",
         )
       ).rows[0].allowed,
-    ).toBe(false);
+    ).toBe(true);
+    for (const role of ["anon", "authenticated"]) {
+      const result = await db.query<{ allowed: boolean }>(
+        "select has_table_privilege($1,'private.finance_rate_limit_windows','SELECT,INSERT,UPDATE,DELETE') as allowed", [role],
+      );
+      expect(result.rows[0].allowed).toBe(false);
+    }
   });
 
   it.each(tables)(

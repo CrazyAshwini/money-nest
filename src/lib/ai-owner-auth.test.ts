@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   scanOrders: vi.fn(),
   acquire: vi.fn(),
   release: vi.fn(),
+  rpc: vi.fn(),
+  quotaResult: vi.fn(),
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("./supabase/server", () => ({
@@ -73,7 +75,15 @@ beforeEach(() => {
   vi.stubEnv("APP_URL", "https://money-nest.example");
   vi.stubEnv("VERCEL_URL", "");
   vi.stubEnv("FINANCE_CLOUD_OWNER_ID", OWNER);
-  mocks.client.mockResolvedValue({ auth: { getUser: mocks.getUser } });
+  mocks.client.mockResolvedValue({
+    auth: { getUser: mocks.getUser },
+    rpc: mocks.rpc,
+  });
+  mocks.rpc.mockReturnValue({ abortSignal: mocks.quotaResult });
+  mocks.quotaResult.mockResolvedValue({
+    data: { allowed: true, retryAfter: 0 },
+    error: null,
+  });
   mocks.getUser.mockResolvedValue({
     data: {
       user: {
@@ -113,6 +123,56 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("hosted owner-only receipt AI", () => {
+  it.each([
+    [receiptPOST, "receipt"],
+    [ordersPOST, "orders"],
+    [botPOST, "bot"],
+  ] as const)(
+    "enforces the shared %s quota before reading bodies or spending credits",
+    async (handler, bucket) => {
+      mocks.quotaResult.mockResolvedValue({
+        data: { allowed: false, retryAfter: 37 },
+        error: null,
+      });
+      const input = request("body that must remain unread");
+      const response = await handler(input);
+      expect(response.status).toBe(429);
+      expect(response.headers.get("retry-after")).toBe("37");
+      expect(response.headers.get("cache-control")).toContain("no-store");
+      expect(await response.json()).toMatchObject({ code: "rate_limited" });
+      expect(input.bodyUsed).toBe(false);
+      expect(mocks.getUser).toHaveBeenCalledOnce();
+      expect(mocks.rpc).toHaveBeenCalledWith("consume_finance_rate_limit", {
+        p_bucket: bucket,
+      });
+      expect(mocks.readConfiguration).not.toHaveBeenCalled();
+      expect(mocks.readUpload).not.toHaveBeenCalled();
+      expect(mocks.acquire).not.toHaveBeenCalled();
+      expect(mocks.scanReceipt).not.toHaveBeenCalled();
+      expect(mocks.scanOrders).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([receiptPOST, ordersPOST, botPOST])(
+    "fails closed when the hosted quota cannot be checked",
+    async (handler) => {
+      mocks.quotaResult.mockRejectedValue(
+        new Error("private database outage details"),
+      );
+      const input = request("body that must remain unread");
+      const response = await handler(input);
+      expect(response.status).toBe(503);
+      expect(response.headers.get("retry-after")).toBe("5");
+      expect(await response.text()).not.toContain(
+        "private database outage details",
+      );
+      expect(input.bodyUsed).toBe(false);
+      expect(mocks.readConfiguration).not.toHaveBeenCalled();
+      expect(mocks.readUpload).not.toHaveBeenCalled();
+      expect(mocks.acquire).not.toHaveBeenCalled();
+    },
+  );
+
   it("public signup does not grant other users the operator's paid AI", async () => {
     vi.stubEnv("FINANCE_CLOUD_ACCESS_MODE", "public");
     mocks.getUser.mockResolvedValue({
@@ -233,6 +293,7 @@ describe("hosted owner-only receipt AI", () => {
       expect(mocks.readSettings).not.toHaveBeenCalled();
       expect(mocks.readUpload).not.toHaveBeenCalled();
       expect(mocks.acquire).not.toHaveBeenCalled();
+      expect(mocks.rpc).not.toHaveBeenCalled();
     },
   );
 

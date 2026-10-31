@@ -1023,19 +1023,41 @@ describe("receipt cloud boundaries", () => {
     }
   });
 
-  it("allows one active scan and ten scans per minute for each authenticated owner", () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
+  it("allows one active scan per owner and leaves sequential quotas to the shared limiter", () => {
     const owner = randomUUID();
     const release = acquireReceiptScan(owner);
     expect(() => acquireReceiptScan(owner)).toThrow("already being scanned");
+    acquireReceiptScan(randomUUID())();
     release();
-    for (let index = 1; index < 10; index++) acquireReceiptScan(owner)();
-    expect(() => acquireReceiptScan(owner)).toThrow("ten images this minute");
-    vi.setSystemTime(Date.now() + 60_001);
+    for (let index = 0; index < 25; index++) acquireReceiptScan(owner)();
     const resumed = acquireReceiptScan(owner);
-    expect(resumed).toBeTypeOf("function");
+    // Calling an old release twice must not release a subsequent active scan.
+    release();
+    expect(() => acquireReceiptScan(owner)).toThrow("already being scanned");
     resumed();
   });
+
+  it.each([receiptPOST, orderScanPOST])(
+    "keeps active-scan rejection ahead of upload parsing and provider calls",
+    async (handler) => {
+      const ownerId = randomUUID();
+      mocked.authenticate.mockResolvedValue({ ownerId });
+      const release = acquireReceiptScan(ownerId);
+      try {
+        const input = request(upload());
+        const response = await handler(input);
+        expect(response.status).toBe(429);
+        expect(response.headers.get("retry-after")).toBe("1");
+        expect(await response.json()).toMatchObject({
+          code: "scan_in_progress",
+        });
+        expect(input.bodyUsed).toBe(false);
+        expect(mocked.generate).not.toHaveBeenCalled();
+      } finally {
+        release();
+      }
+    },
+  );
 
   it("sends only the image and extraction instructions, with bounded output and no automatic retries or telemetry", async () => {
     const bytes = Uint8Array.from(PNG);

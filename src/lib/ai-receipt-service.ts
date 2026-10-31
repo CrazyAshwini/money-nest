@@ -304,40 +304,22 @@ function receiptImageFingerprint(images: readonly Uint8Array[]) {
   return hash.digest("hex");
 }
 
-const limits = new Map<
-  string,
-  { started: number; count: number; active: boolean }
->();
-/** A local private profile has one owner; this also bounds concurrent cloud spend. */
+const activeScans = new Set<string>();
+/** Shared per-route quotas own the time window; this guards concurrent local work. */
 export function acquireReceiptScan(ownerId: string) {
-  const now = Date.now();
-  for (const [owner, value] of limits)
-    if (!value.active && now - value.started >= 60_000) limits.delete(owner);
-  let limit = limits.get(ownerId);
-  if (!limit) {
-    limit = { started: now, count: 0, active: false };
-    limits.set(ownerId, limit);
-  }
-  if (limit.active)
+  if (activeScans.has(ownerId))
     throw new ReceiptAIError(
       "scan_in_progress",
       "A receipt is already being scanned. Wait for it to finish.",
       429,
     );
-  if (now - limit.started >= 60_000) {
-    limit.started = now;
-    limit.count = 0;
-  }
-  if (limit.count >= 10)
-    throw new ReceiptAIError(
-      "rate_limited",
-      "You have scanned ten images this minute. Please wait a minute.",
-      429,
-    );
-  limit.count++;
-  limit.active = true;
+  activeScans.add(ownerId);
+  let released = false;
   return () => {
-    limit.active = false;
+    if (!released) {
+      released = true;
+      activeScans.delete(ownerId);
+    }
   };
 }
 

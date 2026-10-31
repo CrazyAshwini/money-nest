@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   upload: vi.fn(),
   remove: vi.fn(),
   sign: vi.fn(),
+  rpc: vi.fn(),
+  quotaResult: vi.fn(),
   filters: [] as [string, unknown][],
   fetch: vi.fn(() => {
     throw new Error("Network disabled in document route tests");
@@ -57,6 +59,12 @@ beforeEach(() => {
     auth: { getUser: mocks.getUser },
     from: mocks.from,
     storage: { from: mocks.bucket },
+    rpc: mocks.rpc,
+  });
+  mocks.rpc.mockReturnValue({ abortSignal: mocks.quotaResult });
+  mocks.quotaResult.mockResolvedValue({
+    data: { allowed: true, retryAfter: 0 },
+    error: null,
   });
   mocks.getUser.mockResolvedValue({
     data: {
@@ -105,6 +113,42 @@ afterEach(() => {
 });
 
 describe("private document upload cloud origins", () => {
+  it("enforces the shared document quota before parsing or storing uploads", async () => {
+    mocks.quotaResult.mockResolvedValue({
+      data: { allowed: false, retryAfter: 41 },
+      error: null,
+    });
+    const input = request();
+    const response = await POST(input);
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("41");
+    expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(await response.json()).toMatchObject({ code: "rate_limited" });
+    expect(mocks.getUser).toHaveBeenCalledOnce();
+    expect(mocks.rpc).toHaveBeenCalledWith("consume_finance_rate_limit", {
+      p_bucket: "documents",
+    });
+    expect(input.bodyUsed).toBe(false);
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(mocks.bucket).not.toHaveBeenCalled();
+  });
+
+  it("rejects uploads without reading bytes when the shared limiter is unavailable", async () => {
+    mocks.quotaResult.mockResolvedValue({
+      data: null,
+      error: { message: "private database outage details" },
+    });
+    const input = request();
+    const response = await POST(input);
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("5");
+    expect(await response.text()).not.toContain(
+      "private database outage details",
+    );
+    expect(input.bodyUsed).toBe(false);
+    expect(mocks.from).not.toHaveBeenCalled();
+    expect(mocks.bucket).not.toHaveBeenCalled();
+  });
   it.each([
     [
       "unrelated Vercel Origin",
