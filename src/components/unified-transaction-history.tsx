@@ -8,6 +8,7 @@ import {
   transactionDirection,
 } from "@/lib/finance";
 import { accountTransactionDirection } from "@/lib/account-presentation";
+import { extractProductName } from "@/lib/transactions-view";
 import type { Account, Transaction, TransactionKind } from "@/lib/types";
 import { useFinance } from "./finance-provider";
 import { TransactionIcon, transactionIconColor } from "./transaction-icon";
@@ -164,6 +165,8 @@ export function TransactionRow({
 
   const merchantName =
     transaction.merchant || transaction.description || "Unspecified merchant";
+  const productName = extractProductName(transaction);
+  const displayTitle = productName || merchantName;
 
   // Build secondary line: Category · Platform
   const categoryText =
@@ -233,8 +236,15 @@ export function TransactionRow({
 
       <div className="uth-content">
         <div className="uth-primary-line">
-          <strong className="uth-merchant" title={merchantName}>
-            {merchantName}
+          <strong
+            className="uth-merchant uth-primary-title"
+            title={
+              productName && transaction.merchant && transaction.merchant !== productName
+                ? `${productName} (Seller: ${transaction.merchant})`
+                : displayTitle
+            }
+          >
+            {displayTitle}
           </strong>
         </div>
 

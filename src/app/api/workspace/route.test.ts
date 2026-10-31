@@ -377,6 +377,34 @@ describe("authenticated cloud workspace boundary", () => {
       expect(mocks.from).not.toHaveBeenCalled();
     },
   );
+  it("serves fully populated demo workspace for active demo session", async () => {
+    const demoReq = new NextRequest(`${origin}/api/workspace`, {
+      method: "GET",
+      headers: {
+        host: new URL(origin).host,
+        origin,
+        cookie: "money-nest-demo-session=1",
+      },
+    });
+    const res = await GET(demoReq);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      configured: true,
+      authenticated: true,
+      backend: "demo",
+      userId: a,
+      profile: {
+        displayName: "AI Agent Demo Account",
+        email: "demo@moneynest.com",
+      },
+    });
+    expect(body.workspace.accounts.length).toBeGreaterThan(0);
+    expect(body.workspace.transactions.length).toBeGreaterThan(0);
+    expect(body.workspace.loans.length).toBeGreaterThan(0);
+    expect(body.workspace.emis.length).toBeGreaterThan(0);
+  });
+
   it("preserves private-profile delegation before cloud session or origin checks", async () => {
     mocks.privateEnabled.mockReturnValue(true);
     const expected = NextResponse.json({ backend: "local" });

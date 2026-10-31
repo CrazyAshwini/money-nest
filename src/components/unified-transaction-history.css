@@ -148,7 +148,8 @@
   overflow: hidden;
 }
 
-.uth-merchant {
+.uth-merchant,
+.uth-primary-title {
   display: block;
   width: 100%;
   min-width: 0;
@@ -160,6 +161,31 @@
   white-space: nowrap;
   line-height: 1.35;
   letter-spacing: -0.01em;
+}
+
+
+/* Product / Item Line: displays product name clearly to ease finding purchases */
+.uth-product-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  margin-top: 1px;
+}
+
+.uth-product-name {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text, #152a22);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
 }
 
 /* Secondary Line: Category · Platform */

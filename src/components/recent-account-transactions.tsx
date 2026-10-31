@@ -16,6 +16,7 @@ import {
 import { formatDate, formatMoney } from "@/lib/finance";
 import type { Transaction, TransactionKind, WorkspaceData } from "@/lib/types";
 import { TransactionIcon } from "./transaction-icon";
+import { extractProductName } from "@/lib/transactions-view";
 import "./financial-card-carousel.css";
 import "./recent-account-transactions.css";
 
@@ -92,10 +93,12 @@ function GroupedAccountHistory({
                 ? accounts.get(transaction.toAccountId)
                 : undefined;
               const flow = from && to ? `${from.name} → ${to.name}` : "";
-              const description =
+              const productName = extractProductName(transaction);
+              const merchantName =
                 transaction.merchant ||
                 transaction.description ||
                 "Description not available";
+              const description = productName || merchantName;
               const category =
                 transaction.category || kindLabels[transaction.kind];
               const metadata = transaction.platform
@@ -110,7 +113,15 @@ function GroupedAccountHistory({
                     <TransactionIcon transaction={transaction} />
                   </span>
                   <span className="recent-account-row-description">
-                    <strong title={description}>{description}</strong>
+                    <strong
+                      title={
+                        productName && transaction.merchant && transaction.merchant !== productName
+                          ? `${productName} (Seller: ${transaction.merchant})`
+                          : description
+                      }
+                    >
+                      {description}
+                    </strong>
                     <span title={metadata}>{metadata}</span>
                     {flow && <span title={flow}>{flow}</span>}
                     {transaction.status !== "posted" && (
@@ -273,7 +284,8 @@ export function RecentAccountTransactions({
                 </span>
                 <div className="recent-account-description">
                   <strong>
-                    {transaction.merchant ||
+                    {extractProductName(transaction) ||
+                      transaction.merchant ||
                       transaction.description ||
                       "Description not available"}
                   </strong>

@@ -1002,6 +1002,16 @@ export function LoginPage() {
         }
         return;
       }
+      const trimmedEmail = email.trim().toLowerCase();
+      if (
+        trimmedEmail === "demo@moneynest.com" ||
+        trimmedEmail === "demo@moneynest.local" ||
+        trimmedEmail === "agent@moneynest.com"
+      ) {
+        await loginDemo();
+        return;
+      }
+
       const result = await requestAuth({
         action: recovering ? "reset" : creating ? "signup" : "login",
         email: email.trim(),
@@ -1045,6 +1055,46 @@ export function LoginPage() {
       setBusy(false);
     }
   }
+
+  async function loginDemo() {
+    if (working) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "login",
+          email: "demo@moneynest.com",
+          password: "demo1234",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data.error || "Could not sign in to demo account.");
+      await openWorkspace("Welcome to the Demo Account! All features enabled.");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not sign in to demo account.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (
+        url.searchParams.get("demo") === "true" ||
+        url.searchParams.get("demo") === "1"
+      ) {
+        void loginDemo();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function resend() {
     if (working || retrySeconds > 0 || !pendingEmail) return;

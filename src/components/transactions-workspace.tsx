@@ -19,6 +19,7 @@ import {
 } from "@/lib/finance";
 import { exportTransactionsCsv } from "@/lib/imports";
 import {
+  extractProductName,
   getTransactionView,
   parseTransactionFilters,
   serializeTransactionFilters,
@@ -206,9 +207,17 @@ function TransactionDetails({
           <span className="txw-transaction-icon">
             <TransactionIcon transaction={transaction} />
           </span>
-          <h3>{transaction.merchant || transaction.description}</h3>
+          <h3>
+            {extractProductName(transaction) ||
+              transaction.merchant ||
+              transaction.description}
+          </h3>
           <SignedAmount transaction={transaction} />
-          {transaction.merchant &&
+          {extractProductName(transaction) && transaction.merchant && (
+            <p>Seller: {transaction.merchant}</p>
+          )}
+          {!extractProductName(transaction) &&
+            transaction.merchant &&
             transaction.merchant !== transaction.description && (
               <p>{transaction.description}</p>
             )}

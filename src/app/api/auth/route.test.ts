@@ -227,6 +227,30 @@ describe("cloud signup and existing authentication", () => {
     expect(mocks.getUser).not.toHaveBeenCalled();
   });
 
+  it("authenticates demo account and issues demo session cookie", async () => {
+    const result = await POST(
+      request({
+        action: "login",
+        email: "demo@moneynest.com",
+        password: "demo",
+      }),
+    );
+
+    expect(result.status).toBe(200);
+    const body = await result.json();
+    expect(body).toEqual({
+      ok: true,
+      authenticated: true,
+      mode: "demo",
+      user: {
+        id: "10000000-0000-4000-8000-000000000001",
+        email: "demo@moneynest.com",
+      },
+    });
+    const setCookie = result.headers.get("set-cookie") || "";
+    expect(setCookie).toContain("money-nest-demo-session=1");
+  });
+
   it("keeps logout on the existing cookie-aware client", async () => {
     const result = await POST(request({ action: "logout" }));
 

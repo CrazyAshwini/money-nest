@@ -237,9 +237,11 @@ export function FinanceProvider({
       setBackend(
         result.backend === "local"
           ? "local"
-          : result.configured === false
+          : result.backend === "demo"
             ? null
-            : "supabase",
+            : result.configured === false
+              ? null
+              : "supabase",
       );
       setNeedsSetup(result.needsSetup === true);
       setSignupEnabled(result.signupEnabled === true);
@@ -273,17 +275,43 @@ export function FinanceProvider({
       )
         throw new Error("Workspace response was incomplete.");
       if (needsLoadingScreen.current) setLoadingStage("preparing-dashboard");
-      const identity = `${result.backend === "local" ? "local" : "supabase"}:${result.userId}`;
+      const isDemo = result.backend === "demo";
+      const identity = isDemo
+        ? "demo"
+        : `${result.backend === "local" ? "local" : "supabase"}:${result.userId}`;
       if (identity !== activeIdentity.current) {
         dismissMessage();
-        setMonth(localDate().slice(0, 7));
+        setMonth(isDemo ? "2026-10" : localDate().slice(0, 7));
       }
       activateIdentity(identity);
-      replaceData(result.workspace);
+      let workspaceToUse = result.workspace;
+      if (isDemo) {
+        try {
+          const stored = localStorage.getItem(STORAGE_KEY);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            if (
+              parsed &&
+              Object.keys(cloneDemoData()).every(
+                (key) =>
+                  Array.isArray(parsed[key]) &&
+                  parsed[key].every(
+                    (row: OwnedRecord) => row.userId === DEMO_USER_ID,
+                  ),
+              )
+            ) {
+              workspaceToUse = parsed;
+            }
+          }
+        } catch {
+          // Fall back to server workspace if stored state is unreadable
+        }
+      }
+      replaceData(workspaceToUse);
       setAuthUserId(result.userId);
       setProfile(result.profile ?? null);
       needsLoadingScreen.current = false;
-      setMode(result.backend === "local" ? "private" : "cloud");
+      setMode(isDemo ? "demo" : result.backend === "local" ? "private" : "cloud");
       return true;
     } catch {
       if (generation !== refreshGeneration.current) return supersedingResult();
@@ -523,8 +551,13 @@ export function FinanceProvider({
   }
   function resetDemo() {
     if (mode !== "demo") return;
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Storage removal failure can be safely ignored
+    }
     replaceData(cloneDemoData());
-    toast("Fictional demo restored.");
+    toast("Demo account reset to default state.");
   }
   async function commitImport(
     transactions: WorkspaceData["transactions"],

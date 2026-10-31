@@ -7,6 +7,7 @@ import {
 } from "./category-platforms";
 import { monthlySummary } from "./finance";
 import {
+  extractProductName,
   getTransactionView,
   isTransferActivity,
   parseTransactionFilters,
@@ -660,5 +661,97 @@ describe("canonical transaction summaries and list scoping", () => {
       transfers: "0.00",
       count: 0,
     });
+  });
+});
+
+
+describe("extractProductName", () => {
+  it("extracts clean product names from marketplace descriptions by stripping platform and seller prefixes", () => {
+    const t = record("t1", {
+      merchant: "Flipkart · SuperComNet",
+      description: "Flipkart — Cycle Pure Ghee Tealight Diyas 100 Pcs (Pack of 2)",
+      platform: "Flipkart",
+      category: "Shopping",
+    });
+    expect(extractProductName(t)).toBe("Cycle Pure Ghee Tealight Diyas 100 Pcs (Pack of 2)");
+  });
+
+  it("extracts product names when seller is appended with dot separator", () => {
+    const t = record("t1b", {
+      merchant: "SuperComNet",
+      description: "Cycle Pure Ghee Tealight Diyas 100 Pcs (Pack of 2) · SuperComNet",
+      platform: "Flipkart",
+      category: "Shopping",
+    });
+    expect(extractProductName(t)).toBe("Cycle Pure Ghee Tealight Diyas 100 Pcs (Pack of 2)");
+  });
+
+  it("extracts Amazon shopping product names while ignoring merchant seller name", () => {
+    const t = record("t_amz", {
+      merchant: "X4Cart",
+      description: "Amazon — Decorative Fairy String Lights",
+      platform: "Amazon",
+      category: "Shopping",
+    });
+    expect(extractProductName(t)).toBe("Decorative Fairy String Lights");
+  });
+
+  it("extracts clean food items from restaurant and delivery descriptions", () => {
+    const t = record("t2", {
+      merchant: "Dominospizza",
+      description: "Domino's — Pepper Barbecue Chicken pizzas",
+      platform: "Domino's",
+      category: "Food",
+    });
+    expect(extractProductName(t)).toBe("Pepper Barbecue Chicken pizzas");
+  });
+
+  it("extracts quick commerce grocery items", () => {
+    const t = record("t_blinkit", {
+      merchant: "Blinkit",
+      description: "Homestrap Adhesive Hooks, Happilo Kimia Dates, Vadilal Matka Kulfi",
+      platform: "Blinkit",
+      category: "Groceries",
+    });
+    expect(extractProductName(t)).toBe("Homestrap Adhesive Hooks, Happilo Kimia Dates, Vadilal Matka Kulfi");
+  });
+
+  it("returns null for raw bank and UPI narratives to prevent ugly codes in product name line", () => {
+    const t1 = record("t3", {
+      merchant: "Navi Loans",
+      description: "WDL TFR UPI/DR/144089859407/NaviLoans/ICIC/naviloans@/Pa",
+    });
+    expect(extractProductName(t1)).toBeNull();
+
+    const t2 = record("t4", {
+      merchant: "Ramswrup",
+      description: "DEP TFR UPI/CR/317744804593/RAMSWRUP/UBIN/ashwini.sa/Paym",
+    });
+    expect(extractProductName(t2)).toBeNull();
+
+    const t3 = record("t5", {
+      merchant: "ICICI Bank",
+      description: "Cashchgs_Deposit_2026-07-17",
+    });
+    expect(extractProductName(t3)).toBeNull();
+  });
+
+  it("falls back to structured notes when description is a generic or bank narrative", () => {
+    const t = record("t6", {
+      merchant: "Flipkart",
+      description: "POS ATM PURCH OTHPG 630102973493FLIPKART PAYMENTS",
+      notes: "Flipkart order OD439018210263725100: Cycle Pure Ghee Tealight Diyas 100 Pcs (Qty: 2).",
+    });
+    expect(extractProductName(t)).toBe("Cycle Pure Ghee Tealight Diyas 100 Pcs");
+  });
+
+  it("returns null when description is identical to merchant or category", () => {
+    const t = record("t7", {
+      merchant: "Amazon",
+      description: "Amazon",
+      platform: "Amazon",
+      category: "Shopping",
+    });
+    expect(extractProductName(t)).toBeNull();
   });
 });

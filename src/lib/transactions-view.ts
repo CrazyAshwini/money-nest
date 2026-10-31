@@ -377,3 +377,112 @@ export function getTransactionView(
     periodLabel,
   };
 }
+
+
+/**
+ * Extracts a clean, human-readable product or item name from a transaction's
+ * description or notes, omitting redundant merchant/platform prefixes, seller names, or raw banking narratives.
+ */
+export function extractProductName(transaction: Transaction): string | null {
+  const desc = transaction.description?.trim();
+  const merchant = transaction.merchant?.trim();
+  const platform = transaction.platform?.trim();
+
+  let product: string | null = null;
+  if (desc) {
+    // Ignore raw bank and UPI statement narratives
+    const rawNarrativePattern =
+      /^(?:UPI\/|WDL\s+TFR|DEP\s+TFR|POS\s+ATM|BY\s+TRFR|MMT\/IMPS|ECSRTN|Cashchgs|CashDep|DCARDFEE|SMSChgs|APBS\/|NEFT\*|RTGS\*)/i;
+    if (!rawNarrativePattern.test(desc)) {
+      // Ignore generic transaction action descriptions
+      if (
+        !/^(?:Payment\s+(?:to|for|from)|Transfer\s+(?:to|from)|Bill\s+payment\s+for|Credit\s+Card\s+Bill\s+Payment)\b/i.test(
+          desc,
+        )
+      ) {
+        let cleaned = desc;
+
+        // Strip marketplace/app prefixes: "Flipkart — ", "Amazon — ", "Swiggy — ", etc.
+        cleaned = cleaned.replace(
+          /^(?:Flipkart|Amazon|Swiggy|Zomato|Blinkit|Meesho|Myntra|Domino's|Dominos|Uber|Rapido|Zepto|BigBasket)\s*[—–\-:·|]\s*/i,
+          "",
+        );
+
+        // Strip order ID prefixes: "Flipkart order OD...: ", "order OD...: ", etc.
+        cleaned = cleaned.replace(
+          /^(?:order\s+[A-Za-z0-9_-]+[:\s-]*|OD\d{10,}[:\s-]*)/i,
+          "",
+        );
+
+        // Strip seller suffix or prefix if present
+        if (merchant) {
+          const merchantTokens = merchant
+            .split(/\s*[·|—–-]\s*/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+          for (const token of merchantTokens) {
+            const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            cleaned = cleaned
+              .replace(new RegExp(`\\s*[·|—–-]\\s*${escaped}$`, "i"), "")
+              .replace(new RegExp(`^${escaped}\\s*[·|—–-]\\s*`, "i"), "");
+          }
+        }
+
+        // If string contains " · ", check if the trailing part is a seller name
+        if (cleaned.includes(" · ")) {
+          const dotParts = cleaned.split(" · ");
+          if (dotParts.length === 2 && dotParts[0].trim()) {
+            const trailing = dotParts[1].trim().toLowerCase();
+            if (
+              (merchant && merchant.toLowerCase().includes(trailing)) ||
+              (platform && platform.toLowerCase().includes(trailing)) ||
+              trailing === "supercomnet" ||
+              trailing === "x4cart"
+            ) {
+              cleaned = dotParts[0].trim();
+            }
+          }
+        }
+
+        cleaned = cleaned.trim();
+        if (cleaned) {
+          const lower = cleaned.toLowerCase();
+          const merchantLower = merchant?.toLowerCase();
+          const platformLower = platform?.toLowerCase();
+          const categoryLower = transaction.category?.toLowerCase();
+
+          if (
+            lower !== merchantLower &&
+            lower !== platformLower &&
+            lower !== categoryLower &&
+            lower !== "unspecified merchant" &&
+            !/^(?:shopping|food|groceries|bills|transport|education|other)$/i.test(lower)
+          ) {
+            product = cleaned;
+          }
+        }
+      }
+    }
+  }
+
+  // Fallback: check notes if product is not found yet
+  if (!product && transaction.notes) {
+    const notes = transaction.notes.trim();
+    // Match order formats like "Flipkart order OD439018210263725100: Cycle Pure Ghee Tealight Diyas 100 Pcs (Qty: 2...)"
+    const orderItemMatch = notes.match(
+      /(?:order\s+[A-Za-z0-9_-]+[:\s-]+)(.+?)(?=\s*\(Qty|\s*\(Quantity|\s*\.\s*[A-Z]|\.$|\n|$)/i,
+    );
+    if (orderItemMatch && orderItemMatch[1]?.trim()) {
+      let extracted = orderItemMatch[1].trim();
+      extracted = extracted.replace(/\s*[·|—–-]\s*(?:Seller\s+)?.*$/i, "").trim();
+      if (extracted) product = extracted;
+    } else {
+      const itemMatch = notes.match(/(?:item|product):\s*([^.\n]+)/i);
+      if (itemMatch && itemMatch[1]?.trim()) {
+        product = itemMatch[1].trim();
+      }
+    }
+  }
+
+  return product;
+}
