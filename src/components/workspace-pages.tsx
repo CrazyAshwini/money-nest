@@ -835,6 +835,12 @@ export function LoginPage() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
+    if (
+      url.searchParams.get("demo") === "true" ||
+      url.searchParams.get("demo") === "1"
+    ) {
+      void loginDemo();
+    }
     const authError = url.searchParams.get("auth_error");
     if (authError === "confirmation" || authError === "recovery") {
       // Synchronize the server's safe callback result, then clear it from the address.
@@ -850,6 +856,7 @@ export function LoginPage() {
       url.searchParams.delete("auth_error");
       window.history.replaceState(null, "", url.pathname + url.search);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -998,6 +1005,16 @@ export function LoginPage() {
         }
         return;
       }
+      const trimmedEmail = email.trim().toLowerCase();
+      if (
+        trimmedEmail === "demo@moneynest.com" ||
+        trimmedEmail === "demo@moneynest.local" ||
+        trimmedEmail === "agent@moneynest.com"
+      ) {
+        await loginDemo();
+        return;
+      }
+
       const result = await requestAuth({
         action: recovering ? "reset" : creating ? "signup" : "login",
         email: email.trim(),
@@ -1037,6 +1054,33 @@ export function LoginPage() {
       } else {
         setError(issue instanceof Error ? issue.message : "Please try again.");
       }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loginDemo() {
+    if (working) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "login",
+          email: "demo@moneynest.com",
+          password: "demo1234",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok)
+        throw new Error(data.error || "Could not sign in to demo account.");
+      await openWorkspace("Welcome to the Demo Account! All features enabled.");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not sign in to demo account.",
+      );
     } finally {
       setBusy(false);
     }
@@ -1338,6 +1382,29 @@ export function LoginPage() {
             Access is limited to your authorized MoneyNest account.
           </p>
         )}
+        {!recovering && !creating && !verifying && !verified && (
+          <div className="demo-login-card">
+            <div className="demo-login-header">
+              <span className="demo-login-badge">🤖 AI Agent &amp; Tester Demo</span>
+            </div>
+            <p className="demo-login-text">
+              Test all Money Nest features (Accounts, Credit Cards, EMIs, Loans, Analytics, Split Bills) with fully loaded synthetic data.
+            </p>
+            <div className="demo-login-creds">
+              <span><strong>Email:</strong> <code>demo@moneynest.com</code></span>
+              <span><strong>Password:</strong> <code>demo1234</code></span>
+            </div>
+            <button
+              type="button"
+              className="button secondary demo-login-button"
+              disabled={working}
+              onClick={() => void loginDemo()}
+            >
+              Sign in as Demo Agent
+            </button>
+          </div>
+        )}
+
         {!recovering && !creating && !verifying && !verified && (
           <p className="login-help">
             Your computer-only profile password is separate from your cloud

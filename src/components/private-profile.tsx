@@ -23,7 +23,7 @@ import "./profile-theme.css";
 import styles from "./private-profile.module.css";
 
 export function PrivateProfilePage() {
-  const { mode, backend, profile, needsSetup, emailRequired, refresh, toast } =
+  const { mode, backend, profile, needsSetup, emailRequired, refresh, toast, resetDemo } =
     useFinance();
   const router = useRouter();
   const [setupToken, setSetupToken] = useState("");
@@ -156,11 +156,13 @@ export function PrivateProfilePage() {
     }
   }
 
-  if ((mode === "private" || mode === "cloud") && profile) {
+  if ((mode === "private" || mode === "cloud" || mode === "demo") && profile) {
     const emailDomain = profile.email?.split("@")[1];
-    const maskedEmail = emailDomain
-      ? `${profile.email!.slice(0, 1)}•••@${emailDomain}`
-      : null;
+    const maskedEmail = mode === "demo"
+      ? profile.email
+      : emailDomain
+        ? `${profile.email!.slice(0, 1)}•••@${emailDomain}`
+        : null;
 
     return (
       <div className={styles.hub}>
@@ -172,7 +174,7 @@ export function PrivateProfilePage() {
             <h2>{profile.displayName}</h2>
             {maskedEmail && <p>{maskedEmail}</p>}
           </div>
-          <Badge tone="green">Signed in</Badge>
+          <Badge tone="green">{mode === "demo" ? "Demo Account" : "Signed in"}</Badge>
         </section>
         <div className={styles.settingsGrid}>
           <section
@@ -180,6 +182,33 @@ export function PrivateProfilePage() {
             aria-labelledby="profile-account-heading"
           >
             <h2 id="profile-account-heading">Account</h2>
+            {mode === "demo" && (
+              <div style={{ marginBottom: "16px", padding: "12px", background: "rgba(33, 150, 83, 0.08)", borderRadius: "8px", border: "1px solid rgba(33, 150, 83, 0.2)" }}>
+                <p style={{ margin: "0 0 10px 0", fontSize: "12px", lineHeight: 1.5, color: "#315d43" }}>
+                  This is the <strong>AI Testing Demo Account</strong> with full access to accounts, credit cards, loans, EMIs, and transactions.
+                </p>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    className="button secondary"
+                    type="button"
+                    style={{ fontSize: "12px" }}
+                    onClick={resetDemo}
+                  >
+                    Reset Demo Data
+                  </button>
+                  <button
+                    className="button"
+                    type="button"
+                    style={{ fontSize: "12px" }}
+                    onClick={logout}
+                    disabled={busy}
+                  >
+                    <LogOut size={14} aria-hidden="true" />
+                    {signingOut ? "Signing out…" : "Sign out"}
+                  </button>
+                </div>
+              </div>
+            )}
             <form onSubmit={submit} className={styles.form}>
               <h3>Personal information</h3>
               <Field label="Profile name">

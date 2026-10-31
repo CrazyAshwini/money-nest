@@ -17,6 +17,16 @@ export async function GET(request: NextRequest) {
   if (privateProfileEnabled()) return privateProfileGET(request);
   if (!cloudRequestAllowed(request))
     return privateResponse({ error: "Request origin is not allowed." }, 403);
+
+  if (request.cookies.get("money-nest-demo-session")?.value === "1") {
+    return privateResponse({
+      profile: {
+        displayName: "AI Agent Demo Account",
+        email: "demo@moneynest.com",
+      },
+      backend: "demo",
+    });
+  }
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return privateResponse({ error: "Cloud storage is not configured." }, 503);
@@ -59,6 +69,10 @@ export async function PATCH(request: NextRequest) {
     );
   if (!cloudRequestAllowed(request, true))
     return privateResponse({ error: "Request origin is not allowed." }, 403);
+
+  if (request.cookies.get("money-nest-demo-session")?.value === "1") {
+    return privateResponse({ ok: true });
+  }
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return privateResponse({ error: "Cloud storage is not configured." }, 503);

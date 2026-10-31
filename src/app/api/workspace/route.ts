@@ -26,6 +26,7 @@ import {
   privateWorkspaceDELETE,
 } from "@/lib/private-profile-http";
 import { sanitizeWorkspaceTransactions } from "@/lib/workspace-cleaner";
+import { createDemoData, DEMO_USER_ID } from "@/lib/seed";
 
 export const dynamic = "force-dynamic";
 const response = (body: unknown, status = 200) =>
@@ -38,6 +39,24 @@ export async function GET(request: NextRequest) {
   if (privateProfileEnabled()) return privateWorkspaceGET(request);
   if (!cloudRequestAllowed(request))
     return response({ error: "Request origin is not allowed." }, 403);
+
+  const isDemo =
+    request.cookies.get("money-nest-demo-session")?.value === "1" ||
+    request.nextUrl.searchParams.get("demo") === "true";
+
+  if (isDemo) {
+    return response({
+      configured: true,
+      authenticated: true,
+      backend: "demo",
+      userId: DEMO_USER_ID,
+      profile: {
+        displayName: "AI Agent Demo Account",
+        email: "demo@moneynest.com",
+      },
+      workspace: createDemoData(),
+    });
+  }
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return response(
@@ -117,6 +136,10 @@ export async function POST(request: NextRequest) {
   if (privateProfileEnabled()) return privateWorkspacePOST(request);
   if (!cloudRequestAllowed(request, true))
     return response({ error: "Request origin is not allowed." }, 403);
+
+  if (request.cookies.get("money-nest-demo-session")?.value === "1") {
+    return response({ ok: true, status: "saved" });
+  }
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return response(
@@ -244,6 +267,10 @@ export async function DELETE(request: NextRequest) {
   if (privateProfileEnabled()) return privateWorkspaceDELETE(request);
   if (!cloudRequestAllowed(request, true))
     return response({ error: "Request origin is not allowed." }, 403);
+
+  if (request.cookies.get("money-nest-demo-session")?.value === "1") {
+    return response({ ok: true, status: "deleted" });
+  }
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return response(
