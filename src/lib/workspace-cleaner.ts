@@ -158,6 +158,26 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         };
       }
 
+      // Blinkit ₹410 expense -> paid with IDFC FIRST Quantum+ credit card
+      if (
+        t.amount === "410.00" &&
+        (t.merchant?.toLowerCase().includes("blinkit") ||
+          t.description?.toLowerCase().includes("blinkit"))
+      ) {
+        const idfcQuantumAccount = workspace.accounts?.find(
+          (a) =>
+            a.kind === "credit_card" &&
+            (a.name?.toLowerCase().includes("quantum") || a.maskedSuffix === "3594"),
+        );
+        return {
+          ...t,
+          category: "Groceries",
+          platform: "Blinkit",
+          fromAccountId: idfcQuantumAccount?.id || t.fromAccountId,
+          notes: "Blinkit order paid using IDFC FIRST Quantum+ credit card.",
+        };
+      }
+
       return t;
     });
 
@@ -265,7 +285,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         merchant: "Priyanka Kumari",
         description: "MMT/IMPS/629716699605/IMPS/PRIYANKAKU/Axis Bank",
         externalReference: "629716699605",
-        notes: "Pass-through fund transfer in from Priyanka Kumari; paired with outgoing transfer to MD Mukh.",
+        notes: "Confirmed pass-through transfer in from Priyanka Kumari; immediately forwarded to MD Mukh.",
       },
       {
         id: "c2607015-0007-4888-8000-000000000007",
@@ -408,7 +428,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         merchant: "Mr MD Mukh",
         description: "UPI/Mr MD MUKH/XX6977@ybl/Payment fr/Allahabad/341940340450/IBLbc655a7ae5c540fe94bbabe122b3958d",
         externalReference: "341940340450",
-        notes: "Pass-through fund transfer out to MD Mukh; forwards ₹19,000 received from Priyanka Kumari.",
+        notes: "Confirmed pass-through transfer out to MD Mukh; forwards ₹19,000 received from Priyanka Kumari.",
       },
       {
         id: "c2607015-0017-4888-a001-512684732761",
@@ -504,19 +524,19 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
       },
       {
         id: "c2607015-0023-4888-8000-000000000023",
-        kind: "refund",
+        kind: "income",
         status: "posted",
         amount: "277.00",
         currency: "INR",
         occurredOn: "2026-10-30",
         fromAccountId: null,
         toAccountId: iciciAccountId,
-        category: "Shopping",
-        platform: "Myntra",
-        merchant: "Myntra Designs",
+        category: "Income",
+        merchant: "Myntra Designs (Third-Party Refund)",
         description: "MMT/IMPS/630314354684/RyY601x4LS/MYNTRA DES/HSBC Bank",
         externalReference: "630314354684",
-        notes: "Myntra order refund credited into ICICI Bank (IMPS 630314354684).",
+        notes:
+          "Confirmed income: third-party Myntra refund received into ICICI Bank on behalf of someone else (user will purchase an item for them in the future). Treated as incoming funds, not a personal shopping reduction.",
       },
       {
         id: "c2607015-0024-4888-8000-000000000024",
@@ -805,7 +825,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         merchant: "Navi Loans",
         description: "WDL TFR UPI/DR/144089859407/NaviLoans/ICIC/naviloans@/Pa",
         externalReference: "144089859407",
-        notes: "Navi personal loan monthly EMI repayment debited from SBI.",
+        notes: "Confirmed Navi personal loan monthly EMI repayment debited from SBI (UTR 144089859407).",
       },
       {
         id: "a4efa024-0006-4888-8000-000000000006",
@@ -816,11 +836,11 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         occurredOn: "2026-10-30",
         fromAccountId: null,
         toAccountId: sbiAccountId,
-        category: null,
+        category: "Income",
         merchant: "Ramswrup",
         description: "DEP TFR UPI/CR/317744804593/RAMSWRUP/UBIN/ashwini.sa/Paym",
         externalReference: "317744804593",
-        notes: "UPI credit from Ramswrup into SBI (unconfirmed receipt: income or friend repayment).",
+        notes: "Confirmed personal income received from Ramswrup via UPI (UTR 317744804593).",
       },
     ];
 
