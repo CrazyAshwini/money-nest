@@ -148,7 +148,8 @@
   overflow: hidden;
 }
 
-.uth-merchant {
+.uth-merchant,
+.uth-primary-title {
   display: block;
   width: 100%;
   min-width: 0;

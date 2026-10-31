@@ -226,6 +226,43 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         };
       }
 
+      // Amazon X4Cart purchase ₹634.53 on 30 Oct 2026
+      if (
+        t.amount === "634.53" ||
+        (t.occurredOn === "2026-10-30" &&
+          (t.merchant?.toLowerCase().includes("x4cart") ||
+            t.description?.toLowerCase().includes("x4cart")))
+      ) {
+        return {
+          ...t,
+          category: "Shopping",
+          platform: "Amazon",
+          merchant: "X4Cart",
+          description: "Amazon — Decorative Fairy String Lights",
+          notes:
+            t.notes ||
+            "Amazon order: Decorative Fairy String Lights (Seller: X4Cart). Amount ₹634.53 debited on 30 Oct 2026.",
+        };
+      }
+
+      // Zomato Laziz Pizza food order ₹136.19 on 31 Oct 2026
+      if (
+        t.amount === "136.19" &&
+        (t.occurredOn === "2026-10-31" ||
+          t.merchant?.toLowerCase().includes("laziz") ||
+          t.merchant?.toLowerCase().includes("zomato") ||
+          t.description?.toLowerCase().includes("zomato"))
+      ) {
+        return {
+          ...t,
+          category: "Food",
+          platform: "Zomato",
+          merchant: "Laziz Pizza",
+          description: "Zomato — Laziz Pizza Food Order",
+          notes: t.notes || "Zomato food order from Laziz Pizza ₹136.19 on 31 Oct 2026.",
+        };
+      }
+
       // Utkarsh SuperMoney card bill repayments from SBI Savings
       if (
         (t.amount === "941.75" || t.amount === "832.01") &&
@@ -1138,8 +1175,8 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         toAccountId: null,
         category: "Food",
         platform: "Zomato",
-        merchant: "Zomato",
-        description: "Zomato — Food order",
+        merchant: "Laziz Pizza",
+        description: "Zomato — Laziz Pizza Food Order",
         notes: "SuperMoney statement verified: ZOMATO ₹136.19 SUCCESS on Utkarsh XX32.",
       },
     ];

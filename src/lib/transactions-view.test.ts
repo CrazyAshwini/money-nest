@@ -666,7 +666,7 @@ describe("canonical transaction summaries and list scoping", () => {
 
 
 describe("extractProductName", () => {
-  it("extracts clean product names from marketplace descriptions by stripping platform prefixes", () => {
+  it("extracts clean product names from marketplace descriptions by stripping platform and seller prefixes", () => {
     const t = record("t1", {
       merchant: "Flipkart · SuperComNet",
       description: "Flipkart — Cycle Pure Ghee Tealight Diyas 100 Pcs (Pack of 2)",
@@ -674,6 +674,26 @@ describe("extractProductName", () => {
       category: "Shopping",
     });
     expect(extractProductName(t)).toBe("Cycle Pure Ghee Tealight Diyas 100 Pcs (Pack of 2)");
+  });
+
+  it("extracts product names when seller is appended with dot separator", () => {
+    const t = record("t1b", {
+      merchant: "SuperComNet",
+      description: "Cycle Pure Ghee Tealight Diyas 100 Pcs (Pack of 2) · SuperComNet",
+      platform: "Flipkart",
+      category: "Shopping",
+    });
+    expect(extractProductName(t)).toBe("Cycle Pure Ghee Tealight Diyas 100 Pcs (Pack of 2)");
+  });
+
+  it("extracts Amazon shopping product names while ignoring merchant seller name", () => {
+    const t = record("t_amz", {
+      merchant: "X4Cart",
+      description: "Amazon — Decorative Fairy String Lights",
+      platform: "Amazon",
+      category: "Shopping",
+    });
+    expect(extractProductName(t)).toBe("Decorative Fairy String Lights");
   });
 
   it("extracts clean food items from restaurant and delivery descriptions", () => {
@@ -684,6 +704,16 @@ describe("extractProductName", () => {
       category: "Food",
     });
     expect(extractProductName(t)).toBe("Pepper Barbecue Chicken pizzas");
+  });
+
+  it("extracts quick commerce grocery items", () => {
+    const t = record("t_blinkit", {
+      merchant: "Blinkit",
+      description: "Homestrap Adhesive Hooks, Happilo Kimia Dates, Vadilal Matka Kulfi",
+      platform: "Blinkit",
+      category: "Groceries",
+    });
+    expect(extractProductName(t)).toBe("Homestrap Adhesive Hooks, Happilo Kimia Dates, Vadilal Matka Kulfi");
   });
 
   it("returns null for raw bank and UPI narratives to prevent ugly codes in product name line", () => {
