@@ -1,4 +1,7 @@
 import type { WorkspaceData, WorkspaceDataWithEmi } from "./types";
+import { generateEmiSchedule } from "./emi";
+
+export const SAMSUNG_TV_LOAN_ID = "e3b0c442-98fc-4c14-9afe-632c7a8f095b";
 
 /**
  * Sanitizes workspace transactions to remove confirmed duplicates and normalize
@@ -396,11 +399,78 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     return fd;
   });
 
+  // Attach structured Samsung TV Loan and EMI installments
+  const sanitizedLoans = Array.isArray(workspace.loans)
+    ? [...workspace.loans]
+    : [];
+  const sanitizedEmis = Array.isArray(workspace.emis)
+    ? [...workspace.emis]
+    : [];
+
+  const samsungInstallments = hasAmazon
+    ? generateEmiSchedule({
+        agreementId: "agr-samsung-tv",
+        userId,
+        financedPrincipal: "30509.79",
+        annualInterestRate: "20.00",
+        durationMonths: 9,
+        monthlyEmi: "3678.70",
+        processingFee: "360.02",
+        firstBillingDate: "2026-11-01",
+        firstDueDate: "2026-11-05",
+      })
+    : [];
+
+  if (hasAmazon) {
+    const hasSamsungLoan = sanitizedLoans.some(
+      (l) =>
+        l.id === SAMSUNG_TV_LOAN_ID ||
+        l.name?.toLowerCase().includes("samsung"),
+    );
+    if (!hasSamsungLoan) {
+      sanitizedLoans.push({
+        id: SAMSUNG_TV_LOAN_ID,
+        userId,
+        name: 'Samsung 43" TV (Amazon Pay Later EMI)',
+        lender: "Amazon Pay Later",
+        kind: "institutional",
+        contractualPrincipal: "30509.79",
+        netDisbursed: "30509.79",
+        reportedOutstanding: "30509.79",
+        reportedAsOf: "2026-10-18",
+        annualRate: "20.0000",
+        scheduledTotal: "33468.31",
+        repaymentAccountId: amazonAccountId,
+        disbursedOn: "2026-10-18",
+        notes:
+          'Samsung 43" Mini LED TV + 2 items (Orders 406-2479955-3587539 / 406-6855707-5582708 / 406-0628731-9190704). 9-month EMI @ 20% p.a., ₹3,678.70/month.',
+      });
+    }
+
+    const hasSamsungEmis = sanitizedEmis.some(
+      (e) => e.loanId === SAMSUNG_TV_LOAN_ID,
+    );
+    if (!hasSamsungEmis) {
+      for (const inst of samsungInstallments) {
+        sanitizedEmis.push({
+          id: `b001000${inst.installmentNumber}-4061-4000-8000-00000000000${inst.installmentNumber}`,
+          userId,
+          loanId: SAMSUNG_TV_LOAN_ID,
+          number: inst.installmentNumber,
+          dueDate: inst.dueDate,
+          amount: inst.totalDue,
+          principalPortion: inst.principalComponent,
+          interestPortion: inst.interestComponent,
+        });
+      }
+    }
+  }
+
   // Attach structured Samsung TV EMI agreement if Amazon Pay Later account exists
-  let sanitizedEmiAgreements =
+  const sanitizedEmiAgreements =
     "emiAgreements" in workspace &&
-    Array.isArray((workspace as any).emiAgreements)
-      ? [...(workspace as any).emiAgreements]
+    Array.isArray((workspace as WorkspaceDataWithEmi).emiAgreements)
+      ? [...(workspace as WorkspaceDataWithEmi).emiAgreements!]
       : [];
 
   if (hasAmazon) {
@@ -439,8 +509,9 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         firstBillingDate: "2026-11-01",
         firstDueDate: "2026-11-05",
         status: "active",
+        installments: samsungInstallments,
         notes:
-          "9-month EMI agreement for Samsung 43\" TV + 2 items. Only principal consumes credit limit upfront.",
+          '9-month EMI agreement for Samsung 43" TV + 2 items. Only principal consumes credit limit upfront.',
       });
     }
   }
@@ -450,6 +521,8 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     accounts: sanitizedAccounts || workspace.accounts,
     snapshots: sanitizedSnapshots || workspace.snapshots,
     fixedDeposits: sanitizedFixedDeposits || workspace.fixedDeposits,
+    loans: sanitizedLoans,
+    emis: sanitizedEmis,
     transactions: sanitizedTransactions,
     ...(sanitizedEmiAgreements.length > 0
       ? { emiAgreements: sanitizedEmiAgreements }

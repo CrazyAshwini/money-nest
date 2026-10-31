@@ -1083,6 +1083,35 @@ function AccountsPage({
               />
             )}
           />
+          {data.loans.some((l) => l.repaymentAccountId === a.id) && (
+            <Section
+              title="Active EMI purchases"
+              action={
+                <Link href="/loans" className="text-link">
+                  All loans & EMIs <ChevronRight size={14} />
+                </Link>
+              }
+            >
+              <div className="record-list">
+                {data.loans
+                  .filter((l) => l.repaymentAccountId === a.id)
+                  .map((l) => (
+                    <div className="record-row" key={l.id}>
+                      <span className="grow">
+                        <strong>{l.name}</strong>
+                        <small>{l.notes || l.lender}</small>
+                      </span>
+                      <strong>
+                        {formatMoney(l.contractualPrincipal || "0")}
+                      </strong>
+                      <Link href={`/loans/${l.id}`} className="button small">
+                        Schedule
+                      </Link>
+                    </div>
+                  ))}
+              </div>
+            </Section>
+          )}
           <RecentAccountTransactions
             data={data}
             accountId={a.id}

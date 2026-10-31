@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeWorkspaceTransactions } from "../src/lib/workspace-cleaner";
-import type { WorkspaceData, Account, Transaction, AccountSnapshot, FixedDeposit } from "../src/lib/types";
+import { sanitizeWorkspaceTransactions, SAMSUNG_TV_LOAN_ID } from "../src/lib/workspace-cleaner";
+import { loanSchema, emiSchema } from "../src/lib/validation";
+import type { WorkspaceData, Account, Transaction, FixedDeposit } from "../src/lib/types";
 
 describe("workspace-cleaner", () => {
   const userId = "4aed7ac5-23e7-4878-aa7a-13ad6d24b597";
@@ -135,7 +136,7 @@ describe("workspace-cleaner", () => {
     expect(idfcSnap).toBeDefined();
   });
 
-  it("attaches Samsung TV EMI agreement when Amazon Pay Later account exists", () => {
+  it("attaches Samsung TV EMI agreement, loan, and 9 installments when Amazon Pay Later account exists", () => {
     const ws = createBaseWorkspace();
     ws.accounts.push({
       id: "476fa60a-ab35-5769-a18c-839e8a88d283",
@@ -158,6 +159,34 @@ describe("workspace-cleaner", () => {
       emiCount: 9,
       status: "active",
     });
+
+    // Check Loan
+    expect(result.loans).toBeDefined();
+    expect(result.loans).toHaveLength(1);
+    const tvLoan = result.loans.find((l) => l.id === SAMSUNG_TV_LOAN_ID);
+    expect(tvLoan).toBeDefined();
+    expect(tvLoan).toMatchObject({
+      id: SAMSUNG_TV_LOAN_ID,
+      userId,
+      name: 'Samsung 43" TV (Amazon Pay Later EMI)',
+      lender: "Amazon Pay Later",
+      kind: "institutional",
+      contractualPrincipal: "30509.79",
+      netDisbursed: "30509.79",
+      reportedOutstanding: "30509.79",
+      reportedAsOf: "2026-10-18",
+      repaymentAccountId: "476fa60a-ab35-5769-a18c-839e8a88d283",
+    });
+    expect(loanSchema.safeParse(tvLoan).success).toBe(true);
+
+    // Check EMIs
+    expect(result.emis).toBeDefined();
+    expect(result.emis).toHaveLength(9);
+    expect(result.emis.every((e) => e.loanId === SAMSUNG_TV_LOAN_ID)).toBe(true);
+    expect(result.emis.every((e) => e.amount === "3678.70")).toBe(true);
+    expect(result.emis.every((e) => emiSchema.safeParse(e).success)).toBe(true);
+    expect(result.emis[0].dueDate).toBe("2026-11-05");
+    expect(result.emis[8].dueDate).toBe("2027-07-05");
   });
 
   it("does not inject rogue transactions into empty workspaces for other users", () => {

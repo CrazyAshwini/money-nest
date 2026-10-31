@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import type { AccountDetailView } from "@/lib/account-detail-view";
 import { formatDate, formatMoney } from "@/lib/finance";
 import "./account-statement-details.css";
@@ -120,18 +121,181 @@ export function AccountStatementDetails({ view }: { view: AccountDetailView }) {
       </dl>
       {usage.financedPrincipal && (
         <div className="account-emi-section" style={{ marginTop: "1.25rem" }}>
-          <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.5rem" }}>Active EMI agreements</h3>
+          <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.75rem" }}>
+            Active EMI agreements
+          </h3>
+          {usage.activeAgreements && usage.activeAgreements.length > 0 && (
+            <div
+              className="account-emi-agreements-list"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem",
+                marginBottom: "1rem",
+              }}
+            >
+              {usage.activeAgreements.map((agreement) => (
+                <div
+                  key={agreement.id}
+                  className="account-emi-agreement-card"
+                  style={{
+                    padding: "0.85rem",
+                    borderRadius: "12px",
+                    border: "1px solid var(--border)",
+                    backgroundColor: "var(--background)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    <div>
+                      <strong style={{ fontSize: "0.95rem", display: "block" }}>
+                        {agreement.description}
+                      </strong>
+                      {agreement.orderIds && agreement.orderIds.length > 0 && (
+                        <small
+                          style={{
+                            color: "var(--muted)",
+                            display: "block",
+                            marginTop: "3px",
+                          }}
+                        >
+                          Orders: {agreement.orderIds.join(", ")}
+                        </small>
+                      )}
+                    </div>
+                    <span
+                      style={{
+                        fontSize: "0.75rem",
+                        padding: "2px 8px",
+                        borderRadius: "9999px",
+                        backgroundColor: "var(--accent-subtle, rgba(16, 185, 129, 0.1))",
+                        color: "var(--accent, #059669)",
+                        fontWeight: 600,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {agreement.status}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: "0.5rem 1rem",
+                      marginTop: "0.75rem",
+                      fontSize: "0.85rem",
+                    }}
+                  >
+                    <div>
+                      <span
+                        style={{
+                          color: "var(--muted)",
+                          display: "block",
+                          fontSize: "0.75rem",
+                        }}
+                      >
+                        Financed Principal
+                      </span>
+                      <strong>{money(agreement.financedPrincipal)}</strong>
+                    </div>
+                    <div>
+                      <span
+                        style={{
+                          color: "var(--muted)",
+                          display: "block",
+                          fontSize: "0.75rem",
+                        }}
+                      >
+                        Monthly Installment
+                      </span>
+                      <strong>
+                        {money(agreement.monthlyPayment)}/mo ({agreement.emiCount} mos)
+                      </strong>
+                    </div>
+                    <div>
+                      <span
+                        style={{
+                          color: "var(--muted)",
+                          display: "block",
+                          fontSize: "0.75rem",
+                        }}
+                      >
+                        Total Repayment
+                      </span>
+                      <strong>{money(agreement.totalScheduledRepayment)}</strong>
+                    </div>
+                    <div>
+                      <span
+                        style={{
+                          color: "var(--muted)",
+                          display: "block",
+                          fontSize: "0.75rem",
+                        }}
+                      >
+                        First Due Date
+                      </span>
+                      <strong>
+                        {agreement.firstDueDate ? date(agreement.firstDueDate) : "5th of month"}
+                      </strong>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: "0.75rem",
+                      paddingTop: "0.5rem",
+                      borderTop: "1px solid var(--border)",
+                      display: "flex",
+                      justifyContent: "flex-end",
+                    }}
+                  >
+                    <Link
+                      href="/loans"
+                      style={{
+                        fontSize: "0.8rem",
+                        fontWeight: 500,
+                        color: "var(--primary, #2563eb)",
+                        textDecoration: "none",
+                      }}
+                    >
+                      View repayment schedule in Loans & EMIs →
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <dl className="account-statement-details-grid">
-            <StatementValue field="financed-principal" label="Financed principal" note="Original financed amount">
+            <StatementValue
+              field="financed-principal"
+              label="Financed principal"
+              note="Original financed amount"
+            >
               {money(usage.financedPrincipal)}
             </StatementValue>
-            <StatementValue field="unbilled-interest" label="Unbilled future interest" note="Does not consume limit upfront">
+            <StatementValue
+              field="unbilled-interest"
+              label="Unbilled future interest"
+              note="Does not consume limit upfront"
+            >
               {money(usage.unbilledFutureInterest)}
             </StatementValue>
-            <StatementValue field="processing-fees" label="Processing fees" note="One-time fee">
+            <StatementValue
+              field="processing-fees"
+              label="Processing fees"
+              note="One-time fee"
+            >
               {money(usage.processingFees)}
             </StatementValue>
-            <StatementValue field="total-scheduled" label="Total scheduled repayments">
+            <StatementValue
+              field="total-scheduled"
+              label="Total scheduled repayments"
+            >
               {money(usage.totalScheduledRepayments)}
             </StatementValue>
           </dl>
