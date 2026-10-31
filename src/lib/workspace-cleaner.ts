@@ -10,6 +10,35 @@ export const SAMSUNG_TV_LOAN_ID = "e3b0c442-98fc-4c14-9afe-632c7a8f095b";
 export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace: T): T & WorkspaceDataWithEmi {
   if (!workspace || !Array.isArray(workspace.transactions)) return workspace;
 
+  const ownerUserId = "4aed7ac5-23e7-4878-aa7a-13ad6d24b597";
+  const iciciAccountId = "2e84b7fc-dc55-4052-a087-7910619c3f2e";
+  const sbiAccountId = "a4efa024-1d0c-59a2-aabd-c330a661be77";
+  const idfcAccountId = "5d9bc626-5ee8-514f-a2ff-fca8b5618b74";
+  const amazonAccountId = "476fa60a-ab35-5769-a18c-839e8a88d283";
+  const defaultUtkarshAccountId = "7e83d8e2-dc55-4052-a087-7910619c3f32";
+
+  const existingUtkarsh = workspace.accounts?.find(
+    (a) =>
+      a.kind === "credit_card" &&
+      (a.maskedSuffix === "XX32" ||
+        a.maskedSuffix === "32" ||
+        a.name?.toLowerCase().includes("utkarsh") ||
+        a.name?.toLowerCase().includes("supermoney") ||
+        a.institution?.toLowerCase().includes("utkarsh")),
+  );
+  const utkarshAccountId = existingUtkarsh?.id || defaultUtkarshAccountId;
+
+  const hasIcici = workspace.accounts?.some((a) => a.id === iciciAccountId);
+  const hasSbi = workspace.accounts?.some((a) => a.id === sbiAccountId);
+  const hasIdfc = workspace.accounts?.some((a) => a.id === idfcAccountId);
+  const hasAmazon = workspace.accounts?.some((a) => a.id === amazonAccountId);
+  const hasUtkarsh = Boolean(existingUtkarsh);
+
+  const userId =
+    workspace.accounts?.find((a) => a.userId)?.userId ||
+    workspace.transactions[0]?.userId ||
+    ownerUserId;
+
   const toRemoveIds = new Set([
     "3ab044c8-1c87-44d7-94ca-cb3083846998", // DAWNTECH Samsung TV ₹32,990 duplicate
     "f9d70cd7-7724-45b3-886c-decb59177b95", // Acko duplicate ₹1,690
@@ -197,24 +226,46 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         };
       }
 
+      // Utkarsh SuperMoney card bill repayments from SBI Savings
+      if (
+        (t.amount === "941.75" || t.amount === "832.01") &&
+        (t.description?.includes("supercard@") ||
+          t.description?.toLowerCase().includes("utkarsh") ||
+          t.merchant?.toLowerCase().includes("utkarsh"))
+      ) {
+        return {
+          ...t,
+          kind: "bill_payment" as const,
+          category: null,
+          fromAccountId: sbiAccountId,
+          toAccountId: utkarshAccountId,
+          merchant: "Utkarsh SuperMoney Credit Card",
+          notes: `Utkarsh SuperMoney RuPay credit card bill payment debited from SBI Savings (UTR ${t.externalReference || (t.amount === "941.75" ? "212191910755" : "446687461536")}).`,
+        };
+      }
+
+      // Map Utkarsh SuperMoney card spends to utkarshAccountId
+      if (
+        (t.amount === "140.00" && t.occurredOn === "2026-10-02" && (t.merchant?.toLowerCase().includes("domino") || t.description?.toLowerCase().includes("domino"))) ||
+        (t.amount === "360.00" && t.occurredOn === "2026-10-06" && (t.merchant?.toLowerCase().includes("arif") || t.description?.toLowerCase().includes("arif"))) ||
+        (t.amount === "40.00" && t.occurredOn === "2026-10-06" && (t.merchant?.toLowerCase().includes("kripa") || t.description?.toLowerCase().includes("kripa"))) ||
+        (t.amount === "291.00" && t.occurredOn === "2026-10-08" && (t.merchant?.toLowerCase().includes("flipkart") || t.description?.toLowerCase().includes("flipkart"))) ||
+        (t.amount === "257.22" && t.occurredOn === "2026-10-10" && (t.merchant?.toLowerCase().includes("uber") || t.description?.toLowerCase().includes("uber"))) ||
+        (t.amount === "40.00" && t.occurredOn === "2026-10-12" && (t.merchant?.toLowerCase().includes("aman") || t.description?.toLowerCase().includes("aman"))) ||
+        (t.amount === "224.00" && t.occurredOn === "2026-10-25" && (t.merchant?.toLowerCase().includes("aman") || t.description?.toLowerCase().includes("aman"))) ||
+        (t.amount === "140.49" && t.occurredOn === "2026-10-30" && (t.merchant?.toLowerCase().includes("zomato") || t.description?.toLowerCase().includes("zomato"))) ||
+        (t.amount === "136.19" && t.occurredOn === "2026-10-31" && (t.merchant?.toLowerCase().includes("zomato") || t.description?.toLowerCase().includes("zomato")))
+      ) {
+        return {
+          ...t,
+          fromAccountId: utkarshAccountId,
+          notes: t.notes || "SuperMoney statement verified spend on Utkarsh XX32.",
+        };
+      }
+
       return t;
     });
 
-  const ownerUserId = "4aed7ac5-23e7-4878-aa7a-13ad6d24b597";
-  const iciciAccountId = "2e84b7fc-dc55-4052-a087-7910619c3f2e";
-  const sbiAccountId = "a4efa024-1d0c-59a2-aabd-c330a661be77";
-  const idfcAccountId = "5d9bc626-5ee8-514f-a2ff-fca8b5618b74";
-  const amazonAccountId = "476fa60a-ab35-5769-a18c-839e8a88d283";
-
-  const hasIcici = workspace.accounts?.some((a) => a.id === iciciAccountId);
-  const hasSbi = workspace.accounts?.some((a) => a.id === sbiAccountId);
-  const hasIdfc = workspace.accounts?.some((a) => a.id === idfcAccountId);
-  const hasAmazon = workspace.accounts?.some((a) => a.id === amazonAccountId);
-
-  const userId =
-    workspace.accounts?.find((a) => a.userId)?.userId ||
-    workspace.transactions[0]?.userId ||
-    ownerUserId;
 
   // 1. Ensure ICICI statement entries (28 total through 31 Oct 2026) are present if user owns ICICI account
   if (hasIcici) {
@@ -908,31 +959,260 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     }
   }
 
-  // Sanitize accounts (SBI notes, ICICI notes, + IDFC card closure)
-  const sanitizedAccounts = workspace.accounts?.map((a) => {
-    if (a.id === sbiAccountId) {
-      return {
-        ...a,
+  // 4. Ensure Utkarsh SuperMoney Credit Card transactions and repayments if user owns SBI or Utkarsh account
+  if (hasSbi || hasUtkarsh) {
+    const utkarshRepayments: Omit<Transaction, "userId">[] = [
+      {
+        id: "a4efa024-0010-4888-8000-000000000941",
+        kind: "bill_payment",
+        status: "posted",
+        amount: "941.75",
+        currency: "INR",
+        occurredOn: "2026-10-02",
+        fromAccountId: sbiAccountId,
+        toAccountId: utkarshAccountId,
+        category: null,
+        merchant: "Utkarsh SuperMoney Credit Card",
+        description: "WDL TFRUPI/DR/212191910755/Utkarsh/UTKS/supercard@/Paym",
+        externalReference: "212191910755",
+        notes: "Utkarsh SuperMoney credit card bill payment debited from SBI Savings (UTR 212191910755).",
+      },
+      {
+        id: "a4efa024-0011-4888-8000-000000000832",
+        kind: "bill_payment",
+        status: "posted",
+        amount: "832.01",
+        currency: "INR",
+        occurredOn: "2026-10-09",
+        fromAccountId: sbiAccountId,
+        toAccountId: utkarshAccountId,
+        category: null,
+        merchant: "Utkarsh SuperMoney Credit Card",
+        description: "WDL TFRUPI/DR/446687461536/Utkarsh/UTKS/supercard@/Paym",
+        externalReference: "446687461536",
+        notes: "Utkarsh SuperMoney credit card bill payment debited from SBI Savings (UTR 446687461536).",
+      },
+    ];
+
+    for (const tx of utkarshRepayments) {
+      const exists = sanitizedTransactions.some(
+        (t) =>
+          t.id === tx.id ||
+          (tx.externalReference && t.externalReference === tx.externalReference) ||
+          (t.amount === tx.amount &&
+            t.occurredOn === tx.occurredOn &&
+            t.fromAccountId === tx.fromAccountId &&
+            t.toAccountId === tx.toAccountId),
+      );
+      if (!exists) {
+        sanitizedTransactions.push({ ...tx, userId });
+      }
+    }
+
+    const utkarshSpends: Omit<Transaction, "userId">[] = [
+      {
+        id: "7e83d8e2-0001-4888-8000-000000000140",
+        kind: "expense",
+        status: "posted",
+        amount: "140.00",
+        currency: "INR",
+        occurredOn: "2026-10-02",
+        fromAccountId: utkarshAccountId,
+        toAccountId: null,
+        category: "Food",
+        platform: "Domino's",
+        merchant: "Dominospizza",
+        description: "Domino's — Pepper Barbecue Chicken pizzas",
+        notes: "SuperMoney statement verified: Dominospizza ₹140.00 SUCCESS on Utkarsh XX32.",
+      },
+      {
+        id: "7e83d8e2-0002-4888-8000-000000000360",
+        kind: "expense",
+        status: "posted",
+        amount: "360.00",
+        currency: "INR",
+        occurredOn: "2026-10-06",
+        fromAccountId: utkarshAccountId,
+        toAccountId: null,
+        category: "Education",
+        merchant: "Arif Khan",
+        description: "Stationery / Study materials paid to Arif Khan",
+        notes: "SuperMoney statement verified: Arif Khan ₹360.00 SUCCESS on Utkarsh XX32.",
+      },
+      {
+        id: "7e83d8e2-0003-4888-8000-000000000040",
+        kind: "expense",
+        status: "posted",
+        amount: "40.00",
+        currency: "INR",
+        occurredOn: "2026-10-06",
+        fromAccountId: utkarshAccountId,
+        toAccountId: null,
+        category: "Food",
+        merchant: "Kripa Proteins",
+        description: "Kripa Proteins — Grocery / Protein items",
+        notes: "SuperMoney statement verified: Kripa Proteins ₹40.00 SUCCESS on Utkarsh XX32.",
+      },
+      {
+        id: "7e83d8e2-0004-4888-8000-000000000291",
+        kind: "expense",
+        status: "posted",
+        amount: "291.00",
+        currency: "INR",
+        occurredOn: "2026-10-08",
+        fromAccountId: utkarshAccountId,
+        toAccountId: null,
+        category: "Shopping",
+        platform: "Flipkart",
+        merchant: "Flipkart Internet Private Limited",
+        description: "Flipkart — POND'S Hydra Miracle Gel",
+        notes: "SuperMoney statement verified: FLIPKART INTERNET ₹291.00 SUCCESS on Utkarsh XX32.",
+      },
+      {
+        id: "7e83d8e2-0005-4888-8000-000000000257",
+        kind: "expense",
+        status: "posted",
+        amount: "257.22",
+        currency: "INR",
+        occurredOn: "2026-10-10",
+        fromAccountId: utkarshAccountId,
+        toAccountId: null,
+        category: "Transport",
+        platform: "Uber",
+        merchant: "Uber India Systems Private Limited",
+        description: "Uber — Ride payment",
+        notes: "SuperMoney statement verified: UBER INDIA SYSTEMS ₹257.22 SUCCESS on Utkarsh XX32.",
+      },
+      {
+        id: "7e83d8e2-0006-4888-8000-000000000041",
+        kind: "expense",
+        status: "posted",
+        amount: "40.00",
+        currency: "INR",
+        occurredOn: "2026-10-12",
+        fromAccountId: utkarshAccountId,
+        toAccountId: null,
+        category: "Food",
+        merchant: "Aman Enterprises",
+        description: "Aman Enterprises — Cold drinks / refreshments",
+        notes: "SuperMoney statement verified: AMAN ENTERPRISES ₹40.00 SUCCESS on Utkarsh XX32.",
+      },
+      {
+        id: "7e83d8e2-0007-4888-8000-000000000224",
+        kind: "expense",
+        status: "posted",
+        amount: "224.00",
+        currency: "INR",
+        occurredOn: "2026-10-25",
+        fromAccountId: utkarshAccountId,
+        toAccountId: null,
+        category: "Shopping",
+        merchant: "Aman Enterprises",
+        description: "Aman Enterprises — Store purchase",
         notes:
-          "Statement period 1–31 October 2026. Opening balance ₹1,089.32; verified closing balance ₹19,000.00 CR (75 debits totaling ₹73,488.12, 35 credits totaling ₹91,398.80). Mini-statement available balance ₹18,575.85 as of 25 Oct 2026 (23:43).",
-      };
+          "SuperMoney statement verified: AMAN ENTERPRISES ₹224.00 SUCCESS on Utkarsh XX32 (retried after 1st attempt failed).",
+      },
+      {
+        id: "7e83d8e2-0008-4888-8000-000000000141",
+        kind: "expense",
+        status: "posted",
+        amount: "140.49",
+        currency: "INR",
+        occurredOn: "2026-10-30",
+        fromAccountId: utkarshAccountId,
+        toAccountId: null,
+        category: "Food",
+        platform: "Zomato",
+        merchant: "Zomato",
+        description: "Zomato — Food order",
+        notes: "SuperMoney statement verified: ZOMATO ₹140.49 SUCCESS on Utkarsh XX32.",
+      },
+      {
+        id: "7e83d8e2-0009-4888-8000-000000000136",
+        kind: "expense",
+        status: "posted",
+        amount: "136.19",
+        currency: "INR",
+        occurredOn: "2026-10-31",
+        fromAccountId: utkarshAccountId,
+        toAccountId: null,
+        category: "Food",
+        platform: "Zomato",
+        merchant: "Zomato",
+        description: "Zomato — Food order",
+        notes: "SuperMoney statement verified: ZOMATO ₹136.19 SUCCESS on Utkarsh XX32.",
+      },
+    ];
+
+    for (const tx of utkarshSpends) {
+      const exists = sanitizedTransactions.some(
+        (t) =>
+          t.id === tx.id ||
+          (t.amount === tx.amount &&
+            t.occurredOn === tx.occurredOn &&
+            (t.fromAccountId === tx.fromAccountId || !t.fromAccountId) &&
+            (t.description?.toLowerCase().includes(tx.category?.toLowerCase() || "") ||
+              t.merchant?.toLowerCase().includes(tx.merchant?.toLowerCase() || "") ||
+              t.platform?.toLowerCase().includes(tx.platform?.toLowerCase() || ""))),
+      );
+      if (!exists) {
+        sanitizedTransactions.push({ ...tx, userId });
+      }
     }
-    if (a.id === iciciAccountId) {
-      return {
-        ...a,
+  }
+
+  // Sanitize accounts (SBI notes, ICICI notes, Utkarsh SuperMoney, + IDFC card closure)
+  const sanitizedAccounts = workspace.accounts ? [...workspace.accounts] : undefined;
+  if (sanitizedAccounts && sanitizedAccounts.length > 0) {
+    let foundUtkarshInAccounts = false;
+    for (let i = 0; i < sanitizedAccounts.length; i++) {
+      const a = sanitizedAccounts[i];
+      if (a.id === sbiAccountId) {
+        sanitizedAccounts[i] = {
+          ...a,
+          notes:
+            "Statement period 1–31 October 2026. Opening balance ₹1,089.32; verified closing balance ₹19,000.00 CR (75 debits totaling ₹73,488.12, 35 credits totaling ₹91,398.80). Mini-statement available balance ₹18,575.85 as of 25 Oct 2026 (23:43).",
+        };
+      } else if (a.id === iciciAccountId) {
+        sanitizedAccounts[i] = {
+          ...a,
+          notes:
+            "Statement period 1–31 October 2026. Opening balance ₹0.01; verified closing balance ₹283.74 CR (28 statement transactions).",
+        };
+      } else if (a.id === idfcAccountId) {
+        sanitizedAccounts[i] = {
+          ...a,
+          active: false,
+          notes: "Card closed on 25 Oct 2026 upon ₹48.90 cashback statement credit and FD encashment.",
+        };
+      } else if (a.id === utkarshAccountId || a.maskedSuffix === "XX32") {
+        foundUtkarshInAccounts = true;
+        sanitizedAccounts[i] = {
+          ...a,
+          kind: "credit_card" as const,
+          creditLimit: a.creditLimit || "990.00",
+          active: true,
+          notes:
+            "Utkarsh SuperMoney RuPay Credit Card on UPI (YES BANK). Credit limit ₹990.00. Statement period 1–31 Oct 2026 verified: 9 successful spends totaling ₹1,628.90, 2 repayments totaling ₹1,773.76, closing outstanding ₹797.90.",
+        };
+      }
+    }
+
+    if (!foundUtkarshInAccounts && (hasSbi || hasIcici)) {
+      sanitizedAccounts.push({
+        id: utkarshAccountId,
+        userId,
+        name: "Utkarsh SuperMoney • XX32",
+        institution: "Utkarsh",
+        kind: "credit_card",
+        maskedSuffix: "XX32",
+        creditLimit: "990.00",
+        active: true,
         notes:
-          "Statement period 1–31 October 2026. Opening balance ₹0.01; verified closing balance ₹283.74 CR (28 statement transactions).",
-      };
+          "Utkarsh SuperMoney RuPay Credit Card on UPI (YES BANK). Credit limit ₹990.00. Statement period 1–31 Oct 2026 verified: 9 successful spends totaling ₹1,628.90, 2 repayments totaling ₹1,773.76, closing outstanding ₹797.90.",
+      });
     }
-    if (a.id === idfcAccountId) {
-      return {
-        ...a,
-        active: false,
-        notes: "Card closed on 25 Oct 2026 upon ₹48.90 cashback statement credit and FD encashment.",
-      };
-    }
-    return a;
-  });
+  }
 
   // Sanitize snapshots (SBI and ICICI verified 31 Oct balances + IDFC zero balance snapshot)
   let sanitizedSnapshots = workspace.snapshots;
@@ -988,6 +1268,27 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
           asOf: "2026-10-25T23:43:00Z",
           reportedBalance: "0.00",
           reportedOutstanding: "0.00",
+          source: "bank_statement",
+          verifiedByUser: true,
+        });
+      }
+    }
+    if (hasSbi || hasIcici || hasUtkarsh) {
+      const utkarshSnapshotId = "7e83d8e2-0031-4888-8000-000031100797";
+      if (
+        !sanitizedSnapshots.some(
+          (s) =>
+            s.id === utkarshSnapshotId ||
+            (s.accountId === utkarshAccountId && s.asOf.startsWith("2026-10-31")),
+        )
+      ) {
+        sanitizedSnapshots.push({
+          id: utkarshSnapshotId,
+          userId,
+          accountId: utkarshAccountId,
+          asOf: "2026-10-31T23:59:59Z",
+          reportedBalance: "-797.90",
+          reportedOutstanding: "797.90",
           source: "bank_statement",
           verifiedByUser: true,
         });

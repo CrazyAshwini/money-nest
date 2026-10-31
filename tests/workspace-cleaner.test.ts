@@ -181,6 +181,51 @@ describe("workspace-cleaner", () => {
       (t) => t.amount === "323.00" && t.fromAccountId === sbiAccountId && t.toAccountId === iciciAccountId,
     );
     expect(sbiToIcici323).toBeDefined();
+
+    // Utkarsh SuperMoney account should be present and active with ₹990.00 limit
+    const utkarshAcc = result.accounts.find(
+      (a) => a.kind === "credit_card" && (a.maskedSuffix === "XX32" || a.name?.includes("Utkarsh")),
+    );
+    expect(utkarshAcc).toBeDefined();
+    expect(utkarshAcc?.creditLimit).toBe("990.00");
+    expect(utkarshAcc?.active).toBe(true);
+
+    // Utkarsh SuperMoney 9 successful spends should all be present
+    const utkarshId = utkarshAcc!.id;
+    const utkarshSpends = result.transactions.filter(
+      (t) => t.fromAccountId === utkarshId && t.kind === "expense",
+    );
+    expect(utkarshSpends).toHaveLength(9);
+    expect(utkarshSpends.some((t) => t.amount === "140.00" && t.occurredOn === "2026-10-02")).toBe(true);
+    expect(utkarshSpends.some((t) => t.amount === "360.00" && t.occurredOn === "2026-10-06")).toBe(true);
+    expect(utkarshSpends.some((t) => t.amount === "40.00" && t.occurredOn === "2026-10-06")).toBe(true);
+    expect(utkarshSpends.some((t) => t.amount === "291.00" && t.occurredOn === "2026-10-08")).toBe(true);
+    expect(utkarshSpends.some((t) => t.amount === "257.22" && t.occurredOn === "2026-10-10")).toBe(true);
+    expect(utkarshSpends.some((t) => t.amount === "40.00" && t.occurredOn === "2026-10-12")).toBe(true);
+    expect(utkarshSpends.some((t) => t.amount === "224.00" && t.occurredOn === "2026-10-25")).toBe(true);
+    expect(utkarshSpends.some((t) => t.amount === "140.49" && t.occurredOn === "2026-10-30")).toBe(true);
+    expect(utkarshSpends.some((t) => t.amount === "136.19" && t.occurredOn === "2026-10-31")).toBe(true);
+
+    // Utkarsh repayments from SBI (941.75 on 2 Oct, 832.01 on 9 Oct)
+    const utkarshRepay1 = result.transactions.find(
+      (t) => t.amount === "941.75" && t.fromAccountId === sbiAccountId && t.toAccountId === utkarshId,
+    );
+    expect(utkarshRepay1).toBeDefined();
+    expect(utkarshRepay1?.kind).toBe("bill_payment");
+
+    const utkarshRepay2 = result.transactions.find(
+      (t) => t.amount === "832.01" && t.fromAccountId === sbiAccountId && t.toAccountId === utkarshId,
+    );
+    expect(utkarshRepay2).toBeDefined();
+    expect(utkarshRepay2?.kind).toBe("bill_payment");
+
+    // Utkarsh snapshot as of 31 Oct with outstanding ₹797.90
+    const utkarshSnap31 = result.snapshots.find(
+      (s) => s.accountId === utkarshId && s.asOf.startsWith("2026-10-31"),
+    );
+    expect(utkarshSnap31).toBeDefined();
+    expect(utkarshSnap31?.reportedOutstanding).toBe("797.90");
+    expect(utkarshSnap31?.verifiedByUser).toBe(true);
   });
 
   it("attaches Samsung TV EMI agreement, loan, and 9 installments when Amazon Pay Later account exists", () => {
