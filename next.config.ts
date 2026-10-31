@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { createSecurityHeaders } from "./src/lib/security-headers";
 const config: NextConfig = {
   poweredByHeader: false,
   devIndicators: false,
@@ -9,15 +10,12 @@ const config: NextConfig = {
     return [
       {
         source: "/:path*",
-        headers: [
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "X-Frame-Options", value: "DENY" },
-          {
-            key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
-          },
-        ],
+        headers: createSecurityHeaders({
+          nodeEnv: process.env.NODE_ENV,
+          supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+          appUrl: process.env.APP_URL,
+          vercel: process.env.VERCEL,
+        }),
       },
     ];
   },

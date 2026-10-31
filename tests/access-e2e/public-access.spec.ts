@@ -41,6 +41,82 @@ async function isolatedWorkspace(
   return () => workspaceRequests;
 }
 
+test("security headers preserve page hydration and enforce foreign-script blocking", async ({
+  page,
+}) => {
+  const cspErrors: string[] = [];
+  const pageErrors: string[] = [];
+  page.on("console", (message) => {
+    if (
+      /content security policy|refused to (load|execute|connect)/i.test(
+        message.text(),
+      )
+    )
+      cspErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await isolatedWorkspace(page);
+  const response = await page.goto("/login");
+  const policy = response!.headers()["content-security-policy"];
+  expect(policy).toContain("script-src 'self' 'unsafe-inline'");
+  expect(policy).toContain("object-src 'none'");
+  expect(policy).not.toContain("'unsafe-eval'");
+  expect(response!.headers()).not.toHaveProperty(
+    "content-security-policy-report-only",
+  );
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+
+  await page.unroute("**/*");
+  await isolatedWorkspace(page, true);
+  for (const path of [
+    "dashboard",
+    "accounts",
+    "transactions",
+    "analytics",
+    "profile",
+    "settings",
+  ]) {
+    await page.goto(`/${path}`);
+    await expect(page.locator(".app-main")).toBeVisible();
+    await expect(page.locator("[data-workspace-loading]")).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`/${path}$`));
+  }
+  expect(cspErrors).toEqual([]);
+  expect(pageErrors).toEqual([]);
+
+  // Browser request events also include blocked attempts; the enforced violation
+  // is the evidence that CSP rejected this script. External routes remain blocked.
+  const violation = await page.evaluate(
+    () =>
+      new Promise<{
+        blockedURI: string;
+        directive: string;
+        disposition: string;
+      }>((resolve) => {
+        document.addEventListener(
+          "securitypolicyviolation",
+          (event) =>
+            resolve({
+              blockedURI: event.blockedURI,
+              directive: event.effectiveDirective,
+              disposition: event.disposition,
+            }),
+          { once: true },
+        );
+        const script = document.createElement("script");
+        script.src = "https://csp-blocked.example.test/blocked.js";
+        document.body.appendChild(script);
+      }),
+  );
+  expect(new URL(violation.blockedURI).origin).toBe(
+    "https://csp-blocked.example.test",
+  );
+  expect(violation.directive).toBe("script-src-elem");
+  expect(violation.disposition).toBe("enforce");
+});
+
 test("signed-out profile has no fictional demo entry", async ({ page }) => {
   await isolatedWorkspace(page, false, "local");
   await page.goto("/profile");
