@@ -18,6 +18,7 @@ import {
 } from "@/lib/supabase/commerce-store";
 import { validateWorkspaceRecord } from "@/lib/validation";
 import { assertCommerceTransactionEdit } from "@/lib/commerce";
+import { mutationExpectation, recordMatchesExpectation, WORKSPACE_CONFLICT_MESSAGE, type SaveExpectation } from "@/lib/workspace-version";
 import type { Transaction } from "@/lib/types";
 import { privateProfileEnabled } from "@/lib/private-profile-store";
 import {
@@ -155,6 +156,14 @@ export async function POST(request: NextRequest) {
       403,
     );
   const record = parsed.data as Record<string, unknown>;
+  let expectation: SaveExpectation | undefined;
+  try {
+    expectation = mutationExpectation(body);
+    if (expectation?.expectedUpdatedAt === null)
+      throw new Error("A cloud update requires the original record timestamp.");
+  } catch (error) {
+    return response({ error: error instanceof Error ? error.message : "Invalid record version." }, 400);
+  }
   let state: CloudFinanceState;
   try {
     state = await readCloudFinanceState(supabase, user.id);
@@ -164,6 +173,8 @@ export async function POST(request: NextRequest) {
       503,
     );
   }
+  if (!recordMatchesExpectation(state.workspace[collection].find((row) => row.id === record.id), expectation))
+    return response({ error: WORKSPACE_CONFLICT_MESSAGE, code: "conflict" }, 409);
   try {
     validateWorkspaceRecord(
       state.workspace,
@@ -208,6 +219,7 @@ export async function POST(request: NextRequest) {
       p_transaction_id: record.transactionId,
       p_amount: record.amount,
       p_verified: record.verified,
+      p_expected_updated_at: expectation?.expectedUpdatedAt ?? null,
     });
   else if (collection === "emiAllocations")
     result = await supabase.rpc("allocate_emi_payment", {
@@ -215,11 +227,24 @@ export async function POST(request: NextRequest) {
       p_emi_id: record.emiId,
       p_transaction_id: record.transactionId,
       p_amount: record.amount,
+      p_expected_updated_at: expectation?.expectedUpdatedAt ?? null,
     });
+  else if (expectation)
+    result = await supabase
+      .from(tables[collection])
+      .update(toDatabase(record, user.id))
+      .eq("id", record.id)
+      .eq("user_id", user.id)
+      .eq("updated_at", expectation.expectedUpdatedAt)
+      .select("id");
   else
     result = await supabase
       .from(tables[collection])
-      .upsert(toDatabase(record, user.id), { onConflict: "id" });
+      .insert(toDatabase(record, user.id))
+      .select("id");
+  if (result.error?.code === "40001" || result.error?.code === "23505" ||
+      (!result.error && !["allocations", "emiAllocations"].includes(collection) && !result.data?.length))
+    return response({ error: WORKSPACE_CONFLICT_MESSAGE, code: "conflict" }, 409);
   if (result.error)
     return response(
       { error: safeDatabaseError(result.error.code, result.error.message) },
@@ -270,17 +295,30 @@ export async function DELETE(request: NextRequest) {
     return response({ error: "Invalid delete parameters." }, 400);
 
   const collection = body.collection as MutableCollection;
+  let expectation: SaveExpectation;
+  try {
+    expectation = mutationExpectation(body, true)!;
+    if (expectation.expectedUpdatedAt === null)
+      throw new Error("A cloud delete requires the original record timestamp.");
+  } catch (error) {
+    return response({ error: error instanceof Error ? error.message : "Invalid record version." }, 400);
+  }
   const result = await supabase
     .from(tables[collection])
     .delete()
     .eq("user_id", user.id)
-    .eq("id", body.id);
+    .eq("id", body.id)
+    .eq("updated_at", expectation.expectedUpdatedAt)
+    .select("id");
 
   if (result.error)
     return response(
       { error: safeDatabaseError(result.error.code, result.error.message) },
       400,
     );
+
+  if (!result.data?.length)
+    return response({ error: WORKSPACE_CONFLICT_MESSAGE, code: "conflict" }, 409);
 
   return response({ ok: true });
 }

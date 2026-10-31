@@ -22,6 +22,7 @@ export type Category =
 export interface OwnedRecord {
   id: string;
   userId: string;
+  updatedAt?: string;
 }
 export interface Account extends OwnedRecord {
   name: string;

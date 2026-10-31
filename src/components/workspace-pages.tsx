@@ -620,7 +620,11 @@ export function NotificationsPage() {
                   setSavingReminderIds((current) => [...current, r.id]);
                   setError("");
                   try {
-                    await save("reminders", { ...r, enabled: !r.enabled });
+                    await save(
+                      "reminders",
+                      { ...r, enabled: !r.enabled },
+                      { expectedUpdatedAt: r.updatedAt ?? null },
+                    );
                     toast(
                       r.enabled
                         ? "Reminder disabled."

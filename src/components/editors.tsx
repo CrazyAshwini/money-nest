@@ -37,6 +37,7 @@ import {
 import { withSellerDescription } from "@/lib/seller-description";
 import { balanceSnapshotIdForEdit } from "@/lib/transaction-balance-confirmation";
 import { TransactionPicker } from "./transaction-picker";
+import type { SaveExpectation } from "@/lib/workspace-version";
 import "./account-management.css";
 import "./transaction-editor.css";
 
@@ -136,6 +137,13 @@ export function RecordEditor({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [newRecordId] = useState(() => crypto.randomUUID());
   const record = "record" in editor ? editor.record : undefined;
+  // Capture the version alongside the form's initial values. A background
+  // refresh must not upgrade an old draft to the latest record's write token.
+  const [saveExpectation] = useState<SaveExpectation | undefined>(() =>
+    record && editor.type !== "snapshot"
+      ? { expectedUpdatedAt: record.updatedAt ?? null }
+      : undefined,
+  );
   const names = {
     account: "account",
     transaction: "transaction",
@@ -335,20 +343,24 @@ export function RecordEditor({
         const suffix = text(f, "maskedSuffix");
         if (!/^\d{0,4}$/.test(suffix))
           throw new Error("Enter only the last four digits.");
-        await save("accounts", {
-          ...editor.record,
-          ...base,
-          name: text(f, "name"),
-          institution: text(f, "institution"),
-          kind: text(f, "kind") as Account["kind"],
-          maskedSuffix: suffix,
-          openingBalance: amount(f.get("openingBalance"), true),
-          openingBalanceDate: text(f, "openingBalanceDate") || null,
-          creditLimit: amount(f.get("creditLimit"), true),
-          active: f.get("active") === "on",
-          notes: text(f, "notes"),
-          accent: editor.record?.accent || "#a3b7ef",
-        });
+        await save(
+          "accounts",
+          {
+            ...editor.record,
+            ...base,
+            name: text(f, "name"),
+            institution: text(f, "institution"),
+            kind: text(f, "kind") as Account["kind"],
+            maskedSuffix: suffix,
+            openingBalance: amount(f.get("openingBalance"), true),
+            openingBalanceDate: text(f, "openingBalanceDate") || null,
+            creditLimit: amount(f.get("creditLimit"), true),
+            active: f.get("active") === "on",
+            notes: text(f, "notes"),
+            accent: editor.record?.accent || "#a3b7ef",
+          },
+          saveExpectation,
+        );
       } else if (editor.type === "transaction") {
         if (receipt && !receiptReviewed)
           throw new Error(
@@ -454,7 +466,7 @@ export function RecordEditor({
           fromBalanceSnapshotId: snapshotIdForSide("from"),
           toBalanceSnapshotId: snapshotIdForSide("to"),
         };
-        await save("transactions", savedTransaction);
+        await save("transactions", savedTransaction, saveExpectation);
         if (status === "pending_review") {
           successMessage =
             "Saved as Needs review. This transaction is excluded from account balances.";
@@ -491,60 +503,72 @@ export function RecordEditor({
               .join("");
         }
       } else if (editor.type === "bill") {
-        await save("bills", {
-          ...editor.record,
-          ...base,
-          accountId: text(f, "accountId"),
-          statementAmount: amount(f.get("statementAmount"))!,
-          statementDate: text(f, "statementDate"),
-          dueDate: text(f, "dueDate") || null,
-          periodStart: text(f, "periodStart"),
-          periodEnd: text(f, "periodEnd"),
-          minimumDue: amount(f.get("minimumDue"), true),
-          statementCredits: amount(f.get("statementCredits"), true) || "0.00",
-        });
+        await save(
+          "bills",
+          {
+            ...editor.record,
+            ...base,
+            accountId: text(f, "accountId"),
+            statementAmount: amount(f.get("statementAmount"))!,
+            statementDate: text(f, "statementDate"),
+            dueDate: text(f, "dueDate") || null,
+            periodStart: text(f, "periodStart"),
+            periodEnd: text(f, "periodEnd"),
+            minimumDue: amount(f.get("minimumDue"), true),
+            statementCredits: amount(f.get("statementCredits"), true) || "0.00",
+          },
+          saveExpectation,
+        );
       } else if (editor.type === "fd") {
-        await save("fixedDeposits", {
-          ...editor.record,
-          ...base,
-          name: text(f, "name"),
-          institution: text(f, "institution"),
-          maskedSuffix: text(f, "maskedSuffix"),
-          principal: amount(f.get("principal"))!,
-          openingDate: text(f, "openingDate") || null,
-          maturityDate: text(f, "maturityDate") || null,
-          maturityAmount: amount(f.get("maturityAmount"), true),
-          annualRate: text(f, "annualRate") || null,
-          payoutMethod: editor.record?.payoutMethod || "Unconfirmed",
-          maturityInstruction: text(
-            f,
-            "maturityInstruction",
-          ) as FixedDeposit["maturityInstruction"],
-          pledged:
-            text(f, "backingAccountId") === "__unknown__"
-              ? null
-              : !!text(f, "backingAccountId"),
-          backingAccountId:
-            text(f, "backingAccountId") === "__unknown__"
-              ? null
-              : text(f, "backingAccountId") || null,
-          payoutAccountId: text(f, "payoutAccountId") || null,
-        });
+        await save(
+          "fixedDeposits",
+          {
+            ...editor.record,
+            ...base,
+            name: text(f, "name"),
+            institution: text(f, "institution"),
+            maskedSuffix: text(f, "maskedSuffix"),
+            principal: amount(f.get("principal"))!,
+            openingDate: text(f, "openingDate") || null,
+            maturityDate: text(f, "maturityDate") || null,
+            maturityAmount: amount(f.get("maturityAmount"), true),
+            annualRate: text(f, "annualRate") || null,
+            payoutMethod: editor.record?.payoutMethod || "Unconfirmed",
+            maturityInstruction: text(
+              f,
+              "maturityInstruction",
+            ) as FixedDeposit["maturityInstruction"],
+            pledged:
+              text(f, "backingAccountId") === "__unknown__"
+                ? null
+                : !!text(f, "backingAccountId"),
+            backingAccountId:
+              text(f, "backingAccountId") === "__unknown__"
+                ? null
+                : text(f, "backingAccountId") || null,
+            payoutAccountId: text(f, "payoutAccountId") || null,
+          },
+          saveExpectation,
+        );
       } else if (editor.type === "loan") {
-        await save("loans", {
-          ...editor.record,
-          ...base,
-          name: text(f, "name"),
-          lender: text(f, "lender"),
-          kind: text(f, "kind") as Loan["kind"],
-          contractualPrincipal: amount(f.get("contractualPrincipal"), true),
-          netDisbursed: amount(f.get("netDisbursed"), true),
-          reportedOutstanding: amount(f.get("reportedOutstanding"), true),
-          reportedAsOf: text(f, "reportedAsOf") || null,
-          annualRate: text(f, "annualRate") || null,
-          repaymentAccountId: text(f, "repaymentAccountId") || null,
-          disbursedOn: text(f, "disbursedOn") || null,
-        });
+        await save(
+          "loans",
+          {
+            ...editor.record,
+            ...base,
+            name: text(f, "name"),
+            lender: text(f, "lender"),
+            kind: text(f, "kind") as Loan["kind"],
+            contractualPrincipal: amount(f.get("contractualPrincipal"), true),
+            netDisbursed: amount(f.get("netDisbursed"), true),
+            reportedOutstanding: amount(f.get("reportedOutstanding"), true),
+            reportedAsOf: text(f, "reportedAsOf") || null,
+            annualRate: text(f, "annualRate") || null,
+            repaymentAccountId: text(f, "repaymentAccountId") || null,
+            disbursedOn: text(f, "disbursedOn") || null,
+          },
+          saveExpectation,
+        );
       } else if (editor.type === "allocation") {
         const transactionId = text(f, "transactionId");
         const value = amount(f.get("amount"))!;
@@ -623,7 +647,7 @@ export function RecordEditor({
             : linked.externalPayer || "Unconfirmed",
           transactionId: linked.id,
         };
-        await save("groups", group);
+        await save("groups", group, saveExpectation);
       }
       if (
         editor.type === "transaction" &&
@@ -651,7 +675,7 @@ export function RecordEditor({
     }
   }
   async function handleDeleteTransaction() {
-    if (editor.type !== "transaction" || !editor.record?.id) return;
+    if (editor.type !== "transaction" || !editor.record?.id || !saveExpectation) return;
     if (!confirmDelete) {
       setConfirmDelete(true);
       return;
@@ -659,7 +683,7 @@ export function RecordEditor({
     setBusy(true);
     setError("");
     try {
-      await deleteRecord("transactions", editor.record.id);
+      await deleteRecord("transactions", editor.record.id, saveExpectation);
       toast("Transaction deleted", "success");
       onClose();
     } catch (e) {

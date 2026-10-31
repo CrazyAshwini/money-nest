@@ -151,11 +151,14 @@ function TransactionDetails({
   const { deleteRecord, toast } = useFinance();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteExpectation] = useState(() => ({
+    expectedUpdatedAt: transaction.updatedAt ?? null,
+  }));
 
   async function handleDelete() {
     try {
       setIsDeleting(true);
-      await deleteRecord("transactions", transaction.id);
+      await deleteRecord("transactions", transaction.id, deleteExpectation);
       toast("Transaction deleted", "success");
       onClose();
     } catch (err) {
@@ -352,14 +355,9 @@ export function TransactionsWorkspace({
   const searchInput = useRef<HTMLInputElement>(null);
   const searchButton = useRef<HTMLButtonElement>(null);
   const categorySelect = useRef<HTMLSelectElement>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedTransaction, setSelectedTransaction] =
+    useState<Transaction | null>(null);
   const detailTrigger = useRef<HTMLElement | null>(null);
-  const selectedTransaction = selectedId
-    ? data.transactions.find(
-        (transaction) =>
-          transaction.id === selectedId && transaction.userId === userId,
-      )
-    : null;
   const categoryEnabled =
     filters.kind !== "income" &&
     filters.kind !== "transfer" &&
@@ -403,7 +401,7 @@ export function TransactionsWorkspace({
 
   function openDetails(transaction: Transaction, trigger: HTMLElement) {
     detailTrigger.current = trigger;
-    setSelectedId(transaction.id);
+    setSelectedTransaction(transaction);
   }
 
   const filtered = Boolean(
@@ -796,7 +794,7 @@ export function TransactionsWorkspace({
       <Dialog.Root
         open={Boolean(selectedTransaction)}
         onOpenChange={(open) => {
-          if (!open) setSelectedId(null);
+          if (!open) setSelectedTransaction(null);
         }}
       >
         <Dialog.Portal>
@@ -811,11 +809,12 @@ export function TransactionsWorkspace({
           >
             {selectedTransaction && (
               <TransactionDetails
+                key={selectedTransaction.id}
                 transaction={selectedTransaction}
                 accounts={accounts}
                 sourceIds={transactionSourceIds[selectedTransaction.id] || []}
                 onEdit={onEdit}
-                onClose={() => setSelectedId(null)}
+                onClose={() => setSelectedTransaction(null)}
               />
             )}
           </Dialog.Content>

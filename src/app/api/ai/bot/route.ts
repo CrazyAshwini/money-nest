@@ -19,6 +19,8 @@ import {
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { readCloudFinanceState } from "@/lib/supabase/commerce-store";
 import { toDatabase } from "@/lib/supabase/validation";
+import { safeDatabaseError } from "@/lib/supabase/validation";
+import { WORKSPACE_CONFLICT_MESSAGE } from "@/lib/workspace-version";
 import { readReceiptAIConfiguration } from "@/lib/ai-receipt-service";
 import {
   confirmTransactionPost,
@@ -123,13 +125,13 @@ export async function POST(request: NextRequest) {
           transaction as unknown as Record<string, unknown>,
           ownerId,
         );
-        const { error: upsertErr } = await supabaseClient
+        const { error: insertError } = await supabaseClient
           .from("transactions")
-          .upsert(dbRecord, { onConflict: "id" });
-        if (upsertErr) {
+          .insert(dbRecord);
+        if (insertError) {
           return privateResponse(
-            { error: `Database error: ${upsertErr.message}` },
-            400,
+            { error: insertError.code === "23505" ? WORKSPACE_CONFLICT_MESSAGE : safeDatabaseError(insertError.code, insertError.message), ...(insertError.code === "23505" ? {code:"conflict"} : {}) },
+            insertError.code === "23505" ? 409 : 400,
           );
         }
       }
@@ -152,6 +154,8 @@ export async function POST(request: NextRequest) {
     const result = await executeNestBotQuery(workspace, ownerId, body);
     return privateResponse(result);
   } catch (error) {
+    if (error instanceof PrivateProfileError && error.code === "conflict")
+      return privateResponse({ error: error.message, code: "conflict" }, 409);
     if (error instanceof RouteRateLimitError)
       return routeRateLimitResponse(error);
     if (error instanceof AIOwnerAuthenticationError) {

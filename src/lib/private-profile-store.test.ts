@@ -22,9 +22,11 @@ import {
   provisionPrivateProfile,
   readPrivateProfile,
   savePrivateRecord,
+  deletePrivateRecord,
   setupPrivateProfile,
   updatePrivateProfile,
 } from "./private-profile-store";
+import type { SaveExpectation } from "./workspace-version";
 
 const OWNER = "8bfa5897-282f-4f78-84cc-95c1e0d59e2a";
 const ACCOUNT = "6482b147-efcb-4c9e-94fd-8c4abf660b29";
@@ -99,6 +101,11 @@ async function established() {
     displayName: "Synthetic profile owner",
     password: PASSWORD,
   });
+}
+
+async function loadedExpectation(sessionToken: string, collection: keyof WorkspaceData, id: string): Promise<SaveExpectation> {
+  const row = (await readPrivateProfile(sessionToken))!.workspace[collection].find((row) => row.id === id);
+  return { expectedUpdatedAt: row?.updatedAt ?? null };
 }
 
 beforeEach(async () => {
@@ -236,12 +243,12 @@ describe("isolated private profile storage", () => {
       savePrivateRecord(sessionToken, "transactions", {
         ...purchase,
         amount: "110.00",
-      }),
+      }, { expectedUpdatedAt: purchase.updatedAt! }),
     ).rejects.toMatchObject({ code: "invalid" });
     await savePrivateRecord(sessionToken, "transactions", {
       ...purchase,
       description: "Corrected synthetic description",
-    });
+    }, { expectedUpdatedAt: purchase.updatedAt! });
     expect(
       (await readPrivateProfile(sessionToken))?.workspace.transactions[0]
         .description,
@@ -651,7 +658,7 @@ describe("isolated private profile storage", () => {
     const edited = await savePrivateRecord(sessionToken, "transactions", {
       ...saved.transactions[0],
       description: "Edited synthetic purchase",
-    });
+    }, { expectedUpdatedAt: saved.transactions[0].updatedAt! });
     expect(edited.transactions).toHaveLength(1);
     expect(edited.auditEvents).toHaveLength(2);
     expect(edited.auditEvents[1].action).toBe("updated");
@@ -687,7 +694,7 @@ describe("isolated private profile storage", () => {
     await savePrivateRecord(sessionToken, "transactions", {
       ...purchase,
       platform: "Zomato",
-    });
+    }, await loadedExpectation(sessionToken, "transactions", purchase.id));
     expect(
       (await readPrivateProfile(sessionToken))!.workspace.transactions.find(
         (row) => row.id === purchase.id,
@@ -699,17 +706,17 @@ describe("isolated private profile storage", () => {
     });
   });
 
-  it("rejects receipt duplicate POSTs across IDs, including voided entries, while retrying the same ID safely", async () => {
+  it("rejects duplicate create IDs and receipt duplicates while versioning explicit updates", async () => {
     const { sessionToken } = await established();
     const receipt = transaction({ sourceSystem: "receipt_ai", sourceObjectId: "e".repeat(64), externalReference: "RRN987654321" });
-    const post = (record: Transaction) => workspacePOST(new NextRequest("http://127.0.0.1:3000/api/workspace", {
+    const post = (record: Transaction, expectation?: SaveExpectation) => workspacePOST(new NextRequest("http://127.0.0.1:3000/api/workspace", {
       method: "POST",
       headers: { host: "127.0.0.1:3000", origin: "http://127.0.0.1:3000", "content-type": "application/json", cookie: `finance-os-private-session=${sessionToken}` },
-      body: JSON.stringify({ collection: "transactions", record }),
+      body: JSON.stringify({ collection: "transactions", record, ...expectation }),
     }));
     expect((await post(receipt)).status).toBe(200);
-    expect((await post(receipt)).status).toBe(200);
-    expect((await post({ ...receipt, status: "voided" })).status).toBe(200);
+    expect((await post(receipt)).status).toBe(409);
+    expect((await post({ ...receipt, status: "voided" }, await loadedExpectation(sessionToken,"transactions",receipt.id))).status).toBe(200);
     const repeatedImage = await post({ ...receipt, id: randomUUID(), externalReference: null });
     expect(repeatedImage.status).toBe(400);
     expect((await repeatedImage.json()).error).toContain("Review the existing transaction");
@@ -743,12 +750,13 @@ describe("isolated private profile storage", () => {
     await savePrivateRecord(sessionToken, "snapshots", report);
     const receipt = transaction({ sourceSystem: "receipt_ai", sourceObjectId: "e".repeat(64), fromAccountId: accountId, fromBalanceSnapshotId: snapshotId });
     await savePrivateRecord(sessionToken, "transactions", receipt);
-    await savePrivateRecord(sessionToken, "transactions", { ...receipt, amount: "45.00" });
-    expect((await readPrivateProfile(sessionToken))!.workspace.transactions).toEqual([{ ...receipt, amount: "45.00" }]);
-    await expect(savePrivateRecord(sessionToken, "snapshots", { ...report, asOf: "2026-10-09T20:00:00Z" })).rejects.toMatchObject({ code: "invalid" });
-    await expect(savePrivateRecord(sessionToken, "snapshots", { ...report, reportedUtilized: null, reportedBalance: "0.00" })).rejects.toMatchObject({ code: "invalid" });
-    await expect(savePrivateRecord(sessionToken, "transactions", { ...receipt, fromAccountId: ACCOUNT })).rejects.toMatchObject({ code: "invalid" });
-    expect((await readPrivateProfile(sessionToken))!.workspace.snapshots[0]).toEqual(report);
+    await savePrivateRecord(sessionToken, "transactions", { ...receipt, amount: "45.00" }, await loadedExpectation(sessionToken,"transactions",receipt.id));
+    expect((await readPrivateProfile(sessionToken))!.workspace.transactions).toMatchObject([{ ...receipt, amount: "45.00" }]);
+    const reportExpectation = await loadedExpectation(sessionToken,"snapshots",report.id);
+    await expect(savePrivateRecord(sessionToken, "snapshots", { ...report, asOf: "2026-10-09T20:00:00Z" },reportExpectation)).rejects.toMatchObject({ code: "invalid" });
+    await expect(savePrivateRecord(sessionToken, "snapshots", { ...report, reportedUtilized: null, reportedBalance: "0.00" },reportExpectation)).rejects.toMatchObject({ code: "invalid" });
+    await expect(savePrivateRecord(sessionToken, "transactions", { ...receipt, fromAccountId: ACCOUNT }, await loadedExpectation(sessionToken,"transactions",receipt.id))).rejects.toMatchObject({ code: "invalid" });
+    expect((await readPrivateProfile(sessionToken))!.workspace.snapshots[0]).toMatchObject(report);
   });
 
   it("validates initial ownership and links before creating a store", async () => {
@@ -1240,5 +1248,58 @@ describe("isolated private profile storage", () => {
     await expect(
       fs.access(path.join(testDirectory, "profile.key")),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("upgrades only an explicitly expected legacy row and advances versions during the same millisecond", async () => {
+    const {sessionToken}=await established();
+    const original=(await readPrivateProfile(sessionToken))!.workspace.accounts[0];
+    expect(original.updatedAt).toBeUndefined();
+    const frozen=vi.spyOn(Date,"now").mockReturnValue(Date.now());
+    try {
+      const first=await savePrivateRecord(sessionToken,"accounts",{...original,name:"First version"},{expectedUpdatedAt:null});
+      const v1=first.accounts[0].updatedAt!;
+      const second=await savePrivateRecord(sessionToken,"accounts",{...original,name:"Second version"},{expectedUpdatedAt:v1});
+      expect(Date.parse(second.accounts[0].updatedAt!)).toBeGreaterThan(Date.parse(v1));
+      const before=await fs.readFile(path.join(testDirectory,"profile.enc.json"),"utf8");
+      await expect(savePrivateRecord(sessionToken,"accounts",original,{expectedUpdatedAt:null})).rejects.toMatchObject({code:"conflict"});
+      await expect(savePrivateRecord(sessionToken,"accounts",original)).rejects.toMatchObject({code:"conflict"});
+      expect(await fs.readFile(path.join(testDirectory,"profile.enc.json"),"utf8")).toBe(before);
+    } finally { frozen.mockRestore(); }
+  });
+
+  it("serializes two writers with the same captured token so exactly one changes the record", async () => {
+    const {sessionToken}=await established();
+    const created=await savePrivateRecord(sessionToken,"transactions",transaction());
+    const original=created.transactions[0];
+    const expected={expectedUpdatedAt:original.updatedAt!};
+    const results=await Promise.allSettled([
+      savePrivateRecord(sessionToken,"transactions",{...original,description:"Writer one"},expected),
+      savePrivateRecord(sessionToken,"transactions",{...original,description:"Writer two"},expected),
+    ]);
+    expect(results.filter((result)=>result.status==="fulfilled")).toHaveLength(1);
+    expect(results.find((result)=>result.status==="rejected")).toMatchObject({reason:{code:"conflict"}});
+    expect((await readPrivateProfile(sessionToken))!.workspace.auditEvents).toHaveLength(2);
+  });
+
+  it("versions commerce-created records and ignores forged update timestamps on saves", async () => {
+    const {sessionToken}=await established();
+    await commitPrivateCommerce(sessionToken,orderCommand());
+    const original=(await readPrivateProfile(sessionToken))!.workspace.transactions[0];
+    expect(original.updatedAt).toBeDefined();
+    const result=await savePrivateRecord(sessionToken,"transactions",{...original,description:"Reviewed wording",updatedAt:"2099-01-01T00:00:00Z"},{expectedUpdatedAt:original.updatedAt!});
+    expect(result.transactions[0].updatedAt).not.toBe("2099-01-01T00:00:00Z");
+    expect(Date.parse(result.transactions[0].updatedAt!)).toBeGreaterThan(Date.parse(original.updatedAt!));
+  });
+
+  it("rejects stale deletion, deletes a current record, and prevents deleted-row resurrection", async () => {
+    const {sessionToken}=await established();
+    const created=await savePrivateRecord(sessionToken,"transactions",transaction());
+    const original=created.transactions[0];
+    const changed=await savePrivateRecord(sessionToken,"transactions",{...original,description:"Changed"},{expectedUpdatedAt:original.updatedAt!});
+    await expect(deletePrivateRecord(sessionToken,"transactions",original.id,{expectedUpdatedAt:original.updatedAt!})).rejects.toMatchObject({code:"conflict"});
+    const current=changed.transactions[0];
+    await deletePrivateRecord(sessionToken,"transactions",current.id,{expectedUpdatedAt:current.updatedAt!});
+    await expect(savePrivateRecord(sessionToken,"transactions",original,{expectedUpdatedAt:original.updatedAt!})).rejects.toMatchObject({code:"conflict"});
+    expect((await readPrivateProfile(sessionToken))!.workspace.transactions).toHaveLength(0);
   });
 });

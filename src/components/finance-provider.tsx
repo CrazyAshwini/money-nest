@@ -12,9 +12,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { cloneDemoData, DEMO_USER_ID } from "@/lib/seed";
 import { validateWorkspaceRecord } from "@/lib/validation";
 import { resolveAppPage } from "@/lib/page-metadata";
-import type { WorkspaceData, OwnedRecord } from "@/lib/types";
+import type { WorkspaceData, OwnedRecord, Transaction } from "@/lib/types";
 import type { UserProfile } from "@/lib/profile-types";
 import type { WorkspaceLoadingStage } from "./workspace-loading";
+import {
+  nextPrivateRecordVersion,
+  matchesPersistedReceiptCreate,
+  recordMatchesExpectation,
+  type SaveExpectation,
+} from "@/lib/workspace-version";
 
 const STORAGE_KEY = "finance-os:fictional-demo:v1";
 const WORKSPACE_LOAD_TIMEOUT_MS = 30_000;
@@ -57,10 +63,12 @@ type ContextValue = {
   save: <K extends keyof WorkspaceData>(
     collection: K,
     record: WorkspaceData[K][number],
+    expectation?: SaveExpectation,
   ) => Promise<void>;
   deleteRecord: <K extends keyof WorkspaceData>(
     collection: K,
     id: string,
+    expectation: SaveExpectation,
   ) => Promise<void>;
   refresh: () => Promise<boolean>;
   resetDemo: () => void;
@@ -114,6 +122,13 @@ export function FinanceProvider({
   const activeLoad = useRef<AbortController | null>(null);
   const needsLoadingScreen = useRef(true);
   const activeIdentity = useRef("signed-out");
+  const sessionEpoch = useRef(0);
+  const activateIdentity = useCallback((identity: string) => {
+    if (activeIdentity.current !== identity) {
+      activeIdentity.current = identity;
+      sessionEpoch.current++;
+    }
+  }, []);
   const path = usePathname();
   const router = useRouter();
   const replaceData = useCallback((next: WorkspaceData) => {
@@ -137,14 +152,14 @@ export function FinanceProvider({
     setMessage("");
   }, []);
   const clearWorkspace = useCallback(() => {
-    activeIdentity.current = "signed-out";
+    activateIdentity("signed-out");
     replaceData(emptyWorkspace());
     setAuthUserId("");
     setProfile(null);
     setTransactionSourceIds({});
     setMonth(localDate().slice(0, 7));
     dismissMessage();
-  }, [replaceData, dismissMessage]);
+  }, [replaceData, dismissMessage, activateIdentity]);
   const enterDemo = useCallback(() => {
     if (!allowTestFixtures) return;
     try {
@@ -166,11 +181,11 @@ export function FinanceProvider({
       replaceData(cloneDemoData());
     }
     setMode("demo");
-    activeIdentity.current = "demo";
+    activateIdentity("demo");
     setAuthUserId("");
     setBackend(null);
     setProfile(null);
-  }, [allowTestFixtures, replaceData]);
+  }, [allowTestFixtures, replaceData, activateIdentity]);
   const requestWorkspace = useCallback(async (): Promise<boolean> => {
     // A response belongs to the refresh that requested it. A delayed response
     // from a previous session must never replace the next user's workspace.
@@ -263,7 +278,7 @@ export function FinanceProvider({
         dismissMessage();
         setMonth(localDate().slice(0, 7));
       }
-      activeIdentity.current = identity;
+      activateIdentity(identity);
       replaceData(result.workspace);
       setAuthUserId(result.userId);
       setProfile(result.profile ?? null);
@@ -292,6 +307,7 @@ export function FinanceProvider({
     replaceData,
     clearWorkspace,
     dismissMessage,
+    activateIdentity,
   ]);
   const refresh = useCallback(() => {
     const promise = requestWorkspace();
@@ -348,13 +364,41 @@ export function FinanceProvider({
     )
       router.replace("/login");
   }, [mode, path, router]);
+  async function workspaceConflict(
+    identity: string,
+    epoch: number,
+    receiptCreate?: { attempted: Transaction; ownerId: string },
+  ): Promise<void> {
+    await refresh();
+    if (identity !== activeIdentity.current || epoch !== sessionEpoch.current)
+      throw new Error("Your sign-in changed. Reopen your current workspace.");
+    // A lost create response can be acknowledged after an exact owned receipt
+    // match. This never turns a retry into an update of the persisted record.
+    if (
+      receiptCreate &&
+      matchesPersistedReceiptCreate(
+        receiptCreate.attempted,
+        currentData.current.transactions.find(
+          (row) => row.id === receiptCreate.attempted.id,
+        ),
+        receiptCreate.ownerId,
+      )
+    )
+      return;
+    const message =
+      "Changed on another device. The workspace was reloaded. Reopen the record and review its latest details before trying again.";
+    toast(message, "error");
+    throw new Error(message);
+  }
   async function save<K extends keyof WorkspaceData>(
     collection: K,
     record: WorkspaceData[K][number],
+    expectation?: SaveExpectation,
   ) {
     if (mode !== "demo" && mode !== "cloud" && mode !== "private")
       throw new Error("Your workspace is not ready.");
     const identity = mode === "demo" ? "demo" : `${backend}:${authUserId}`;
+    const epoch = sessionEpoch.current;
     if (identity !== activeIdentity.current)
       throw new Error(
         "Your sign-in changed. Reopen the editor in your current workspace.",
@@ -368,15 +412,23 @@ export function FinanceProvider({
       const res = await fetch("/api/workspace", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collection, record: checked }),
+        body: JSON.stringify({ collection, record: checked, ...expectation }),
       });
       const result = await res.json();
-      if (identity !== activeIdentity.current)
+      if (identity !== activeIdentity.current || epoch !== sessionEpoch.current)
         throw new Error("Your sign-in changed. Reopen your current workspace.");
+      if (res.status === 409 && result.code === "conflict")
+        return workspaceConflict(
+          identity,
+          epoch,
+          collection === "transactions" && expectation === undefined
+            ? { attempted: checked as Transaction, ownerId: owner }
+            : undefined,
+        );
       if (!res.ok)
         throw new Error(result.error || "Changes could not be saved.");
       const refreshed = await refresh();
-      if (identity !== activeIdentity.current)
+      if (identity !== activeIdentity.current || epoch !== sessionEpoch.current)
         throw new Error(
           "Your change was saved, but your session changed. Reopen your current workspace before trying again.",
         );
@@ -389,12 +441,21 @@ export function FinanceProvider({
       return;
     }
     const rows = current[collection] as OwnedRecord[];
-    const exists = rows.some((row) => row.id === checked.id);
+    const previous = rows.find((row) => row.id === checked.id);
+    if (!recordMatchesExpectation(previous, expectation))
+      throw new Error(
+        "This record changed. Reopen it and review the latest details before trying again.",
+      );
+    const exists = Boolean(previous);
+    const saved = {
+      ...checked,
+      updatedAt: nextPrivateRecordVersion(previous?.updatedAt),
+    };
     replaceData({
       ...current,
       [collection]: exists
-        ? rows.map((row) => (row.id === checked.id ? checked : row))
-        : [...rows, checked],
+        ? rows.map((row) => (row.id === checked.id ? saved : row))
+        : [...rows, saved],
       auditEvents: [
         ...current.auditEvents,
         {
@@ -412,28 +473,32 @@ export function FinanceProvider({
   async function deleteRecord<K extends keyof WorkspaceData>(
     collection: K,
     id: string,
+    expectation: SaveExpectation,
   ) {
     if (mode !== "demo" && mode !== "cloud" && mode !== "private")
       throw new Error("Your workspace is not ready.");
     const identity = mode === "demo" ? "demo" : `${backend}:${authUserId}`;
+    const epoch = sessionEpoch.current;
     if (identity !== activeIdentity.current)
-      throw new Error(
-        "Your sign-in changed. Reopen your current workspace.",
-      );
+      throw new Error("Your sign-in changed. Reopen your current workspace.");
     if (collection === "auditEvents")
       throw new Error("Audit history cannot be deleted.");
     if (mode === "cloud" || mode === "private") {
       const res = await fetch("/api/workspace", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collection, id }),
+        body: JSON.stringify({ collection, id, ...expectation }),
       });
       const result = await res.json().catch(() => ({}));
-      if (identity !== activeIdentity.current)
+      if (identity !== activeIdentity.current || epoch !== sessionEpoch.current)
         throw new Error("Your sign-in changed. Reopen your current workspace.");
+      if (res.status === 409 && result.code === "conflict")
+        return workspaceConflict(identity, epoch);
       if (!res.ok)
         throw new Error(result.error || "Record could not be deleted.");
       const refreshed = await refresh();
+      if (identity !== activeIdentity.current || epoch !== sessionEpoch.current)
+        throw new Error("Your sign-in changed. Reopen your current workspace.");
       if (!refreshed) {
         toast("Record was deleted, but workspace refresh failed.", "error");
       }
@@ -442,6 +507,15 @@ export function FinanceProvider({
     // demo mode:
     const current = currentData.current;
     const rows = current[collection] as OwnedRecord[];
+    if (
+      !recordMatchesExpectation(
+        rows.find((row) => row.id === id),
+        expectation,
+      )
+    )
+      throw new Error(
+        "This record changed. Reopen it and review the latest details before deleting.",
+      );
     replaceData({
       ...current,
       [collection]: rows.filter((row) => row.id !== id),
@@ -535,11 +609,13 @@ export function FinanceProvider({
     : mode === "demo"
       ? "demo"
       : "signed-out";
+  const epoch = sessionEpoch.current;
   const sessionToast = useCallback(
     (text: string, kind?: "success" | "error" | "info") => {
-      if (activeIdentity.current === identity) toast(text, kind);
+      if (activeIdentity.current === identity && sessionEpoch.current === epoch)
+        toast(text, kind);
     },
-    [identity, toast],
+    [identity, epoch, toast],
   );
   return (
     <Context.Provider

@@ -14,6 +14,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { OwnedRecord, Transaction, WorkspaceData } from "./types";
 import { ReceiptDuplicateError, validateWorkspaceRecord, workspaceRecordSchemas } from "./validation";
+import { nextPrivateRecordVersion, recordMatchesExpectation, stampWorkspaceChanges, WORKSPACE_CONFLICT_MESSAGE, type SaveExpectation } from "./workspace-version";
 import {
   applyCommerceCommand,
   assertCommerceTransactionEdit,
@@ -61,7 +62,7 @@ interface EncryptedEnvelope {
 export class PrivateProfileError extends Error {
   constructor(
     public readonly code:
-      "disabled" | "auth" | "invalid" | "exists" | "storage" | "setup",
+      "disabled" | "auth" | "invalid" | "exists" | "storage" | "setup" | "conflict",
     message: string,
   ) {
     super(message);
@@ -592,9 +593,17 @@ export async function savePrivateRecord<K extends keyof WorkspaceData>(
   sessionToken: string,
   collection: K,
   input: WorkspaceData[K][number],
+  expectation?: SaveExpectation,
 ): Promise<WorkspaceData> {
   return withStore(async (dir, maybeStore) => {
     const store = requireSession(maybeStore, sessionToken);
+    if (!Object.hasOwn(workspaceRecordSchemas, collection) || collection === "auditEvents")
+      throw new PrivateProfileError("invalid", "Unknown record collection.");
+    if (input.userId !== store.profile.id)
+      throw new PrivateProfileError("invalid", "Record ownership does not match this workspace.");
+    const previous = store.workspace[collection].find((row) => row.id === input.id);
+    if (!recordMatchesExpectation(previous, expectation))
+      throw new PrivateProfileError("conflict", WORKSPACE_CONFLICT_MESSAGE);
     let record: WorkspaceData[K][number];
     try {
       if (!(collection in workspaceRecordSchemas)) throw new Error();
@@ -619,9 +628,8 @@ export async function savePrivateRecord<K extends keyof WorkspaceData>(
           : "Check the record details and linked accounts.",
       );
     }
-    const existing = store.workspace[collection].some(
-      (row) => row.id === record.id,
-    );
+    const existing = Boolean(previous);
+    record.updatedAt = nextPrivateRecordVersion(previous?.updatedAt);
     Object.assign(store.workspace, {
       [collection]: existing
         ? store.workspace[collection].map((row) =>
@@ -645,13 +653,16 @@ export async function deletePrivateRecord<K extends keyof WorkspaceData>(
   sessionToken: string,
   collection: K,
   id: string,
+  expectation: SaveExpectation,
 ): Promise<WorkspaceData> {
   return withStore(async (dir, maybeStore) => {
     const store = requireSession(maybeStore, sessionToken);
     const existing = (store.workspace[collection] as OwnedRecord[]).find(
       (row) => row.id === id,
     );
-    if (!existing) return store.workspace;
+    if (!recordMatchesExpectation(existing, expectation))
+      throw new PrivateProfileError("conflict", WORKSPACE_CONFLICT_MESSAGE);
+    if (!existing) throw new PrivateProfileError("conflict", WORKSPACE_CONFLICT_MESSAGE);
     if (existing.userId !== store.profile.id) {
       throw new PrivateProfileError("auth", "Unauthorized.");
     }
@@ -709,6 +720,7 @@ export async function commitPrivateCommerce(
         applied.result.ordersSaved ||
         applied.result.refundsSaved
       ) {
+        stampWorkspaceChanges(store.workspace, applied.workspace);
         store.workspace = applied.workspace;
         store.commerce = applied.commerce;
         await writeStore(dir, store);
@@ -862,6 +874,7 @@ export async function commitPrivateImport(
           duplicates++;
           continue;
         }
+        record.updatedAt = nextPrivateRecordVersion();
         imported.push(record);
         store.workspace.transactions = [
           ...store.workspace.transactions,

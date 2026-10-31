@@ -1450,8 +1450,13 @@ test("two receipt transactions require separate reviews and a lost save response
   );
   await mockScan(page, result);
   const before = await transactions(page);
-  const dialog = await openEditor(page);
-  await upload(dialog);
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Add transaction", exact: true }).click();
+  const dialog = page.locator(".transaction-modal");
+  await dialog.getByRole("button", { name: "Scan receipt", exact: true }).click();
+  await receipt(dialog).getByLabel("Payment screenshot or shopping receipt").setInputFiles({
+    name: "synthetic-payment.png", mimeType: "image/png", buffer: png,
+  });
   const sheet = receipt(dialog);
   await sheet
     .getByRole("button", { name: "Scan with AI", exact: true })
@@ -1482,21 +1487,22 @@ test("two receipt transactions require separate reviews and a lost save response
     name: reviewLabel,
     exact: true,
   });
-  const fromAccount = dialog.getByRole("combobox", {
-    name: "From account",
+  const fromAccount = dialog.getByRole("button", {
+    name: "Paid from",
     exact: true,
   });
   await expect(dialog.getByLabel("Amount · ₹", { exact: true })).toHaveValue(
     "1084.00",
   );
-  await expect(fromAccount).toHaveValue("");
+  await expect(fromAccount).toHaveText("Choose account");
   await expect(confirmation).not.toBeChecked();
   await expect(saveAndNext).toBeDisabled();
   await confirmation.check();
   await saveAndNext.click();
   await expect(dialog.getByRole("alert")).toContainText("Choose an account");
   expect((await transactions(page)).length).toBe(before.length);
-  await fromAccount.selectOption({ label: bankName });
+  await fromAccount.click();
+  await page.getByRole("option", { name: new RegExp(bankName) }).click();
   await expect(confirmation).not.toBeChecked();
   await confirmation.check();
 
@@ -1547,15 +1553,16 @@ test("two receipt transactions require separate reviews and a lost save response
   await expect(
     dialog.getByText("Transaction 2 of 2", { exact: true }),
   ).toBeVisible();
-  await expect(fromAccount).toHaveValue("");
+  await expect(fromAccount).toHaveText("Choose account");
   await expect(confirmation).not.toBeChecked();
   await expect(
-    dialog.getByRole("button", { name: "Save transaction", exact: true }),
+    dialog.getByRole("button", { name: "Save expense", exact: true }),
   ).toBeDisabled();
-  await fromAccount.selectOption({ label: bankName });
+  await fromAccount.click();
+  await page.getByRole("option", { name: new RegExp(bankName) }).click();
   await confirmation.check();
   await dialog
-    .getByRole("button", { name: "Save transaction", exact: true })
+    .getByRole("button", { name: "Save expense", exact: true })
     .click();
   await expect(dialog).toHaveCount(0);
   const after = await transactions(page);

@@ -797,7 +797,7 @@ describe("owner-scoped RPCs, imports and private files", () => {
           "select public.allocate_bill_payment($1,$2,$3,1,true)",
           args,
         ),
-        ["42501", "P0001"],
+        ["42501", "P0001", "23505"],
       );
     }
     for (const args of [
@@ -807,7 +807,7 @@ describe("owner-scoped RPCs, imports and private files", () => {
     ]) {
       await rejected(
         query(alice, "select public.allocate_emi_payment($1,$2,$3,1)", args),
-        ["42501", "P0001"],
+        ["42501", "P0001", "23505"],
       );
     }
   });

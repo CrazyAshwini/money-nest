@@ -16,6 +16,7 @@ import {
 import { workspaceRecordSchemas } from "./validation";
 import type { WorkspaceData } from "./types";
 import { privateRequestAllowed } from "./private-request";
+import { mutationExpectation } from "./workspace-version";
 
 const COOKIE = "finance-os-private-session";
 export const privateResponse = (body: unknown, status = 200) =>
@@ -54,8 +55,8 @@ async function body(request: NextRequest, maxBytes: number): Promise<unknown> {
 const failure = (error: unknown) => {
   if (error instanceof PrivateProfileError)
     return privateResponse(
-      { error: error.message },
-      error.code === "auth" ? 401 : error.code === "storage" ? 503 : 400,
+      { error: error.message, ...(error.code === "conflict" ? { code: "conflict" } : {}) },
+      error.code === "auth" ? 401 : error.code === "storage" ? 503 : error.code === "conflict" ? 409 : 400,
     );
   if (error instanceof z.ZodError)
     return privateResponse(
@@ -111,7 +112,7 @@ export async function privateWorkspacePOST(request: NextRequest) {
     if (!(await readPrivateProfile(token(request))))
       return privateResponse({ error: "Authentication required." }, 401);
     const input = z
-      .object({ collection: z.string(), record: z.unknown() })
+      .object({ collection: z.string(), record: z.unknown() }).passthrough()
       .parse(await body(request, 100000));
     if (
       !Object.hasOwn(workspaceRecordSchemas, input.collection) ||
@@ -122,6 +123,7 @@ export async function privateWorkspacePOST(request: NextRequest) {
       token(request),
       input.collection as keyof WorkspaceData,
       input.record as WorkspaceData[keyof WorkspaceData][number],
+      mutationExpectation(input),
     );
     return privateResponse({ ok: true });
   } catch (error) {
@@ -136,7 +138,7 @@ export async function privateWorkspaceDELETE(request: NextRequest) {
     if (!(await readPrivateProfile(token(request))))
       return privateResponse({ error: "Authentication required." }, 401);
     const input = z
-      .object({ collection: z.string(), id: z.string() })
+      .object({ collection: z.string(), id: z.string() }).passthrough()
       .parse(await body(request, 10000));
     if (
       !Object.hasOwn(workspaceRecordSchemas, input.collection) ||
@@ -147,6 +149,7 @@ export async function privateWorkspaceDELETE(request: NextRequest) {
       token(request),
       input.collection as keyof WorkspaceData,
       input.id,
+      mutationExpectation(input, true)!,
     );
     return privateResponse({ ok: true });
   } catch (error) {

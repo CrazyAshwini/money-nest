@@ -47,7 +47,7 @@ const uuid = z.string().uuid();
 const optionalMoney = moneySchema.nullish();
 const optionalDate = isoDateSchema.nullish();
 const boundedText = z.string().trim().max(500);
-const ownedFields = { id: uuid, userId: uuid };
+const ownedFields = { id: uuid, userId: uuid, updatedAt: z.string().datetime({ offset: true }).optional() };
 export const accountSchema = z
   .object({
     ...ownedFields,

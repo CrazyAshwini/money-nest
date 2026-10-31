@@ -4,6 +4,7 @@ import type { WorkspaceData } from "@/lib/types";
 
 type Trace = {
   table: string;
+  operation?: "insert" | "update" | "delete";
   filters: [string, unknown][];
   record?: Record<string, unknown>;
 };
@@ -14,11 +15,13 @@ const mocks = vi.hoisted(() => ({
   profile: vi.fn(),
   from: vi.fn(),
   upsert: vi.fn(),
+  mutation: vi.fn(),
   saved: vi.fn(),
   rpc: vi.fn(),
   privateEnabled: vi.fn(),
   privateGET: vi.fn(),
   privatePOST: vi.fn(),
+  privateDELETE: vi.fn(),
   traces: [] as Trace[],
 }));
 vi.mock("server-only", () => ({}));
@@ -35,14 +38,16 @@ vi.mock("@/lib/private-profile-store", () => ({
 vi.mock("@/lib/private-profile-http", () => ({
   privateWorkspaceGET: mocks.privateGET,
   privateWorkspacePOST: mocks.privatePOST,
+  privateWorkspaceDELETE: mocks.privateDELETE,
 }));
-import { GET, POST } from "./route";
+import { DELETE, GET, POST } from "./route";
 
 const origin = "https://money-nest.example";
 const a = "10000000-0000-4000-8000-000000000001";
 const b = "10000000-0000-4000-8000-000000000002";
 const bankA = "20000000-0000-4000-8000-000000000001";
 const bankB = "20000000-0000-4000-8000-000000000002";
+const originalVersion = "2026-11-01T00:00:00.123456+00:00";
 function workspace(): WorkspaceData {
   return {
     accounts: [],
@@ -85,9 +90,9 @@ function session(id = a, overrides: Record<string, unknown> = {}) {
     error: null,
   });
 }
-function request(body?: unknown, query = "") {
+function request(body?: unknown, query = "", method = body ? "POST" : "GET") {
   return new NextRequest(`${origin}/api/workspace${query}`, {
-    method: body ? "POST" : "GET",
+    method,
     headers: {
       host: new URL(origin).host,
       origin,
@@ -122,6 +127,7 @@ beforeEach(() => {
     }),
   );
   mocks.upsert.mockResolvedValue({ error: null });
+  mocks.mutation.mockResolvedValue({ data: [{id:bankA}], error: null });
   mocks.saved.mockResolvedValue({
     data: { id: bankA, user_id: a },
     error: null,
@@ -135,13 +141,20 @@ beforeEach(() => {
         trace.filters.push([field, value]);
         return query;
       },
-      upsert: (record: Record<string, unknown>, options: unknown) => {
+      insert: (record: Record<string, unknown>) => {
+        trace.operation = "insert";
         trace.record = record;
-        return mocks.upsert(record, options);
+        return query;
       },
+      update: (record: Record<string, unknown>) => {
+        trace.operation = "update";
+        trace.record = record;
+        return query;
+      },
+      delete: () => { trace.operation = "delete"; return query; },
       single: mocks.saved,
       then: (resolve: (value: unknown) => unknown) =>
-        Promise.resolve({ data: [], error: null }).then(resolve),
+        mocks.mutation(trace).then(resolve),
     };
     return query;
   });
@@ -149,6 +162,73 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("authenticated cloud workspace boundary", () => {
+  it("uses the exact original timestamp in an owner-scoped atomic update and never writes client timestamps", async () => {
+    const state = workspace(); state.accounts=[{...account(),updatedAt:originalVersion}];
+    mocks.readState.mockResolvedValue({workspace:state,commerce:{orders:[],refunds:[],operations:[]},revision:"0"});
+    const result = await POST(request({collection:"accounts",record:{...account(),updatedAt:"2026-11-02T00:00:00Z"},expectedUpdatedAt:originalVersion}));
+    expect(result.status).toBe(200);
+    expect(mocks.traces[0]).toMatchObject({operation:"update",table:"accounts",filters:[
+      ["id",bankA],["user_id",a],["updated_at",originalVersion],
+    ]});
+    expect(mocks.traces[0].record).not.toHaveProperty("updated_at");
+    expect(mocks.upsert).not.toHaveBeenCalled();
+  });
+  it("returns409 on a conditional update that found no current row without attempting insertion or refresh", async () => {
+    const state = workspace(); state.accounts=[{...account(),updatedAt:originalVersion}];
+    mocks.readState.mockResolvedValue({workspace:state,commerce:{orders:[],refunds:[],operations:[]},revision:"0"});
+    mocks.mutation.mockResolvedValue({data:[],error:null});
+    const result = await POST(request({collection:"accounts",record:account(),expectedUpdatedAt:originalVersion}));
+    expect(result.status).toBe(409);
+    expect(await result.json()).toMatchObject({code:"conflict"});
+    expect(mocks.traces).toHaveLength(1);
+    expect(mocks.traces[0].operation).toBe("update");
+    expect(mocks.saved).not.toHaveBeenCalled();
+  });
+  it("rejects duplicate create IDs instead of retrying as an update", async () => {
+    mocks.mutation.mockResolvedValue({error:{code:"23505",message:"Private index detail"}});
+    const result = await POST(request({collection:"accounts",record:account()}));
+    expect(result.status).toBe(409);
+    expect(await result.json()).toMatchObject({code:"conflict"});
+    expect(mocks.traces.map((trace) => trace.operation)).toEqual(["insert"]);
+    expect(mocks.saved).not.toHaveBeenCalled();
+  });
+  it.each([null,"bad timestamp",123])("rejects invalid cloud update expectations before database writes: %s", async (expectedUpdatedAt) => {
+    expect((await POST(request({collection:"accounts",record:account(),expectedUpdatedAt}))).status).toBe(400);
+    expect(mocks.from).not.toHaveBeenCalled();
+  });
+  it("requires an original version for deletion and returns409 when that version no longer exists", async () => {
+    const body = {collection:"accounts",id:bankA};
+    expect((await DELETE(request(body,"","DELETE"))).status).toBe(400);
+    expect(mocks.from).not.toHaveBeenCalled();
+    mocks.mutation.mockResolvedValue({data:[],error:null});
+    const result = await DELETE(request({...body,expectedUpdatedAt:originalVersion},"","DELETE"));
+    expect(result.status).toBe(409);
+    expect(mocks.traces[0]).toMatchObject({operation:"delete",filters:[
+      ["user_id",a],["id",bankA],["updated_at",originalVersion],
+    ]});
+  });
+  it.each(["allocations","emiAllocations"] as const)("forwards the original version into %s RPC and maps atomic stale errors to409", async (collection) => {
+    const state = workspace();
+    state.accounts=[account(),{...account(a,bankB),kind:"credit_card"}];
+    const transactionId="30000000-0000-4000-8000-000000000001";
+    const targetId="40000000-0000-4000-8000-000000000001";
+    const allocationId="50000000-0000-4000-8000-000000000001";
+    const loanId="60000000-0000-4000-8000-000000000001";
+    state.transactions=[{id:transactionId,userId:a,amount:"100.00",currency:"INR",kind:"bill_payment",status:"posted",occurredOn:"2026-10-18",description:"Synthetic repayment",fromAccountId:bankA,toAccountId:bankB}];
+    if (collection === "emiAllocations") state.transactions[0].toAccountId = null;
+    state.bills=[{id:targetId,userId:a,accountId:bankB,statementAmount:"100.00",statementDate:"2026-10-01",dueDate:"2026-10-25",periodStart:"2026-09-01",periodEnd:"2026-09-30"}];
+    state.loans=[{id:loanId,userId:a,name:"Synthetic loan",lender:"Synthetic",kind:"institutional",contractualPrincipal:null,netDisbursed:null,reportedOutstanding:null,reportedAsOf:null,repaymentAccountId:bankA,disbursedOn:null}];
+    state.emis=[{id:targetId,userId:a,loanId,number:1,dueDate:"2026-10-25",amount:"100.00"}];
+    mocks.readState.mockResolvedValue({workspace:state,commerce:{orders:[],refunds:[],operations:[]},revision:"1"});
+    mocks.rpc.mockResolvedValue({error:{code:"40001"}});
+    const record=collection==="allocations"?{id:allocationId,userId:a,billId:targetId,transactionId,amount:"25.00",verified:false}:{id:allocationId,userId:a,emiId:targetId,transactionId,amount:"25.00"};
+    if (collection === "allocations") state.allocations=[{...record, billId:targetId, verified:false, updatedAt:originalVersion}];
+    else state.emiAllocations=[{...record, emiId:targetId, updatedAt:originalVersion}];
+    const result=await POST(request({collection,record,expectedUpdatedAt:originalVersion}));
+    expect(result.status).toBe(409);
+    expect(mocks.rpc).toHaveBeenCalledWith(collection==="allocations"?"allocate_bill_payment":"allocate_emi_payment",expect.objectContaining({p_expected_updated_at:originalVersion}));
+    expect(mocks.saved).not.toHaveBeenCalled();
+  });
   it("starts each confirmed public user with an independent empty workspace without seeding or owner remapping", async () => {
     for (const id of [a, b]) {
       session(id);
@@ -182,10 +262,8 @@ describe("authenticated cloud workspace boundary", () => {
         request({ collection: "accounts", record, userId: id === a ? b : a }),
       );
       expect(response.status).toBe(200);
-      expect(mocks.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ user_id: id, id: record.id }),
-        { onConflict: "id" },
-      );
+      expect(mocks.traces[0]).toMatchObject({operation:"insert",record:{user_id:id,id:record.id}});
+      expect(mocks.upsert).not.toHaveBeenCalled();
       expect(mocks.traces.at(-1)).toMatchObject({
         table: "api_accounts",
         filters: [
@@ -266,7 +344,7 @@ describe("authenticated cloud workspace boundary", () => {
   });
   it("does not retry or refresh when RLS rejects a guessed foreign record ID", async () => {
     session(b);
-    mocks.upsert.mockResolvedValue({
+    mocks.mutation.mockResolvedValue({
       error: { code: "42501", message: "Private foreign record details" },
     });
     const response = await POST(
