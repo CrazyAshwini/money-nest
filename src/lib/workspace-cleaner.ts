@@ -263,6 +263,29 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         };
       }
 
+      // Navi Loans EMI payment of ₹3,500 on 30 Oct 2026
+      if (
+        t.amount === "3500.00" &&
+        (t.externalReference === "144089859407" ||
+          t.merchant?.toLowerCase().includes("navi") ||
+          t.description?.toLowerCase().includes("navi") ||
+          t.description?.includes("144089859407"))
+      ) {
+        return {
+          ...t,
+          occurredOn: "2026-10-30",
+          category: "Bills",
+          kind: "bill_payment" as const,
+          status: "posted" as const,
+          fromAccountId: t.fromAccountId || sbiAccountId,
+          toAccountId: null,
+          merchant: "Navi Loans",
+          description: "Navi Loans — Personal Loan EMI #1",
+          notes:
+            "Confirmed Navi personal loan monthly EMI #1 repayment debited from SBI Savings via UPI on 30 Oct 2026 (UTR 144089859407).",
+        };
+      }
+
       // Utkarsh SuperMoney card bill repayments from SBI Savings
       if (
         (t.amount === "941.75" || t.amount === "832.01") &&
@@ -931,9 +954,9 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         toAccountId: null,
         category: "Bills",
         merchant: "Navi Loans",
-        description: "WDL TFR UPI/DR/144089859407/NaviLoans/ICIC/naviloans@/Pa",
+        description: "Navi Loans — Personal Loan EMI #1",
         externalReference: "144089859407",
-        notes: "Confirmed Navi personal loan monthly EMI repayment debited from SBI (UTR 144089859407).",
+        notes: "Confirmed Navi personal loan monthly EMI #1 repayment debited from SBI Savings via UPI on 30 Oct 2026 (UTR 144089859407).",
       },
       {
         id: "a4efa024-0006-4888-8000-000000000006",
@@ -1466,6 +1489,68 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     }
   }
 
+  // Update Navi Personal Loan & EMI #1 if present in workspace
+  const naviLoanId = "20b7d2f7-5853-5e57-aa97-0a57619c611b";
+  const naviLoanIndex = sanitizedLoans.findIndex(
+    (l) => l.id === naviLoanId || l.name?.toLowerCase().includes("navi"),
+  );
+  if (naviLoanIndex >= 0) {
+    sanitizedLoans[naviLoanIndex] = {
+      ...sanitizedLoans[naviLoanIndex],
+      reportedOutstanding: "7000.00",
+      reportedAsOf: "2026-10-30",
+      notes:
+        "Navi 3-month personal loan (₹3,500/month). EMI #1 confirmed paid on 30 Oct 2026.",
+    };
+  }
+
+  // Update Navi EMI #1 due date to 2026-10-30
+  const naviEmi1Id = "b1945f2c-6bc1-5edc-a3c2-001879c2a307";
+  const naviEmi1Index = sanitizedEmis.findIndex(
+    (e) =>
+      e.id === naviEmi1Id ||
+      (e.loanId === naviLoanId && e.number === 1) ||
+      (naviLoanIndex >= 0 && e.loanId === sanitizedLoans[naviLoanIndex].id && e.number === 1),
+  );
+  if (naviEmi1Index >= 0) {
+    sanitizedEmis[naviEmi1Index] = {
+      ...sanitizedEmis[naviEmi1Index],
+      dueDate: "2026-10-30",
+    };
+  }
+
+  // Ensure EMI allocation exists linking Navi EMI #1 to the ₹3,500 payment
+  const sanitizedEmiAllocations = Array.isArray(workspace.emiAllocations)
+    ? [...workspace.emiAllocations]
+    : [];
+
+  const naviTx = sanitizedTransactions.find(
+    (t) =>
+      t.amount === "3500.00" &&
+      (t.externalReference === "144089859407" ||
+        t.merchant?.toLowerCase().includes("navi") ||
+        t.description?.toLowerCase().includes("navi") ||
+        t.description?.includes("144089859407")),
+  );
+
+  const targetNaviEmiId =
+    naviEmi1Index >= 0 ? sanitizedEmis[naviEmi1Index].id : naviEmi1Id;
+
+  if (naviTx && (naviLoanIndex >= 0 || naviEmi1Index >= 0)) {
+    const hasNaviAlloc = sanitizedEmiAllocations.some(
+      (a) => a.emiId === targetNaviEmiId || a.transactionId === naviTx.id,
+    );
+    if (!hasNaviAlloc) {
+      sanitizedEmiAllocations.push({
+        id: "a4efa024-alloc-navi-0001",
+        userId,
+        emiId: targetNaviEmiId,
+        transactionId: naviTx.id,
+        amount: "3500.00",
+      });
+    }
+  }
+
   return {
     ...workspace,
     accounts: sanitizedAccounts || workspace.accounts,
@@ -1473,6 +1558,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     fixedDeposits: sanitizedFixedDeposits || workspace.fixedDeposits,
     loans: sanitizedLoans,
     emis: sanitizedEmis,
+    emiAllocations: sanitizedEmiAllocations,
     transactions: sanitizedTransactions,
     ...(sanitizedEmiAgreements.length > 0
       ? { emiAgreements: sanitizedEmiAgreements }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeWorkspaceTransactions, SAMSUNG_TV_LOAN_ID } from "../src/lib/workspace-cleaner";
 import { loanSchema, emiSchema } from "../src/lib/validation";
+import { emiSummary } from "../src/lib/finance";
 import type { WorkspaceData, Account, Transaction, FixedDeposit } from "../src/lib/types";
 
 describe("workspace-cleaner", () => {
@@ -279,6 +280,96 @@ describe("workspace-cleaner", () => {
     expect(result.emis.every((e) => emiSchema.safeParse(e).success)).toBe(true);
     expect(result.emis[0].dueDate).toBe("2026-11-05");
     expect(result.emis[8].dueDate).toBe("2027-07-05");
+  });
+
+  it("updates Navi Personal Loan, marks EMI #1 paid on 2026-10-30, and links emiAllocation", () => {
+    const naviLoanId = "20b7d2f7-5853-5e57-aa97-0a57619c611b";
+    const naviEmi1Id = "b1945f2c-6bc1-5edc-a3c2-001879c2a307";
+    const naviEmi2Id = "c2945f2c-6bc1-5edc-a3c2-001879c2a308";
+    const naviEmi3Id = "d3945f2c-6bc1-5edc-a3c2-001879c2a309";
+
+    const base = createBaseWorkspace();
+    const workspace: WorkspaceData = {
+      ...base,
+      loans: [
+        {
+          id: naviLoanId,
+          userId,
+          name: "Navi Personal Loan",
+          lender: "Navi Finance",
+          kind: "institutional",
+          contractualPrincipal: "10500.00",
+          netDisbursed: "10500.00",
+          reportedOutstanding: "10500.00",
+          reportedAsOf: "2026-10-01",
+          repaymentAccountId: sbiAccountId,
+          disbursedOn: "2026-10-01",
+        },
+      ],
+      emis: [
+        {
+          id: naviEmi1Id,
+          userId,
+          loanId: naviLoanId,
+          number: 1,
+          dueDate: "2026-11-01",
+          amount: "3500.00",
+        },
+        {
+          id: naviEmi2Id,
+          userId,
+          loanId: naviLoanId,
+          number: 2,
+          dueDate: "2026-12-01",
+          amount: "3500.00",
+        },
+        {
+          id: naviEmi3Id,
+          userId,
+          loanId: naviLoanId,
+          number: 3,
+          dueDate: "2027-01-01",
+          amount: "3500.00",
+        },
+      ],
+      emiAllocations: [],
+      transactions: [],
+    };
+
+    const cleaned = sanitizeWorkspaceTransactions(workspace);
+
+    // 1. Verify Navi loan outstanding reduced to 7000.00 as of 2026-10-30
+    const naviLoan = cleaned.loans.find((l) => l.id === naviLoanId);
+    expect(naviLoan).toBeDefined();
+    expect(naviLoan?.reportedOutstanding).toBe("7000.00");
+    expect(naviLoan?.reportedAsOf).toBe("2026-10-30");
+
+    // 2. Verify EMI #1 due date updated to 2026-10-30
+    const emi1 = cleaned.emis.find((e) => e.id === naviEmi1Id);
+    expect(emi1).toBeDefined();
+    expect(emi1?.dueDate).toBe("2026-10-30");
+
+    // 3. Verify Navi payment transaction is formatted and dated 2026-10-30
+    const naviTx = cleaned.transactions.find(
+      (t) => t.amount === "3500.00" && t.externalReference === "144089859407",
+    );
+    expect(naviTx).toBeDefined();
+    expect(naviTx?.occurredOn).toBe("2026-10-30");
+    expect(naviTx?.merchant).toBe("Navi Loans");
+    expect(naviTx?.description).toBe("Navi Loans — Personal Loan EMI #1");
+    expect(naviTx?.kind).toBe("bill_payment");
+
+    // 4. Verify emiAllocation was created
+    const alloc = cleaned.emiAllocations.find((a) => a.emiId === naviEmi1Id);
+    expect(alloc).toBeDefined();
+    expect(alloc?.amount).toBe("3500.00");
+    expect(alloc?.transactionId).toBe(naviTx?.id);
+
+    // 5. Verify emiSummary calculates EMI #1 as paid
+    const summary = emiSummary(cleaned, naviEmi1Id, "2026-10-31");
+    expect(summary.status).toBe("paid");
+    expect(summary.paid).toBe("3500.00");
+    expect(summary.remaining).toBe("0.00");
   });
 
   it("does not inject rogue transactions into empty workspaces for other users", () => {
