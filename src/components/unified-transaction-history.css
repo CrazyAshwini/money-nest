@@ -71,12 +71,18 @@
   border: none;
 }
 
+.uth-row-container {
+  min-width: 0;
+  width: 100%;
+}
+
 /* Transaction Row */
 .uth-row {
   display: flex;
   align-items: center;
   gap: 14px;
   width: 100%;
+  min-width: 0;
   padding: 15px 16px;
   background: transparent;
   border: none;
@@ -129,11 +135,23 @@
   gap: 3px;
   min-width: 0;
   flex: 1 1 auto;
+  overflow: hidden;
   text-align: left;
 }
 
 /* Primary Line: Merchant or Description */
+.uth-primary-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
 .uth-merchant {
+  display: block;
+  width: 100%;
+  min-width: 0;
   font-size: 14.5px;
   font-weight: 600;
   color: var(--text, #152a22);
@@ -145,7 +163,18 @@
 }
 
 /* Secondary Line: Category · Platform */
+.uth-secondary-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
 .uth-subtitle {
+  display: block;
+  width: 100%;
+  min-width: 0;
   font-size: 12.5px;
   color: var(--muted, #62756c);
   overflow: hidden;
@@ -155,16 +184,26 @@
 }
 
 /* Optional Tertiary Line: Source → Destination for transfers */
+.uth-tertiary-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
 .uth-transfer-route {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
   font-size: 11.5px;
   color: var(--muted, #62756c);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1.3;
-  display: flex;
-  align-items: center;
-  gap: 4px;
 }
 
 /* Status Badges */
@@ -197,7 +236,9 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  justify-content: center;
   gap: 2px;
+  white-space: nowrap;
 }
 
 .uth-amount {

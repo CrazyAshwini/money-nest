@@ -352,4 +352,28 @@ describe("Unified Transaction History UI - Account Details & Recent Preview", ()
     expect(zetRecent[0].id).toBe("tx-3"); // 17 Oct (newest first)
     expect(zetRecent[1].id).toBe("tx-2"); // 16 Oct
   });
+
+  it("formats transactions with long descriptions without corrupting data or amount formatting", () => {
+    const longDescTx: Transaction = {
+      id: "tx-long-desc",
+      userId: "u1",
+      occurredOn: "2026-10-25",
+      amount: "410.00",
+      currency: "INR",
+      kind: "expense",
+      status: "posted",
+      merchant: "Homestrap Adhesive Hooks, Happilo Kimia Dates, Vadilal Matka Kulfi, Sunfeast Bounce",
+      description: "Homestrap Adhesive Hooks, Happilo Kimia Dates, Vadilal Matka Kulfi, Sunfeast Bounce",
+      category: "Groceries",
+      platform: "Blinkit",
+      fromAccountId: "acc-sbi",
+      toAccountId: null,
+    };
+
+    const { formatted, tone, sign } = formatSignedTransactionAmount(longDescTx);
+    expect(sign).toBe("−");
+    expect(formatted).toBe("−₹410.00");
+    expect(tone).toBe("outgoing");
+    expect(longDescTx.merchant!.length).toBeGreaterThan(60);
+  });
 });
