@@ -160,7 +160,6 @@ export function FinancialAccountDetails({
             data={data}
             today={today}
             onNavigate={onClose}
-            showFinancialFacts={false}
           />
         )}
       />
