@@ -743,6 +743,20 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         externalReference: "111046378803",
         notes: "Round-trip transfer return from Amjani Arya (returns 30 Oct ₹200 advance, net ₹0.00).",
       },
+      {
+        id: "c2607015-0029-4888-8000-000000000029",
+        kind: "expense",
+        status: "posted",
+        amount: "60.30",
+        currency: "INR",
+        occurredOn: "2026-10-31",
+        fromAccountId: iciciAccountId,
+        toAccountId: null,
+        category: "Bills",
+        merchant: "ICICI Bank",
+        description: "ICICI Bank — Service charges / alert fees + GST",
+        notes: "ICICI Bank service charges & GST debited on 31 Oct 2026, reconciling closing balance to ₹223.44 CR.",
+      },
     ];
 
     for (const tx of iciciTransactions) {
@@ -1230,14 +1244,18 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
       if (a.id === sbiAccountId) {
         sanitizedAccounts[i] = {
           ...a,
+          openingBalance: a.openingBalance || "1089.32",
+          openingBalanceDate: a.openingBalanceDate || "2026-10-01",
           notes:
             "Statement period 1–31 October 2026. Opening balance ₹1,089.32; verified closing balance ₹19,000.00 CR (75 debits totaling ₹73,488.12, 35 credits totaling ₹91,398.80). Mini-statement available balance ₹18,575.85 as of 25 Oct 2026 (23:43).",
         };
       } else if (a.id === iciciAccountId) {
         sanitizedAccounts[i] = {
           ...a,
+          openingBalance: a.openingBalance || "0.01",
+          openingBalanceDate: a.openingBalanceDate || "2026-10-01",
           notes:
-            "Statement period 1–31 October 2026. Opening balance ₹0.01; verified closing balance ₹283.74 CR (28 statement transactions).",
+            "Statement period 1–31 October 2026. Opening balance ₹0.01; verified closing balance ₹223.44 CR (28 statement transactions + month-end bank charge of ₹60.30).",
         };
       } else if (a.id === idfcAccountId) {
         sanitizedAccounts[i] = {
@@ -1306,16 +1324,24 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     }
     if (hasIcici) {
       const iciciSnapshot31Id = "c2607015-0031-4888-8000-000031100283";
-      if (!sanitizedSnapshots.some((s) => s.id === iciciSnapshot31Id)) {
-        sanitizedSnapshots.push({
-          id: iciciSnapshot31Id,
-          userId,
-          accountId: iciciAccountId,
-          asOf: "2026-10-31T23:59:59Z",
-          reportedBalance: "283.74",
-          source: "bank_statement",
-          verifiedByUser: true,
-        });
+      const existingIciciIndex = sanitizedSnapshots.findIndex(
+        (s) =>
+          s.id === iciciSnapshot31Id ||
+          (s.accountId === iciciAccountId && s.asOf.startsWith("2026-10-31")),
+      );
+      const iciciSnapshot = {
+        id: iciciSnapshot31Id,
+        userId,
+        accountId: iciciAccountId,
+        asOf: "2026-10-31T23:59:59Z",
+        reportedBalance: "223.44",
+        source: "bank_statement" as const,
+        verifiedByUser: true,
+      };
+      if (existingIciciIndex >= 0) {
+        sanitizedSnapshots[existingIciciIndex] = iciciSnapshot;
+      } else {
+        sanitizedSnapshots.push(iciciSnapshot);
       }
     }
     if (hasIdfc) {

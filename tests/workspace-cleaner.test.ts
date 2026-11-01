@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeWorkspaceTransactions, SAMSUNG_TV_LOAN_ID } from "../src/lib/workspace-cleaner";
 import { loanSchema, emiSchema } from "../src/lib/validation";
-import { emiSummary } from "../src/lib/finance";
+import { accountBalance, emiSummary } from "../src/lib/finance";
 import type { WorkspaceData, Account, Transaction, FixedDeposit } from "../src/lib/types";
 
 describe("workspace-cleaner", () => {
@@ -144,16 +144,21 @@ describe("workspace-cleaner", () => {
     expect(sbiSnap31?.verifiedByUser).toBe(true);
 
     const iciciSnap31 = result.snapshots.find(
-      (s) => s.accountId === iciciAccountId && s.reportedBalance === "283.74" && s.asOf.startsWith("2026-10-31"),
+      (s) => s.accountId === iciciAccountId && s.reportedBalance === "223.44" && s.asOf.startsWith("2026-10-31"),
     );
     expect(iciciSnap31).toBeDefined();
     expect(iciciSnap31?.verifiedByUser).toBe(true);
 
-    // ICICI transactions should contain the full 28 statement entries
+    // ICICI transactions should contain the full 28 statement entries plus month-end charge (29 total)
     const iciciTxs = result.transactions.filter(
       (t) => t.fromAccountId === iciciAccountId || t.toAccountId === iciciAccountId,
     );
-    expect(iciciTxs.length).toBeGreaterThanOrEqual(28);
+    expect(iciciTxs.length).toBeGreaterThanOrEqual(29);
+
+    // Verified ICICI balance should reconcile to exactly ₹223.44
+    const iciciBal = accountBalance(result, iciciAccountId, "2026-11-01");
+    expect(iciciBal.current).toBe("223.44");
+    expect(iciciBal.reconciliation).toBe("matched");
 
     // SBI new transactions should contain Utkarsh maturity, Meesho, Flipkart, Navi Loans, Ramswrup
     expect(result.transactions.some((t) => t.amount === "2001.15" && t.toAccountId === sbiAccountId)).toBe(true);
