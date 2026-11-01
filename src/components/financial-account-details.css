@@ -187,28 +187,9 @@
 }
 
 @media (min-width: 1000px) {
-  .financial-details-dialog[data-section="bank"] {
-    width: min(960px, calc(100vw - 48px));
-  }
-
+  .financial-details-dialog[data-section="bank"],
   .financial-details-dialog[data-section="credit"],
   .financial-details-dialog[data-section="paylater"] {
     width: min(620px, calc(100vw - 48px));
-  }
-
-  .fac-details[data-kind="bank"]:not(.fac-empty) {
-    display: grid;
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-    align-items: start;
-    gap: 20px;
-  }
-
-  .fac-details > .fac-summary {
-    margin-top: 0;
-  }
-
-  .fac-details[data-kind="bank"] > .recent-account-transactions {
-    grid-column: 1 / -1;
-    margin-top: 0;
   }
 }

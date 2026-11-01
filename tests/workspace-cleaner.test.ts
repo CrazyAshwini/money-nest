@@ -422,4 +422,32 @@ describe("workspace-cleaner", () => {
     expect(result.transactions).toHaveLength(0);
     expect(result.snapshots).toHaveLength(0);
   });
+
+  it("ensures exactly one ₹60.30 transaction for Chicken Biryani in Food category with ₹223.44 ICICI balance", () => {
+    const ws = createBaseWorkspace();
+    // Add an existing 60.30 transaction to test deduplication
+    ws.transactions.push({
+      id: "existing-60-30",
+      userId,
+      amount: "60.30",
+      currency: "INR",
+      kind: "expense",
+      status: "posted",
+      occurredOn: "2026-10-31",
+      description: "Old charge 60.30",
+      fromAccountId: iciciAccountId,
+      toAccountId: null,
+    });
+
+    const result = sanitizeWorkspaceTransactions(ws);
+    const biryaniTxns = result.transactions.filter((t) => t.amount === "60.30");
+    expect(biryaniTxns).toHaveLength(1);
+    expect(biryaniTxns[0].description).toBe("Chicken Biryani");
+    expect(biryaniTxns[0].category).toBe("Food");
+    expect(biryaniTxns[0].merchant).toBe("Chicken Biryani");
+    expect(biryaniTxns[0].fromAccountId).toBe(iciciAccountId);
+
+    const bal = accountBalance(result, iciciAccountId, "2026-10-31");
+    expect(bal.current).toBe("223.44");
+  });
 });

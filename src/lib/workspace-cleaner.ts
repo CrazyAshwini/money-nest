@@ -47,6 +47,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     "359d2e27-0ca3-4eab-acb8-5b016a9d6206", // Duplicate DCB Bank ₹2,000 credit
   ]);
 
+  let seen6030 = false;
   const sanitizedTransactions = workspace.transactions
     .filter((t) => {
       if (toRemoveIds.has(t.id)) return false;
@@ -59,9 +60,36 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
       ) {
         return false;
       }
+      // Ensure only one 60.30 transaction exists in the entire workspace
+      if (t.amount === "60.30" || t.amount === "60.3") {
+        if (seen6030) return false;
+        seen6030 = true;
+      }
       return true;
     })
     .map((t) => {
+      // ICICI Chicken Biryani 60.30
+      if (
+        t.id === "c2607015-0029-4888-8000-000000000029" ||
+        t.amount === "60.30" ||
+        t.amount === "60.3"
+      ) {
+        return {
+          ...t,
+          kind: "expense" as const,
+          status: "posted" as const,
+          amount: "60.30",
+          currency: "INR",
+          occurredOn: t.occurredOn || "2026-10-31",
+          fromAccountId: iciciAccountId,
+          toAccountId: null,
+          category: "Food",
+          merchant: "Chicken Biryani",
+          description: "Chicken Biryani",
+          notes: "Chicken biryani purchase debited from ICICI Bank on 31 Oct 2026.",
+        };
+      }
+
       // ATM cash withdrawal -> transfer
       if (
         t.id === "cf2554a0-3672-4081-ab64-bf1f6e07f730" ||
@@ -752,10 +780,10 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         occurredOn: "2026-10-31",
         fromAccountId: iciciAccountId,
         toAccountId: null,
-        category: "Bills",
-        merchant: "ICICI Bank",
-        description: "ICICI Bank — Service charges / alert fees + GST",
-        notes: "ICICI Bank service charges & GST debited on 31 Oct 2026, reconciling closing balance to ₹223.44 CR.",
+        category: "Food",
+        merchant: "Chicken Biryani",
+        description: "Chicken Biryani",
+        notes: "Chicken biryani purchase debited from ICICI Bank on 31 Oct 2026.",
       },
     ];
 
@@ -765,10 +793,9 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
           t.id === tx.id ||
           (tx.externalReference && t.externalReference === tx.externalReference) ||
           (t.amount === tx.amount &&
-            t.occurredOn === tx.occurredOn &&
             ((tx.fromAccountId && t.fromAccountId === tx.fromAccountId) ||
               (tx.toAccountId && t.toAccountId === tx.toAccountId)) &&
-            (t.description === tx.description || t.merchant === tx.merchant)),
+            (t.occurredOn === tx.occurredOn || tx.amount === "60.30")),
       );
       if (!exists) {
         sanitizedTransactions.push({ ...tx, userId });
@@ -1255,7 +1282,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
           openingBalance: a.openingBalance || "0.01",
           openingBalanceDate: a.openingBalanceDate || "2026-10-01",
           notes:
-            "Statement period 1–31 October 2026. Opening balance ₹0.01; verified closing balance ₹223.44 CR (28 statement transactions + month-end bank charge of ₹60.30).",
+            "Statement period 1–31 October 2026. Opening balance ₹0.01; verified closing balance ₹223.44 CR (28 statement transactions + Chicken biryani purchase of ₹60.30).",
         };
       } else if (a.id === idfcAccountId) {
         sanitizedAccounts[i] = {
