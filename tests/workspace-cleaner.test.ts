@@ -450,4 +450,54 @@ describe("workspace-cleaner", () => {
     const bal = accountBalance(result, iciciAccountId, "2026-10-31");
     expect(bal.current).toBe("223.44");
   });
+
+  it("updates Suryoday credit limit to 900.00 and records repayments (820.91 & 50) and 29.09 cashback", () => {
+    const ws = createBaseWorkspace();
+    // Add an initial Suryoday transaction to verify update
+    ws.transactions.push({
+      id: "f25f639d-b1b9-4579-bcfa-90f169585650",
+      userId,
+      amount: "821.25",
+      currency: "INR",
+      kind: "expense",
+      status: "posted",
+      occurredOn: "2026-10-21",
+      description: "Bill payment for Suryoday RuPay",
+      fromAccountId: sbiAccountId,
+      toAccountId: null,
+    });
+
+    const result = sanitizeWorkspaceTransactions(ws);
+    const suryodayAccountId = "8986e87f-8844-5af2-a7a5-31ef839fb72c";
+
+    // 1. Suryoday account should exist with 900.00 limit
+    const suryodayAcc = result.accounts.find((a) => a.id === suryodayAccountId);
+    expect(suryodayAcc).toBeDefined();
+    expect(suryodayAcc?.creditLimit).toBe("900.00");
+    expect(suryodayAcc?.kind).toBe("credit_card");
+
+    // 2. Repayment of 820.91 should be updated and mapped to bill_payment
+    const repayment820 = result.transactions.find((t) => t.toAccountId === suryodayAccountId && t.amount === "820.91");
+    expect(repayment820).toBeDefined();
+    expect(repayment820?.kind).toBe("bill_payment");
+    expect(repayment820?.occurredOn).toBe("2026-10-21");
+
+    // 3. Repayment of 50.00 should be recorded
+    const repayment50 = result.transactions.find((t) => t.toAccountId === suryodayAccountId && t.amount === "50.00");
+    expect(repayment50).toBeDefined();
+    expect(repayment50?.kind).toBe("bill_payment");
+    expect(repayment50?.occurredOn).toBe("2026-10-18");
+
+    // 4. Cashback of 29.09 should be recorded on 21 Oct
+    const cashback = result.transactions.find((t) => t.toAccountId === suryodayAccountId && t.amount === "29.09");
+    expect(cashback).toBeDefined();
+    expect(cashback?.kind).toBe("adjustment");
+    expect(cashback?.occurredOn).toBe("2026-10-21");
+
+    // 5. Total credit payments (820.91 + 50.00 + 29.09 = 900.00) clears the 900.00 opening liability
+    const snapshot = result.snapshots.find((s) => s.accountId === suryodayAccountId);
+    expect(snapshot).toBeDefined();
+    expect(snapshot?.reportedOutstanding).toBe("0.00");
+    expect(snapshot?.reportedAvailable).toBe("900.00");
+  });
 });

@@ -16,6 +16,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
   const idfcAccountId = "5d9bc626-5ee8-514f-a2ff-fca8b5618b74";
   const amazonAccountId = "476fa60a-ab35-5769-a18c-839e8a88d283";
   const defaultUtkarshAccountId = "7e83d8e2-dc55-4052-a087-7910619c3f32";
+  const defaultSuryodayAccountId = "8986e87f-8844-5af2-a7a5-31ef839fb72c";
 
   const existingUtkarsh = workspace.accounts?.find(
     (a) =>
@@ -28,11 +29,21 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
   );
   const utkarshAccountId = existingUtkarsh?.id || defaultUtkarshAccountId;
 
+  const existingSuryoday = workspace.accounts?.find(
+    (a) =>
+      a.id === defaultSuryodayAccountId ||
+      a.maskedSuffix === "3731" ||
+      a.name?.toLowerCase().includes("suryoday") ||
+      a.institution?.toLowerCase().includes("suryoday"),
+  );
+  const suryodayAccountId = existingSuryoday?.id || defaultSuryodayAccountId;
+
   const hasIcici = workspace.accounts?.some((a) => a.id === iciciAccountId);
   const hasSbi = workspace.accounts?.some((a) => a.id === sbiAccountId);
   const hasIdfc = workspace.accounts?.some((a) => a.id === idfcAccountId);
   const hasAmazon = workspace.accounts?.some((a) => a.id === amazonAccountId);
   const hasUtkarsh = Boolean(existingUtkarsh);
+  const hasSuryoday = Boolean(existingSuryoday);
 
   const userId =
     workspace.accounts?.find((a) => a.userId)?.userId ||
@@ -149,19 +160,41 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         };
       }
 
-      // Suryoday credit card bill payment -> bill_payment (exact statement amount ₹820.19)
+      // Suryoday credit card bill payment -> bill_payment (exact statement amount ₹820.91)
       if (
         t.id === "f25f639d-b1b9-4579-bcfa-90f169585650" ||
         (t.description?.includes("Bill payment for Suryoday") &&
-          (t.amount === "821.25" || t.amount === "820.19"))
+          (t.amount === "821.25" || t.amount === "820.19" || t.amount === "820.91"))
       ) {
         return {
           ...t,
-          amount: "820.19",
+          amount: "820.91",
           kind: "bill_payment" as const,
-          toAccountId: t.toAccountId || "8986e87f-8844-5af2-a7a5-31ef839fb72c",
+          fromAccountId: t.fromAccountId || sbiAccountId,
+          toAccountId: t.toAccountId || suryodayAccountId,
           category: null,
-          notes: "Credit card bill payment for Suryoday RuPay via POPTech (exact statement debit ₹820.19).",
+          merchant: "Suryoday Small Finance Bank",
+          description: "Bill payment for Suryoday Credit Card",
+          notes: "Credit card bill payment for Suryoday RuPay via POPTech (exact statement debit ₹820.91).",
+        };
+      }
+
+      // Suryoday ₹50 repayment
+      if (
+        (t.amount === "50.00" || t.amount === "50") &&
+        (t.description?.toLowerCase().includes("suryoday") ||
+          t.merchant?.toLowerCase().includes("suryoday") ||
+          t.toAccountId === suryodayAccountId)
+      ) {
+        return {
+          ...t,
+          amount: "50.00",
+          kind: "bill_payment" as const,
+          toAccountId: suryodayAccountId,
+          category: null,
+          merchant: "Suryoday Small Finance Bank",
+          description: t.description || "Bill payment for Suryoday Credit Card",
+          notes: "Repayment of ₹50.00 to Suryoday RuPay Credit Card.",
         };
       }
 
@@ -832,6 +865,99 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     }
   }
 
+  // 2b. Ensure Suryoday RuPay repayments and cashback if user owns Suryoday, SBI, or ICICI
+  if (hasSbi || hasIcici || hasSuryoday) {
+    const suryoday50Id = "c2607015-0018-4888-a001-181020260050";
+    const has50 = sanitizedTransactions.some(
+      (t) =>
+        t.id === suryoday50Id ||
+        (t.toAccountId === suryodayAccountId &&
+          (t.amount === "50.00" || t.amount === "50") &&
+          t.occurredOn === "2026-10-18") ||
+        (t.amount === "50.00" &&
+          t.occurredOn === "2026-10-18" &&
+          (t.description?.toLowerCase().includes("suryoday") ||
+            t.merchant?.toLowerCase().includes("suryoday"))),
+    );
+    if (!has50) {
+      sanitizedTransactions.push({
+        id: suryoday50Id,
+        userId,
+        kind: "bill_payment",
+        status: "posted",
+        amount: "50.00",
+        currency: "INR",
+        occurredOn: "2026-10-18",
+        fromAccountId: null,
+        toAccountId: suryodayAccountId,
+        category: null,
+        merchant: "Suryoday Small Finance Bank",
+        platform: "Paisabazaar",
+        description: "Bill payment for Suryoday Credit Card",
+        notes: "Repayment of ₹50.00 to Suryoday RuPay Credit Card.",
+      });
+    }
+
+    const suryoday820Id = "f25f639d-b1b9-4579-bcfa-90f169585650";
+    const has820 = sanitizedTransactions.some(
+      (t) =>
+        t.id === suryoday820Id ||
+        (t.toAccountId === suryodayAccountId &&
+          t.amount === "820.91" &&
+          t.occurredOn === "2026-10-21") ||
+        (t.amount === "820.91" &&
+          t.occurredOn === "2026-10-21" &&
+          (t.description?.toLowerCase().includes("suryoday") ||
+            t.merchant?.toLowerCase().includes("suryoday"))),
+    );
+    if (!has820) {
+      sanitizedTransactions.push({
+        id: suryoday820Id,
+        userId,
+        kind: "bill_payment",
+        status: "posted",
+        amount: "820.91",
+        currency: "INR",
+        occurredOn: "2026-10-21",
+        fromAccountId: sbiAccountId,
+        toAccountId: suryodayAccountId,
+        category: null,
+        merchant: "Suryoday Small Finance Bank",
+        description: "Bill payment for Suryoday Credit Card",
+        notes: "Credit card bill payment for Suryoday RuPay via POPTech (exact statement debit ₹820.91).",
+      });
+    }
+
+    const suryodayCashbackId = "c2607015-0021-4888-a002-211020260029";
+    const hasCashback = sanitizedTransactions.some(
+      (t) =>
+        t.id === suryodayCashbackId ||
+        (t.toAccountId === suryodayAccountId &&
+          t.amount === "29.09" &&
+          t.occurredOn === "2026-10-21") ||
+        (t.amount === "29.09" &&
+          t.occurredOn === "2026-10-21" &&
+          t.description?.toLowerCase().includes("cashback")),
+    );
+    if (!hasCashback) {
+      sanitizedTransactions.push({
+        id: suryodayCashbackId,
+        userId,
+        kind: "adjustment",
+        status: "posted",
+        amount: "29.09",
+        currency: "INR",
+        occurredOn: "2026-10-21",
+        fromAccountId: null,
+        toAccountId: suryodayAccountId,
+        category: null,
+        merchant: "Suryoday Small Finance Bank",
+        description: "Suryoday credit card — ₹29.09 cashback statement credit applied",
+        notes: "Cashback of ₹29.09 issued by Suryoday for card usage applied on the day of ₹820.91 repayment.",
+      });
+    }
+  }
+
   // 3. Ensure SBI Mini-Statement items on 25 Oct 2026 if user owns SBI account
   if (hasSbi) {
     // 3a. Rapido expense ₹50.00
@@ -1262,10 +1388,11 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     }
   }
 
-  // Sanitize accounts (SBI notes, ICICI notes, Utkarsh SuperMoney, + IDFC card closure)
+  // Sanitize accounts (SBI notes, ICICI notes, Utkarsh SuperMoney, Suryoday, + IDFC card closure)
   const sanitizedAccounts = workspace.accounts ? [...workspace.accounts] : undefined;
   if (sanitizedAccounts && sanitizedAccounts.length > 0) {
     let foundUtkarshInAccounts = false;
+    let foundSuryodayInAccounts = false;
     for (let i = 0; i < sanitizedAccounts.length; i++) {
       const a = sanitizedAccounts[i];
       if (a.id === sbiAccountId) {
@@ -1300,6 +1427,23 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
           notes:
             "Utkarsh SuperMoney RuPay Credit Card on UPI (YES BANK). Credit limit ₹990.00. Statement period 1–31 Oct 2026 verified: 9 successful spends totaling ₹1,628.90, 2 repayments totaling ₹1,773.76, closing outstanding ₹797.90.",
         };
+      } else if (
+        a.id === suryodayAccountId ||
+        a.maskedSuffix === "3731" ||
+        a.name?.toLowerCase().includes("suryoday") ||
+        a.institution?.toLowerCase().includes("suryoday")
+      ) {
+        foundSuryodayInAccounts = true;
+        sanitizedAccounts[i] = {
+          ...a,
+          kind: "credit_card" as const,
+          creditLimit: "900.00",
+          active: true,
+          openingBalance: a.openingBalance || "900.00",
+          openingBalanceDate: a.openingBalanceDate || "2026-10-01",
+          notes:
+            "Suryoday RuPay Credit Card • 3731. Credit limit ₹900.00. Statement period 1–31 Oct 2026: fully settled via ₹820.91 & ₹50.00 repayments and ₹29.09 cashback issued by Suryoday. Outstanding ₹0.00, available limit ₹900.00.",
+        };
       }
     }
 
@@ -1315,6 +1459,23 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         active: true,
         notes:
           "Utkarsh SuperMoney RuPay Credit Card on UPI (YES BANK). Credit limit ₹990.00. Statement period 1–31 Oct 2026 verified: 9 successful spends totaling ₹1,628.90, 2 repayments totaling ₹1,773.76, closing outstanding ₹797.90.",
+      });
+    }
+
+    if (!foundSuryodayInAccounts && (hasSbi || hasIcici)) {
+      sanitizedAccounts.push({
+        id: suryodayAccountId,
+        userId,
+        name: "Suryoday credit card • 3731",
+        institution: "Suryoday",
+        kind: "credit_card",
+        maskedSuffix: "3731",
+        creditLimit: "900.00",
+        active: true,
+        openingBalance: "900.00",
+        openingBalanceDate: "2026-10-01",
+        notes:
+          "Suryoday RuPay Credit Card • 3731. Credit limit ₹900.00. Statement period 1–31 Oct 2026: fully settled via ₹820.91 & ₹50.00 repayments and ₹29.09 cashback issued by Suryoday. Outstanding ₹0.00, available limit ₹900.00.",
       });
     }
   }
@@ -1402,6 +1563,28 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
           asOf: "2026-10-31T23:59:59+05:30",
           reportedBalance: "-797.90",
           reportedOutstanding: "797.90",
+          source: "bank_statement",
+          verifiedByUser: true,
+        });
+      }
+    }
+    if (hasSbi || hasIcici || hasSuryoday) {
+      const suryodaySnapshotId = "8986e87f-0031-4888-8000-000031100000";
+      if (
+        !sanitizedSnapshots.some(
+          (s) =>
+            s.id === suryodaySnapshotId ||
+            (s.accountId === suryodayAccountId && s.asOf.startsWith("2026-10-31")),
+        )
+      ) {
+        sanitizedSnapshots.push({
+          id: suryodaySnapshotId,
+          userId,
+          accountId: suryodayAccountId,
+          asOf: "2026-10-31T23:59:59+05:30",
+          reportedBalance: "0.00",
+          reportedOutstanding: "0.00",
+          reportedAvailable: "900.00",
           source: "bank_statement",
           verifiedByUser: true,
         });
