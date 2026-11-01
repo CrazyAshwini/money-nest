@@ -188,9 +188,10 @@ export async function POST(request: NextRequest) {
       503,
     );
   }
+  const sanitized = sanitizeWorkspaceTransactions(state.workspace);
   try {
     validateWorkspaceRecord(
-      state.workspace,
+      sanitized,
       collection,
       parsed.data as WorkspaceData[typeof collection][number],
       user.id,
@@ -198,7 +199,7 @@ export async function POST(request: NextRequest) {
     if (collection === "transactions")
       assertCommerceTransactionEdit(
         state.commerce,
-        state.workspace.transactions.find((row) => row.id === record.id),
+        sanitized.transactions.find((row) => row.id === record.id),
         parsed.data as Transaction,
       );
   } catch (failure) {
@@ -224,6 +225,27 @@ export async function POST(request: NextRequest) {
       },
       400,
     );
+  if (collection === "transactions") {
+    const tx = parsed.data as Transaction;
+    const referencedSnapshotIds = [
+      tx.fromBalanceSnapshotId,
+      tx.toBalanceSnapshotId,
+    ].filter((id): id is string => Boolean(id));
+    for (const snapId of referencedSnapshotIds) {
+      const existsInDb = state.workspace.snapshots.some((s) => s.id === snapId);
+      if (!existsInDb) {
+        const snap = sanitized.snapshots.find((s) => s.id === snapId);
+        if (snap) {
+          await supabase
+            .from(tables.snapshots)
+            .upsert(
+              toDatabase(snap as unknown as Record<string, unknown>, user.id),
+              { onConflict: "id" },
+            );
+        }
+      }
+    }
+  }
   let result;
   if (collection === "allocations")
     result = await supabase.rpc("allocate_bill_payment", {

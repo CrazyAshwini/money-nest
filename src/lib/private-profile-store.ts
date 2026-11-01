@@ -13,6 +13,7 @@ import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import type { OwnedRecord, Transaction, WorkspaceData } from "./types";
+import { sanitizeWorkspaceTransactions } from "./workspace-cleaner";
 import { ReceiptDuplicateError, validateWorkspaceRecord, workspaceRecordSchemas } from "./validation";
 import {
   applyCommerceCommand,
@@ -599,8 +600,9 @@ export async function savePrivateRecord<K extends keyof WorkspaceData>(
     try {
       if (!(collection in workspaceRecordSchemas)) throw new Error();
       if ((input as OwnedRecord).userId !== store.profile.id) throw new Error();
+      const sanitized = sanitizeWorkspaceTransactions(store.workspace);
       record = validateWorkspaceRecord(
-        store.workspace,
+        sanitized,
         collection,
         { ...input, userId: store.profile.id },
         store.profile.id,
@@ -608,7 +610,7 @@ export async function savePrivateRecord<K extends keyof WorkspaceData>(
       if (collection === "transactions")
         assertCommerceTransactionEdit(
           store.commerce ?? emptyCommerce(),
-          store.workspace.transactions.find((row) => row.id === record.id),
+          sanitized.transactions.find((row) => row.id === record.id),
           record as Transaction,
         );
     } catch (error) {
@@ -810,7 +812,7 @@ export async function commitPrivateImport(
       for (const input of transactions) {
         if (input.userId !== store.profile.id) throw new Error();
         const record = validateWorkspaceRecord(
-          store.workspace,
+          sanitizeWorkspaceTransactions(store.workspace),
           "transactions",
           { ...input, userId: store.profile.id },
           store.profile.id,

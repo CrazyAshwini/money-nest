@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeWorkspaceTransactions, SAMSUNG_TV_LOAN_ID } from "../src/lib/workspace-cleaner";
-import { loanSchema, emiSchema } from "../src/lib/validation";
-import { accountBalance, emiSummary } from "../src/lib/finance";
+import { loanSchema, emiSchema, validateWorkspaceRecord } from "../src/lib/validation";
+import { accountBalance, emiSummary, localDateISO } from "../src/lib/finance";
 import type { WorkspaceData, Account, Transaction, FixedDeposit } from "../src/lib/types";
 
 describe("workspace-cleaner", () => {
@@ -148,6 +148,29 @@ describe("workspace-cleaner", () => {
     );
     expect(iciciSnap31).toBeDefined();
     expect(iciciSnap31?.verifiedByUser).toBe(true);
+    expect(localDateISO(iciciSnap31!.asOf)).toBe("2026-10-31");
+    expect(localDateISO(sbiSnap31!.asOf)).toBe("2026-10-31");
+
+    // A transaction on 31 Oct linked to this snapshot validates cleanly
+    const sampleTx: Transaction = {
+      id: "99999999-9999-4999-8999-999999999991",
+      userId,
+      amount: "10.00",
+      currency: "INR",
+      kind: "income",
+      status: "posted",
+      occurredOn: "2026-10-31",
+      description: "Received cashback from POP · Popclubpayouts",
+      merchant: "POP · Popclubpayouts",
+      platform: "Online purchase",
+      fromAccountId: null,
+      toAccountId: iciciAccountId,
+      category: "Income",
+      sourceSystem: "receipt_ai",
+      toBalanceSnapshotId: iciciSnap31?.id ?? null,
+      fromBalanceSnapshotId: null,
+    };
+    expect(() => validateWorkspaceRecord(result, "transactions", sampleTx, userId)).not.toThrow();
 
     // ICICI transactions should contain the full 28 statement entries plus month-end charge (29 total)
     const iciciTxs = result.transactions.filter(
