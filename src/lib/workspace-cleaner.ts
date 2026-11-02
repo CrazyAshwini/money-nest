@@ -17,6 +17,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
   const amazonAccountId = "476fa60a-ab35-5769-a18c-839e8a88d283";
   const defaultUtkarshAccountId = "7e83d8e2-dc55-4052-a087-7910619c3f32";
   const defaultSuryodayAccountId = "8986e87f-8844-5af2-a7a5-31ef839fb72c";
+  const defaultMeeshoAccountId = "d927a488-8888-4000-a000-000000000001";
 
   const existingUtkarsh = workspace.accounts?.find(
     (a) =>
@@ -37,6 +38,15 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
       a.institution?.toLowerCase().includes("suryoday"),
   );
   const suryodayAccountId = existingSuryoday?.id || defaultSuryodayAccountId;
+
+  const existingMeesho = workspace.accounts?.find(
+    (a) =>
+      a.kind === "pay_later" &&
+      (a.id === defaultMeeshoAccountId ||
+        a.name?.toLowerCase().includes("meesho") ||
+        a.institution?.toLowerCase().includes("meesho")),
+  );
+  const meeshoAccountId = existingMeesho?.id || defaultMeeshoAccountId;
 
   const hasIcici = workspace.accounts?.some((a) => a.id === iciciAccountId);
   const hasSbi = workspace.accounts?.some((a) => a.id === sbiAccountId);
@@ -362,6 +372,34 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
           toAccountId: utkarshAccountId,
           merchant: "Utkarsh SuperMoney Credit Card",
           notes: `Utkarsh SuperMoney RuPay credit card bill payment debited from SBI Savings (UTR ${t.externalReference || (t.amount === "941.75" ? "212191910755" : "446687461536")}).`,
+        };
+      }
+
+      // Meesho Pay Later bill payment -> bill_payment
+      if (
+        t.id === "a4efa024-0002-4888-8000-000000000002" ||
+        t.externalReference === "171646486655" ||
+        (t.amount === "137.00" &&
+          (t.merchant?.toLowerCase().includes("meesho") ||
+            t.description?.toLowerCase().includes("meesho") ||
+            t.description?.includes("171646486655"))) ||
+        (t.kind === "bill_payment" &&
+          (t.merchant?.toLowerCase().includes("meesho") ||
+            t.description?.toLowerCase().includes("meesho")))
+      ) {
+        return {
+          ...t,
+          kind: "bill_payment" as const,
+          status: "posted" as const,
+          amount: "137.00",
+          fromAccountId: t.fromAccountId || sbiAccountId,
+          toAccountId: meeshoAccountId,
+          category: null,
+          platform: "Meesho",
+          merchant: "Meesho",
+          description: "Bill payment for Meesho Pay Later",
+          notes:
+            "Confirmed Meesho Pay Later bill payment debited from SBI via UPI (UTR 171646486655).",
         };
       }
 
@@ -1063,19 +1101,19 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
       },
       {
         id: "a4efa024-0002-4888-8000-000000000002",
-        kind: "expense",
+        kind: "bill_payment",
         status: "posted",
         amount: "137.00",
         currency: "INR",
         occurredOn: "2026-10-28",
         fromAccountId: sbiAccountId,
-        toAccountId: null,
-        category: "Shopping",
+        toAccountId: meeshoAccountId,
+        category: null,
         platform: "Meesho",
         merchant: "Meesho",
-        description: "WDL TFRUPI/DR/171646486655/Meesho T/UTIB/meeshotech",
+        description: "Bill payment for Meesho Pay Later",
         externalReference: "171646486655",
-        notes: "Meesho online shopping expense paid via SBI UPI.",
+        notes: "Confirmed Meesho Pay Later bill payment debited from SBI via UPI (UTR 171646486655).",
       },
       {
         id: "a4efa024-0003-4888-8000-000000000003",
@@ -1388,11 +1426,12 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     }
   }
 
-  // Sanitize accounts (SBI notes, ICICI notes, Utkarsh SuperMoney, Suryoday, + IDFC card closure)
+  // Sanitize accounts (SBI notes, ICICI notes, Utkarsh SuperMoney, Suryoday, Meesho Pay Later, + IDFC card closure)
   const sanitizedAccounts = workspace.accounts ? [...workspace.accounts] : undefined;
   if (sanitizedAccounts && sanitizedAccounts.length > 0) {
     let foundUtkarshInAccounts = false;
     let foundSuryodayInAccounts = false;
+    let foundMeeshoInAccounts = false;
     for (let i = 0; i < sanitizedAccounts.length; i++) {
       const a = sanitizedAccounts[i];
       if (a.id === sbiAccountId) {
@@ -1444,6 +1483,21 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
           notes:
             "Suryoday RuPay Credit Card • 3731. Credit limit ₹900.00. Statement period 1–31 Oct 2026: fully settled via ₹820.91 & ₹50.00 repayments and ₹29.09 cashback issued by Suryoday. Outstanding ₹0.00, available limit ₹900.00.",
         };
+      } else if (
+        a.id === meeshoAccountId ||
+        (a.kind === "pay_later" &&
+          (a.name?.toLowerCase().includes("meesho") ||
+            a.institution?.toLowerCase().includes("meesho")))
+      ) {
+        foundMeeshoInAccounts = true;
+        sanitizedAccounts[i] = {
+          ...a,
+          kind: "pay_later" as const,
+          creditLimit: a.creditLimit || "2100.00",
+          active: true,
+          notes:
+            "Meesho Pay Later. Credit limit ₹2,100.00. Statement bill paid in full.",
+        };
       }
     }
 
@@ -1476,6 +1530,21 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         openingBalanceDate: "2026-10-01",
         notes:
           "Suryoday RuPay Credit Card • 3731. Credit limit ₹900.00. Statement period 1–31 Oct 2026: fully settled via ₹820.91 & ₹50.00 repayments and ₹29.09 cashback issued by Suryoday. Outstanding ₹0.00, available limit ₹900.00.",
+      });
+    }
+
+    if (!foundMeeshoInAccounts && (hasSbi || hasIcici)) {
+      sanitizedAccounts.push({
+        id: meeshoAccountId,
+        userId,
+        name: "Meesho Pay Later",
+        institution: "Meesho",
+        kind: "pay_later",
+        maskedSuffix: "",
+        creditLimit: "2100.00",
+        active: true,
+        notes:
+          "Meesho Pay Later. Credit limit ₹2,100.00. Statement bill paid in full.",
       });
     }
   }
@@ -1787,10 +1856,97 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     }
   }
 
+  // Ensure Meesho Pay Later bill exists and is fully allocated to the ₹137.00 repayment
+  const defaultMeeshoBillId = "b927a488-8888-4000-b000-000000000001";
+  const sanitizedBills = Array.isArray(workspace.bills)
+    ? [...workspace.bills]
+    : [];
+
+  let targetMeeshoBillId: string | null = null;
+  let foundMeeshoBill = false;
+  for (let i = 0; i < sanitizedBills.length; i++) {
+    const b = sanitizedBills[i];
+    const billAcc = workspace.accounts?.find((a) => a.id === b.accountId);
+    if (
+      b.accountId === meeshoAccountId ||
+      (existingMeesho && b.accountId === existingMeesho.id) ||
+      billAcc?.name?.toLowerCase().includes("meesho") ||
+      billAcc?.institution?.toLowerCase().includes("meesho")
+    ) {
+      foundMeeshoBill = true;
+      targetMeeshoBillId = b.id;
+      sanitizedBills[i] = {
+        ...b,
+        accountId: meeshoAccountId,
+        statementAmount: "137.00",
+        statementDate: b.statementDate || "2026-10-03",
+        dueDate: b.dueDate || "2026-11-03",
+        statementCredits: b.statementCredits || "0.00",
+      };
+    }
+  }
+
+  if (!foundMeeshoBill && (hasSbi || hasIcici)) {
+    targetMeeshoBillId = defaultMeeshoBillId;
+    sanitizedBills.push({
+      id: defaultMeeshoBillId,
+      userId,
+      accountId: meeshoAccountId,
+      statementAmount: "137.00",
+      statementDate: "2026-10-03",
+      dueDate: "2026-11-03",
+      periodStart: "2026-09-01",
+      periodEnd: "2026-09-30",
+      minimumDue: null,
+      statementCredits: "0.00",
+    });
+  }
+
+  const sanitizedAllocations = Array.isArray(workspace.allocations)
+    ? [...workspace.allocations]
+    : [];
+
+  const meeshoPaymentTx = sanitizedTransactions.find(
+    (t) =>
+      t.id === "a4efa024-0002-4888-8000-000000000002" ||
+      t.externalReference === "171646486655" ||
+      (t.amount === "137.00" && t.toAccountId === meeshoAccountId) ||
+      (t.kind === "bill_payment" && t.toAccountId === meeshoAccountId),
+  );
+
+  if (meeshoPaymentTx && targetMeeshoBillId) {
+    const existingAllocIndex = sanitizedAllocations.findIndex(
+      (a) =>
+        a.billId === targetMeeshoBillId ||
+        a.transactionId === meeshoPaymentTx.id,
+    );
+    if (existingAllocIndex >= 0) {
+      sanitizedAllocations[existingAllocIndex] = {
+        ...sanitizedAllocations[existingAllocIndex],
+        userId,
+        billId: targetMeeshoBillId,
+        transactionId: meeshoPaymentTx.id,
+        amount: "137.00",
+        verified: true,
+      };
+    } else {
+      sanitizedAllocations.push({
+        id: "a4efa024-alloc-meesho-0001",
+        userId,
+        billId: targetMeeshoBillId,
+        transactionId: meeshoPaymentTx.id,
+        amount: "137.00",
+        verified: true,
+      });
+    }
+  }
+
   return {
     ...workspace,
     accounts: sanitizedAccounts || workspace.accounts,
     snapshots: sanitizedSnapshots || workspace.snapshots,
+    bills: sanitizedBills,
+    allocations: sanitizedAllocations,
     fixedDeposits: sanitizedFixedDeposits || workspace.fixedDeposits,
     loans: sanitizedLoans,
     emis: sanitizedEmis,

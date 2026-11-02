@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeWorkspaceTransactions, SAMSUNG_TV_LOAN_ID } from "../src/lib/workspace-cleaner";
 import { loanSchema, emiSchema, validateWorkspaceRecord } from "../src/lib/validation";
-import { accountBalance, emiSummary, localDateISO } from "../src/lib/finance";
+import { accountBalance, billSummary, emiSummary, localDateISO } from "../src/lib/finance";
 import type { WorkspaceData, Account, Transaction, FixedDeposit } from "../src/lib/types";
 
 describe("workspace-cleaner", () => {
@@ -499,5 +499,49 @@ describe("workspace-cleaner", () => {
     expect(snapshot).toBeDefined();
     expect(snapshot?.reportedOutstanding).toBe("0.00");
     expect(snapshot?.reportedAvailable).toBe("900.00");
+  });
+
+  it("normalizes Meesho Pay Later account, links repayment to bill, and marks bill as paid", () => {
+    const ws = createBaseWorkspace();
+    const meeshoAccountId = "d927a488-8888-4000-a000-000000000001";
+
+    const result = sanitizeWorkspaceTransactions(ws);
+
+    // 1. Meesho Pay Later account should exist with 2,100.00 limit and kind 'pay_later'
+    const meeshoAcc = result.accounts.find(
+      (a) => a.kind === "pay_later" && (a.id === meeshoAccountId || a.name?.toLowerCase().includes("meesho")),
+    );
+    expect(meeshoAcc).toBeDefined();
+    expect(meeshoAcc?.creditLimit).toBe("2100.00");
+    expect(meeshoAcc?.kind).toBe("pay_later");
+    expect(meeshoAcc?.active).toBe(true);
+
+    // 2. The ₹137.00 transaction on 28 Oct should be classified as bill_payment to Meesho Pay Later
+    const repayment = result.transactions.find(
+      (t) => t.amount === "137.00" && t.fromAccountId === sbiAccountId,
+    );
+    expect(repayment).toBeDefined();
+    expect(repayment?.kind).toBe("bill_payment");
+    expect(repayment?.toAccountId).toBe(meeshoAcc!.id);
+    expect(repayment?.occurredOn).toBe("2026-10-28");
+
+    // 3. Meesho bill should exist and have remaining: 0.00 and status: 'paid'
+    const meeshoBill = result.bills.find((b) => b.accountId === meeshoAcc!.id);
+    expect(meeshoBill).toBeDefined();
+    expect(meeshoBill?.statementAmount).toBe("137.00");
+
+    // 4. An allocation should link the bill to the repayment
+    const allocation = result.allocations.find(
+      (a) => a.billId === meeshoBill!.id && a.transactionId === repayment!.id,
+    );
+    expect(allocation).toBeDefined();
+    expect(allocation?.amount).toBe("137.00");
+    expect(allocation?.verified).toBe(true);
+
+    // 5. billSummary should report remaining 0.00 and status 'paid'
+    const summary = billSummary(result, meeshoBill!.id, "2026-11-02");
+    expect(summary.paid).toBe("137.00");
+    expect(summary.remaining).toBe("0.00");
+    expect(summary.status).toBe("paid");
   });
 });
