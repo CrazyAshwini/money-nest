@@ -501,7 +501,7 @@ describe("workspace-cleaner", () => {
     expect(snapshot?.reportedAvailable).toBe("900.00");
   });
 
-  it("normalizes Meesho Pay Later account, links repayment to bill, and marks bill as paid", () => {
+  it("normalizes Meesho Pay Later account, links ₹170 repayment to bill, and marks bill as paid", () => {
     const ws = createBaseWorkspace();
     const meeshoAccountId = "d927a488-8888-4000-a000-000000000001";
 
@@ -516,32 +516,58 @@ describe("workspace-cleaner", () => {
     expect(meeshoAcc?.kind).toBe("pay_later");
     expect(meeshoAcc?.active).toBe(true);
 
-    // 2. The ₹137.00 transaction on 28 Oct should be classified as bill_payment to Meesho Pay Later
-    const repayment = result.transactions.find(
+    // 2. The ₹137.00 transaction on 28 Oct should be classified as shopping expense
+    const shoppingExpense = result.transactions.find(
       (t) => t.amount === "137.00" && t.fromAccountId === sbiAccountId,
+    );
+    expect(shoppingExpense).toBeDefined();
+    expect(shoppingExpense?.kind).toBe("expense");
+    expect(shoppingExpense?.category).toBe("Shopping");
+
+    // 3. The ₹170.00 transaction on 2 Nov should be classified as bill_payment to Meesho Pay Later
+    const repayment = result.transactions.find(
+      (t) => t.amount === "170.00" && t.toAccountId === meeshoAcc!.id,
     );
     expect(repayment).toBeDefined();
     expect(repayment?.kind).toBe("bill_payment");
-    expect(repayment?.toAccountId).toBe(meeshoAcc!.id);
-    expect(repayment?.occurredOn).toBe("2026-10-28");
+    expect(repayment?.occurredOn).toBe("2026-11-02");
 
-    // 3. Meesho bill should exist and have remaining: 0.00 and status: 'paid'
+    // 4. Meesho bill should exist with statementAmount: 170.00
     const meeshoBill = result.bills.find((b) => b.accountId === meeshoAcc!.id);
     expect(meeshoBill).toBeDefined();
-    expect(meeshoBill?.statementAmount).toBe("137.00");
+    expect(meeshoBill?.statementAmount).toBe("170.00");
 
-    // 4. An allocation should link the bill to the repayment
+    // 5. An allocation should link the bill to the ₹170 repayment
     const allocation = result.allocations.find(
       (a) => a.billId === meeshoBill!.id && a.transactionId === repayment!.id,
     );
     expect(allocation).toBeDefined();
-    expect(allocation?.amount).toBe("137.00");
+    expect(allocation?.amount).toBe("170.00");
     expect(allocation?.verified).toBe(true);
 
-    // 5. billSummary should report remaining 0.00 and status 'paid'
-    const summary = billSummary(result, meeshoBill!.id, "2026-11-02");
-    expect(summary.paid).toBe("137.00");
-    expect(summary.remaining).toBe("0.00");
-    expect(summary.status).toBe("paid");
+    // 6. billSummary on 2026-11-02 should report remaining 0.00 and status 'paid'
+    const summaryToday = billSummary(result, meeshoBill!.id, "2026-11-02");
+    expect(summaryToday.statement).toBe("170.00");
+    expect(summaryToday.paid).toBe("170.00");
+    expect(summaryToday.remaining).toBe("0.00");
+    expect(summaryToday.status).toBe("paid");
+
+    // 7. billSummary with 2026-10-15 cutoff (before payment) should report remaining 170.00 and status 'unpaid'
+    const cutoffWorkspace: WorkspaceData = {
+      ...result,
+      transactions: result.transactions.filter(
+        (t) => t.occurredOn !== null && t.occurredOn <= "2026-10-15",
+      ),
+      allocations: result.allocations.filter((a) =>
+        result.transactions.some(
+          (t) => t.id === a.transactionId && t.occurredOn !== null && t.occurredOn <= "2026-10-15",
+        ),
+      ),
+    };
+    const summaryOct = billSummary(cutoffWorkspace, meeshoBill!.id, "2026-10-15");
+    expect(summaryOct.statement).toBe("170.00");
+    expect(summaryOct.paid).toBe("0.00");
+    expect(summaryOct.remaining).toBe("170.00");
+    expect(summaryOct.status).toBe("unpaid");
   });
 });

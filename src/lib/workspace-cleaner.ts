@@ -375,31 +375,30 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         };
       }
 
-      // Meesho Pay Later bill payment -> bill_payment
+      // Meesho Pay Later bill payment of ₹170 paid today (2 Nov 2026) via receipt scan
       if (
-        t.id === "a4efa024-0002-4888-8000-000000000002" ||
-        t.externalReference === "171646486655" ||
-        (t.amount === "137.00" &&
-          (t.merchant?.toLowerCase().includes("meesho") ||
-            t.description?.toLowerCase().includes("meesho") ||
-            t.description?.includes("171646486655"))) ||
-        (t.kind === "bill_payment" &&
-          (t.merchant?.toLowerCase().includes("meesho") ||
-            t.description?.toLowerCase().includes("meesho")))
+        (t.amount === "170.00" || t.amount === "170") &&
+        (t.occurredOn === "2026-11-02" || t.occurredOn === "2026-11-01" || t.occurredOn === "2026-11-03" || !t.occurredOn) &&
+        (t.merchant?.toLowerCase().includes("meesho") ||
+          t.description?.toLowerCase().includes("meesho") ||
+          t.platform?.toLowerCase().includes("meesho") ||
+          t.toAccountId === meeshoAccountId)
       ) {
         return {
           ...t,
           kind: "bill_payment" as const,
           status: "posted" as const,
-          amount: "137.00",
+          amount: "170.00",
+          occurredOn: t.occurredOn || "2026-11-02",
           fromAccountId: t.fromAccountId || sbiAccountId,
           toAccountId: meeshoAccountId,
           category: null,
           platform: "Meesho",
-          merchant: "Meesho",
+          merchant: "Meesho Pay Later",
           description: "Bill payment for Meesho Pay Later",
           notes:
-            "Confirmed Meesho Pay Later bill payment debited from SBI via UPI (UTR 171646486655).",
+            t.notes ||
+            "Meesho Pay Later statement bill payment of ₹170.00 paid today (2 Nov 2026) and recorded via receipt scan.",
         };
       }
 
@@ -1101,19 +1100,19 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
       },
       {
         id: "a4efa024-0002-4888-8000-000000000002",
-        kind: "bill_payment",
+        kind: "expense",
         status: "posted",
         amount: "137.00",
         currency: "INR",
         occurredOn: "2026-10-28",
         fromAccountId: sbiAccountId,
-        toAccountId: meeshoAccountId,
-        category: null,
+        toAccountId: null,
+        category: "Shopping",
         platform: "Meesho",
         merchant: "Meesho",
-        description: "Bill payment for Meesho Pay Later",
+        description: "WDL TFRUPI/DR/171646486655/Meesho T/UTIB/meeshotech",
         externalReference: "171646486655",
-        notes: "Confirmed Meesho Pay Later bill payment debited from SBI via UPI (UTR 171646486655).",
+        notes: "Meesho online shopping expense paid via SBI UPI.",
       },
       {
         id: "a4efa024-0003-4888-8000-000000000003",
@@ -1220,6 +1219,37 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         externalReference: amazonRepaymentRef,
         notes:
           "Confirmed Amazon Pay Later repayment debited from SBI Savings on 02 Oct 2026 (UTR 627516147601).",
+      });
+    }
+
+    // 3f. Ensure Meesho Pay Later ₹170 bill payment paid on 02 Nov 2026 is present
+    const meeshoPaymentTxId = "a4efa024-0002-4888-8000-000000000170";
+    const hasMeeshoBillPayment = sanitizedTransactions.some(
+      (t) =>
+        t.id === meeshoPaymentTxId ||
+        ((t.amount === "170.00" || t.amount === "170") &&
+          t.occurredOn === "2026-11-02" &&
+          (t.toAccountId === meeshoAccountId ||
+            t.merchant?.toLowerCase().includes("meesho") ||
+            t.description?.toLowerCase().includes("meesho"))),
+    );
+    if (!hasMeeshoBillPayment) {
+      sanitizedTransactions.push({
+        id: meeshoPaymentTxId,
+        userId,
+        amount: "170.00",
+        currency: "INR",
+        kind: "bill_payment",
+        status: "posted",
+        occurredOn: "2026-11-02",
+        fromAccountId: sbiAccountId,
+        toAccountId: meeshoAccountId,
+        category: null,
+        platform: "Meesho",
+        merchant: "Meesho Pay Later",
+        description: "Bill payment for Meesho Pay Later",
+        notes:
+          "Meesho Pay Later statement bill payment of ₹170.00 paid today (2 Nov 2026) and recorded via receipt scan.",
       });
     }
   }
@@ -1856,7 +1886,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     }
   }
 
-  // Ensure Meesho Pay Later bill exists and is fully allocated to the ₹137.00 repayment
+  // Ensure Meesho Pay Later bill exists (₹170.00) and is fully allocated to the ₹170.00 repayment
   const defaultMeeshoBillId = "b927a488-8888-4000-b000-000000000001";
   const sanitizedBills = Array.isArray(workspace.bills)
     ? [...workspace.bills]
@@ -1878,10 +1908,10 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
       sanitizedBills[i] = {
         ...b,
         accountId: meeshoAccountId,
-        statementAmount: "137.00",
+        statementAmount: "170.00",
         statementDate: b.statementDate || "2026-10-03",
         dueDate: b.dueDate || "2026-11-03",
-        statementCredits: b.statementCredits || "0.00",
+        statementCredits: "0.00",
       };
     }
   }
@@ -1892,7 +1922,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
       id: defaultMeeshoBillId,
       userId,
       accountId: meeshoAccountId,
-      statementAmount: "137.00",
+      statementAmount: "170.00",
       statementDate: "2026-10-03",
       dueDate: "2026-11-03",
       periodStart: "2026-09-01",
@@ -1908,10 +1938,12 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
 
   const meeshoPaymentTx = sanitizedTransactions.find(
     (t) =>
-      t.id === "a4efa024-0002-4888-8000-000000000002" ||
-      t.externalReference === "171646486655" ||
-      (t.amount === "137.00" && t.toAccountId === meeshoAccountId) ||
-      (t.kind === "bill_payment" && t.toAccountId === meeshoAccountId),
+      t.id === "a4efa024-0002-4888-8000-000000000170" ||
+      ((t.amount === "170.00" || t.amount === "170") &&
+        (t.toAccountId === meeshoAccountId ||
+          t.merchant?.toLowerCase().includes("meesho") ||
+          t.description?.toLowerCase().includes("meesho")) &&
+        (t.kind === "bill_payment" || t.occurredOn === "2026-11-02")),
   );
 
   if (meeshoPaymentTx && targetMeeshoBillId) {
@@ -1926,7 +1958,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         userId,
         billId: targetMeeshoBillId,
         transactionId: meeshoPaymentTx.id,
-        amount: "137.00",
+        amount: "170.00",
         verified: true,
       };
     } else {
@@ -1935,7 +1967,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         userId,
         billId: targetMeeshoBillId,
         transactionId: meeshoPaymentTx.id,
-        amount: "137.00",
+        amount: "170.00",
         verified: true,
       });
     }
