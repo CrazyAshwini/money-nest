@@ -48,12 +48,24 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
   );
   const meeshoAccountId = existingMeesho?.id || defaultMeeshoAccountId;
 
+  const defaultIobAccountId = "91a03483-ffae-59a8-ae34-9a66df28395f";
+  const existingIob = workspace.accounts?.find(
+    (a) =>
+      a.id === defaultIobAccountId ||
+      a.maskedSuffix === "1967" ||
+      a.name?.toLowerCase().includes("iob") ||
+      a.name?.toLowerCase().includes("zet") ||
+      a.institution?.toLowerCase().includes("iob"),
+  );
+  const iobAccountId = existingIob?.id || defaultIobAccountId;
+
   const hasIcici = workspace.accounts?.some((a) => a.id === iciciAccountId);
   const hasSbi = workspace.accounts?.some((a) => a.id === sbiAccountId);
   const hasIdfc = workspace.accounts?.some((a) => a.id === idfcAccountId);
   const hasAmazon = workspace.accounts?.some((a) => a.id === amazonAccountId);
   const hasUtkarsh = Boolean(existingUtkarsh);
   const hasSuryoday = Boolean(existingSuryoday);
+  const hasIob = Boolean(existingIob);
 
   const userId =
     workspace.accounts?.find((a) => a.userId)?.userId ||
@@ -164,9 +176,18 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         return {
           ...t,
           kind: "bill_payment" as const,
-          toAccountId: t.toAccountId || "91a03483-ffae-59a8-ae34-9a66df28395f",
+          status: "posted" as const,
+          occurredOn: t.occurredOn || "2026-10-21",
+          fromAccountId: t.fromAccountId || sbiAccountId,
+          toAccountId: iobAccountId,
           category: null,
-          notes: "Credit card bill payment for IOB ZET RuPay via POPTech.",
+          platform: "POP",
+          merchant: "IOB ZET RuPay",
+          description: "Bill payment for IOB ZET RuPay via POP",
+          settlementId: "set-iob-20261021",
+          discountProvider: "POP",
+          discountAmount: "2.00",
+          notes: "Credit card bill payment for IOB ZET RuPay via POP. ₹1,273 debited from SBI Savings + ₹2 POP discount = ₹1,275 credited to card.",
         };
       }
 
@@ -995,6 +1016,97 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     }
   }
 
+  // 2c. Ensure IOB ZET RuPay transactions (POP discount ₹2, Amazon ₹479, Aman Enterprises ₹66) if user owns IOB, SBI, or ICICI
+  if (hasSbi || hasIcici || hasIob) {
+    // 2c.1. POP discount of ₹2.00 on 21 Oct 2026 linked to IOB bill repayment
+    const popDiscountId = "c2607015-1967-4888-a003-211020260002";
+    const hasPopDiscount = sanitizedTransactions.some(
+      (t) =>
+        t.id === popDiscountId ||
+        (t.toAccountId === iobAccountId &&
+          (t.amount === "2.00" || t.amount === "2") &&
+          t.occurredOn === "2026-10-21" &&
+          (t.description?.toLowerCase().includes("pop") ||
+            t.platform?.toLowerCase().includes("pop") ||
+            t.notes?.toLowerCase().includes("pop"))),
+    );
+    if (!hasPopDiscount) {
+      sanitizedTransactions.push({
+        id: popDiscountId,
+        userId,
+        kind: "adjustment",
+        status: "posted",
+        amount: "2.00",
+        currency: "INR",
+        occurredOn: "2026-10-21",
+        fromAccountId: null,
+        toAccountId: iobAccountId,
+        category: null,
+        platform: "POP",
+        merchant: "POP",
+        description: "POP payment discount — IOB ZET RuPay bill settlement",
+        settlementId: "set-iob-20261021",
+        notes:
+          "Payment discount of ₹2.00 provided by POP on IOB ZET RuPay bill settlement. Total card credit ₹1,275.00 (₹1,273 cash from SBI + ₹2 POP discount).",
+      });
+    }
+
+    // 2c.2. Amazon purchase of ₹479.00 on 21 Oct 2026
+    const amazon479Id = "70d5055d-152c-4e65-9f8b-4d52ce17d1b5";
+    const hasAmazon479 = sanitizedTransactions.some(
+      (t) =>
+        t.id === amazon479Id ||
+        (t.fromAccountId === iobAccountId &&
+          t.amount === "479.00" &&
+          t.occurredOn === "2026-10-21"),
+    );
+    if (!hasAmazon479) {
+      sanitizedTransactions.push({
+        id: amazon479Id,
+        userId,
+        kind: "expense",
+        status: "posted",
+        amount: "479.00",
+        currency: "INR",
+        occurredOn: "2026-10-21",
+        fromAccountId: iobAccountId,
+        toAccountId: null,
+        category: "Shopping",
+        platform: "Amazon",
+        merchant: "Cocoblu Retail",
+        description: "Portronics RuffPad 16 Lite, 16-Inch",
+        notes: "Amazon purchase: Portronics RuffPad 16 Lite, 16-Inch paid using IOB ZET RuPay card.",
+      });
+    }
+
+    // 2c.3. Aman Enterprises purchase of ₹66.00 on 2 Nov 2026
+    const aman66Id = "c2607015-1967-4888-a004-021120260066";
+    const hasAman66 = sanitizedTransactions.some(
+      (t) =>
+        t.id === aman66Id ||
+        (t.fromAccountId === iobAccountId &&
+          (t.amount === "66.00" || t.amount === "66") &&
+          t.occurredOn === "2026-11-02"),
+    );
+    if (!hasAman66) {
+      sanitizedTransactions.push({
+        id: aman66Id,
+        userId,
+        kind: "expense",
+        status: "posted",
+        amount: "66.00",
+        currency: "INR",
+        occurredOn: "2026-11-02",
+        fromAccountId: iobAccountId,
+        toAccountId: null,
+        category: "Shopping",
+        merchant: "Aman Enterprises",
+        description: "Aman Enterprises — Store purchase",
+        notes: "Aman Enterprises purchase of ₹66.00 on 2 Nov 2026 paid using IOB ZET RuPay credit card.",
+      });
+    }
+  }
+
   // 3. Ensure SBI Mini-Statement items on 25 Oct 2026 if user owns SBI account
   if (hasSbi) {
     // 3a. Rapido expense ₹50.00
@@ -1462,6 +1574,7 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     let foundUtkarshInAccounts = false;
     let foundSuryodayInAccounts = false;
     let foundMeeshoInAccounts = false;
+    let foundIobInAccounts = false;
     for (let i = 0; i < sanitizedAccounts.length; i++) {
       const a = sanitizedAccounts[i];
       if (a.id === sbiAccountId) {
@@ -1528,6 +1641,24 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
           notes:
             "Meesho Pay Later. Credit limit ₹2,100.00. Statement bill paid in full.",
         };
+      } else if (
+        a.id === iobAccountId ||
+        a.maskedSuffix === "1967" ||
+        a.name?.toLowerCase().includes("iob") ||
+        a.name?.toLowerCase().includes("zet") ||
+        a.institution?.toLowerCase().includes("iob")
+      ) {
+        foundIobInAccounts = true;
+        sanitizedAccounts[i] = {
+          ...a,
+          kind: "credit_card" as const,
+          creditLimit: "2250.00",
+          active: true,
+          openingBalance: null,
+          openingBalanceDate: null,
+          notes:
+            "IOB ZET RuPay credit card • 1967. Credit limit ₹2,250.00. Reconciled against official bank statements.",
+        };
       }
     }
 
@@ -1577,11 +1708,28 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
           "Meesho Pay Later. Credit limit ₹2,100.00. Statement bill paid in full.",
       });
     }
+
+    if (!foundIobInAccounts && (hasSbi || hasIcici || hasIob)) {
+      sanitizedAccounts.push({
+        id: iobAccountId,
+        userId,
+        name: "IOB ZET RuPay • 1967",
+        institution: "Indian Overseas Bank",
+        kind: "credit_card",
+        maskedSuffix: "1967",
+        creditLimit: "2250.00",
+        active: true,
+        openingBalance: null,
+        openingBalanceDate: null,
+        notes:
+          "IOB ZET RuPay credit card • 1967. Credit limit ₹2,250.00. Reconciled against official bank statements.",
+      });
+    }
   }
 
-  // Sanitize snapshots (SBI and ICICI verified 31 Oct balances + IDFC zero balance snapshot)
+  // Sanitize snapshots (SBI and ICICI verified 31 Oct balances + IDFC zero balance + IOB historical & reconciled snapshots)
   let sanitizedSnapshots = workspace.snapshots;
-  if (Array.isArray(workspace.snapshots) && (hasSbi || hasIdfc || hasIcici)) {
+  if (Array.isArray(workspace.snapshots) && (hasSbi || hasIdfc || hasIcici || hasIob || hasUtkarsh || hasSuryoday)) {
     sanitizedSnapshots = [...workspace.snapshots];
     if (hasSbi) {
       const sbiSnapshotId = "c2607015-0023-4888-a007-251018575850";
@@ -1687,6 +1835,110 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
           source: "bank_statement",
           verifiedByUser: true,
         });
+      }
+    }
+
+    if (hasSbi || hasIcici || hasIob) {
+      // Remove stale unverified 8 Oct snapshot
+      sanitizedSnapshots = sanitizedSnapshots.filter(
+        (s) =>
+          !(
+            s.accountId === iobAccountId &&
+            (s.id === "8b4aa9f4-9904-5bf8-ab02-38251da796c5" ||
+              s.reportedUtilized === "1082.86" ||
+              (s as unknown as Record<string, unknown>).reported_utilized === 1082.86 ||
+              (s as unknown as Record<string, unknown>).reported_utilized === "1082.86")
+          ),
+      );
+
+      // Statement 1: 20 Aug 2026
+      const iobSnapshotAugId = "s2607015-1967-4888-8000-202608200139";
+      if (
+        !sanitizedSnapshots.some(
+          (s) =>
+            s.id === iobSnapshotAugId ||
+            (s.accountId === iobAccountId && s.asOf.startsWith("2026-08-20")),
+        )
+      ) {
+        sanitizedSnapshots.push({
+          id: iobSnapshotAugId,
+          userId,
+          accountId: iobAccountId,
+          asOf: "2026-08-20T23:59:59+05:30",
+          reportedOutstanding: "139.10",
+          reportedAvailable: "2110.90",
+          source: "bank_statement",
+          verifiedByUser: true,
+        });
+      }
+
+      // Statement 2: 20 Sep 2026
+      const iobSnapshotSepId = "s2607015-1967-4888-8000-202609200674";
+      if (
+        !sanitizedSnapshots.some(
+          (s) =>
+            s.id === iobSnapshotSepId ||
+            (s.accountId === iobAccountId && s.asOf.startsWith("2026-09-20")),
+        )
+      ) {
+        sanitizedSnapshots.push({
+          id: iobSnapshotSepId,
+          userId,
+          accountId: iobAccountId,
+          asOf: "2026-09-20T23:59:59+05:30",
+          reportedOutstanding: "674.10",
+          reportedAvailable: "1575.90",
+          source: "bank_statement",
+          verifiedByUser: true,
+        });
+      }
+
+      // Statement 3: 20 Oct 2026
+      const iobSnapshotOctId = "s2607015-1967-4888-8000-202610201269";
+      const existingOctIndex = sanitizedSnapshots.findIndex(
+        (s) =>
+          s.id === iobSnapshotOctId ||
+          (s.accountId === iobAccountId && s.asOf.startsWith("2026-10-20")),
+      );
+      const octSnapshot = {
+        id: iobSnapshotOctId,
+        userId,
+        accountId: iobAccountId,
+        asOf: "2026-10-20T23:59:59+05:30",
+        reportedOutstanding: "1269.40",
+        reportedAvailable: "980.60",
+        nextStatementDate: "2026-11-20",
+        source: "bank_statement" as const,
+        verifiedByUser: true,
+      };
+      if (existingOctIndex >= 0) {
+        sanitizedSnapshots[existingOctIndex] = octSnapshot;
+      } else {
+        sanitizedSnapshots.push(octSnapshot);
+      }
+
+      // Reconciled Checkpoint Snapshot: 02 Nov 2026
+      const iobSnapshotNovId = "s2607015-1967-4888-8000-202611020539";
+      const existingNovIndex = sanitizedSnapshots.findIndex(
+        (s) =>
+          s.id === iobSnapshotNovId ||
+          (s.accountId === iobAccountId && s.asOf.startsWith("2026-11-02")),
+      );
+      const novSnapshot = {
+        id: iobSnapshotNovId,
+        userId,
+        accountId: iobAccountId,
+        asOf: "2026-11-02T23:59:59+05:30",
+        reportedOutstanding: "539.40",
+        reportedAvailable: "1710.60",
+        reportedUnbilled: "539.40",
+        source: "app_screenshot" as const,
+        verifiedByUser: true,
+      };
+      if (existingNovIndex >= 0) {
+        sanitizedSnapshots[existingNovIndex] = novSnapshot;
+      } else {
+        sanitizedSnapshots.push(novSnapshot);
       }
     }
   }
@@ -1968,6 +2220,93 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         billId: targetMeeshoBillId,
         transactionId: meeshoPaymentTx.id,
         amount: "170.00",
+        verified: true,
+      });
+    }
+  }
+
+  // Ensure IOB ZET RuPay October statement bill exists (₹1,269.40) and is allocated to the ₹1,273 repayment
+  const defaultIobBillId = "b2607015-1967-4888-8000-202610201269";
+  let targetIobBillId: string | null = null;
+  let foundIobBill = false;
+  for (let i = 0; i < sanitizedBills.length; i++) {
+    const b = sanitizedBills[i];
+    const billAcc = workspace.accounts?.find((a) => a.id === b.accountId);
+    if (
+      b.accountId === iobAccountId ||
+      (existingIob && b.accountId === existingIob.id) ||
+      billAcc?.name?.toLowerCase().includes("iob") ||
+      billAcc?.name?.toLowerCase().includes("zet") ||
+      billAcc?.maskedSuffix === "1967"
+    ) {
+      foundIobBill = true;
+      targetIobBillId = b.id;
+      sanitizedBills[i] = {
+        ...b,
+        accountId: iobAccountId,
+        statementAmount: "1269.40",
+        statementDate: "2026-10-20",
+        dueDate: "2026-11-09",
+        periodStart: "2026-09-21",
+        periodEnd: "2026-10-20",
+        minimumDue: "0.00",
+        statementCredits: "0.00",
+        notes:
+          "IOB ZET RuPay statement 21 Sep–20 Oct 2026. Previous ₹674.10 − payments ₹1,630.19 + purchases ₹2,225.49 = ₹1,269.40. Paid in full via ₹1,275 settlement.",
+      };
+    }
+  }
+
+  if (!foundIobBill && (hasSbi || hasIcici || hasIob)) {
+    targetIobBillId = defaultIobBillId;
+    sanitizedBills.push({
+      id: defaultIobBillId,
+      userId,
+      accountId: iobAccountId,
+      statementAmount: "1269.40",
+      statementDate: "2026-10-20",
+      dueDate: "2026-11-09",
+      periodStart: "2026-09-21",
+      periodEnd: "2026-10-20",
+      minimumDue: "0.00",
+      statementCredits: "0.00",
+      notes:
+        "IOB ZET RuPay statement 21 Sep–20 Oct 2026. Previous ₹674.10 − payments ₹1,630.19 + purchases ₹2,225.49 = ₹1,269.40. Paid in full via ₹1,275 settlement.",
+    });
+  }
+
+  const iobPaymentTx = sanitizedTransactions.find(
+    (t) =>
+      t.id === "df50998d-a0a1-4793-b743-3916a3bd17ab" ||
+      ((t.amount === "1273.00" || t.amount === "1273") &&
+        (t.toAccountId === iobAccountId ||
+          t.merchant?.toLowerCase().includes("iob") ||
+          t.description?.toLowerCase().includes("iob")) &&
+        t.kind === "bill_payment"),
+  );
+
+  if (iobPaymentTx && targetIobBillId) {
+    const existingAllocIndex = sanitizedAllocations.findIndex(
+      (a) =>
+        a.billId === targetIobBillId ||
+        a.transactionId === iobPaymentTx.id,
+    );
+    if (existingAllocIndex >= 0) {
+      sanitizedAllocations[existingAllocIndex] = {
+        ...sanitizedAllocations[existingAllocIndex],
+        userId,
+        billId: targetIobBillId,
+        transactionId: iobPaymentTx.id,
+        amount: "1269.40",
+        verified: true,
+      };
+    } else {
+      sanitizedAllocations.push({
+        id: "ba260701-1967-4888-8000-202610211269",
+        userId,
+        billId: targetIobBillId,
+        transactionId: iobPaymentTx.id,
+        amount: "1269.40",
         verified: true,
       });
     }

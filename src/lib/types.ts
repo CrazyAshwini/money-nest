@@ -83,6 +83,10 @@ export interface Transaction extends OwnedRecord {
   loanEvent?: "disbursement" | "repayment" | "interest" | "reversal" | null;
   reversesTransactionId?: string | null;
   refundReason?: "merchant_refund" | "shared_reimbursement" | "other" | null;
+  discountProvider?: string | null;
+  discountAmount?: Money | null;
+  settlementId?: string | null;
+  parentTransactionId?: string | null;
   notes?: string | null;
   createdAt?: string;
   updatedAt?: string;

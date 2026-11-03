@@ -75,6 +75,8 @@ type TransactionValues = {
   externalRepayment: boolean;
   notes: string;
   refundReason: string;
+  discountProvider: string;
+  discountAmount: string;
 };
 
 function transactionValues(
@@ -123,6 +125,8 @@ function transactionValues(
         ? record.notes || ""
         : record?.notes?.replace(/^Confirmed external lender: .*?\.\s*/, "") ||
           "",
+    discountProvider: record?.discountProvider || "",
+    discountAmount: record?.discountAmount || "",
   };
 }
 
@@ -589,10 +593,37 @@ export function RecordEditor({
           notes,
           sourceSystem: receipt ? "receipt_ai" : prev?.sourceSystem || "manual",
           sourceObjectId: receipt?.fingerprint || prev?.sourceObjectId || null,
+          discountProvider: transaction.discountProvider.trim() || null,
+          discountAmount: transaction.discountAmount.trim() || null,
           fromBalanceSnapshotId: snapshotIdForSide("from"),
           toBalanceSnapshotId: snapshotIdForSide("to"),
         };
         await save("transactions", savedTransaction);
+        if (
+          kind === "bill_payment" &&
+          to &&
+          transaction.discountAmount &&
+          Number(transaction.discountAmount) > 0
+        ) {
+          const discountTx: Transaction = {
+            id: crypto.randomUUID(),
+            userId,
+            amount: amount(transaction.discountAmount)!,
+            currency: "INR",
+            kind: "adjustment",
+            status: "posted",
+            occurredOn: date,
+            description: `${transaction.discountProvider || "Provider"} payment discount — ${savedTransaction.description}`,
+            fromAccountId: null,
+            toAccountId: to,
+            category: null,
+            platform: transaction.discountProvider || null,
+            merchant: transaction.discountProvider || null,
+            parentTransactionId: savedTransaction.id,
+            notes: `Payment discount of ₹${transaction.discountAmount} provided by ${transaction.discountProvider || "Provider"} on bill repayment ${savedTransaction.id}.`,
+          };
+          await save("transactions", discountTx);
+        }
         if (status === "pending_review") {
           successMessage =
             "Saved as Needs review. This transaction is excluded from account balances.";
@@ -1308,7 +1339,59 @@ export function RecordEditor({
                   </span>
                 </Field>
               ))}
-              {transaction.kind === "bill_payment" && <p className="form-note full">For a personal loan repayment, open <Link href="/loans">Loans & Borrowings</Link> and choose its agreement.</p>}
+              {transaction.kind === "bill_payment" && (
+                <>
+                  <p className="form-note full">
+                    For a personal loan repayment, open{" "}
+                    <Link href="/loans">Loans & Borrowings</Link> and choose its agreement.
+                  </p>
+                  <details
+                    className="transaction-extra full"
+                    open={Boolean(transaction.discountAmount)}
+                  >
+                    <summary>
+                      Payment discount / POP / CRED offer (optional){" "}
+                      <ChevronDown size={16} aria-hidden="true" />
+                    </summary>
+                    <div className="transaction-extra-fields">
+                      <Field label="Discount provider">
+                        <select
+                          name="discountProvider"
+                          value={transaction.discountProvider}
+                          onChange={(e) =>
+                            updateTransaction("discountProvider", e.target.value)
+                          }
+                        >
+                          <option value="">None / Direct</option>
+                          <option value="POP">POP Club</option>
+                          <option value="CRED">CRED</option>
+                          <option value="CheQ">CheQ</option>
+                          <option value="Google Pay">Google Pay</option>
+                          <option value="PhonePe">PhonePe</option>
+                          <option value="Cashback">Cashback / Rewards</option>
+                          <option value="Other">Other Provider</option>
+                        </select>
+                      </Field>
+                      <Field label="Discount amount (₹)">
+                        {transactionInput("discountAmount", "number")}
+                      </Field>
+                      {Boolean(
+                        transaction.discountAmount &&
+                          Number(transaction.discountAmount) > 0,
+                      ) && (
+                        <p className="form-note full">
+                          Bank debited: ₹{transaction.amount || "0.00"} + Provider discount: ₹
+                          {transaction.discountAmount} = Total card credit: ₹
+                          {(
+                            Number(transaction.amount || 0) +
+                            Number(transaction.discountAmount)
+                          ).toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                  </details>
+                </>
+              )}
               {transaction.kind === "refund" && transaction.refundReason === "shared_reimbursement" && <Field label="Repaid by" className="full"><select value={transaction.externalPayer} onChange={e => updateTransaction("externalPayer",e.target.value)}><option value="">Choose participant after linking the purchase</option>{data.shares.filter(share => share.userId === userId && !share.isOwner && data.groups.some(g => g.id === share.groupId && g.transactionId === transaction.refundOfTransactionId)).map(share => <option key={share.id} value={share.participant}>{share.participant}</option>)}</select></Field>}
               {transaction.kind === "refund" && <Field label="Reason" className="full"><select value={transaction.refundReason} onChange={e => updateTransaction("refundReason", e.target.value)}><option value="merchant_refund">Merchant refund</option><option value="shared_reimbursement">Shared-expense reimbursement</option><option value="other">Other reversal</option></select><span className="form-note">Link the original purchase where possible. For shared expenses, link the purchase and choose the participant to settle the receivable.</span></Field>}
               {transaction.kind !== "expense" && (
