@@ -6,20 +6,20 @@ import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   Bell,
-  Building2,
   ChevronRight,
-  Database,
+  HandCoins,
   LockKeyhole,
   LogOut,
+  Pencil,
   Settings,
   Upload,
   UserRound,
+  Users,
 } from "lucide-react";
 import { useFinance } from "./finance-provider";
 import { BrandLogo } from "./brand-lockup";
 import { Badge, Field, PasswordField } from "./ui";
 import { ProfileAccounts } from "./profile-accounts";
-import { NAV_ITEMS } from "./workspace-navigation";
 import "./profile-theme.css";
 import styles from "./private-profile.module.css";
 
@@ -31,7 +31,7 @@ export function PrivateProfilePage() {
   const [busy, setBusy] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState("");
-  const [transferBusy, setTransferBusy] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
 
   useEffect(() => {
     const token = new URLSearchParams(window.location.hash.slice(1)).get(
@@ -89,8 +89,10 @@ export function PrivateProfilePage() {
         throw new Error(result.error || "Your profile could not be opened.");
       sessionStorage.removeItem("finance-os:mode");
       await refresh();
-      if (updating) toast("Profile saved.");
-      else {
+      if (updating) {
+        toast("Profile saved.");
+        setIsEditingName(false);
+      } else {
         toast(
           needsSetup ? "Profile created. You are signed in." : "Signed in.",
         );
@@ -129,34 +131,6 @@ export function PrivateProfilePage() {
     }
   }
 
-  async function exportForCloud() {
-    setTransferBusy(true);
-    setError("");
-    try {
-      const response = await fetch("/api/profile/export", {
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
-        throw new Error(result.error || "Your profile could not be exported.");
-      }
-      const file = await response.blob();
-      const url = URL.createObjectURL(file);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = "money-nest-transfer.json";
-      anchor.click();
-      URL.revokeObjectURL(url);
-      toast(
-        "Transfer file downloaded. Keep it private and upload it to your cloud profile.",
-      );
-    } catch (issue) {
-      setError(issue instanceof Error ? issue.message : "Please try again.");
-    } finally {
-      setTransferBusy(false);
-    }
-  }
-
   if ((mode === "private" || mode === "cloud" || mode === "demo") && profile) {
     const emailDomain = profile.email?.split("@")[1];
     const maskedEmail = mode === "demo"
@@ -167,170 +141,197 @@ export function PrivateProfilePage() {
 
     return (
       <div className={styles.hub}>
+        {/* Profile Identity Card */}
         <section className={styles.identity} aria-label="Signed-in profile">
           <span className={styles.avatar} aria-hidden="true">
             {profile.displayName.slice(0, 1).toUpperCase()}
           </span>
           <div className={styles.identityDetails}>
-            <h2>{profile.displayName}</h2>
-            {maskedEmail && <p>{maskedEmail}</p>}
-          </div>
-          <Badge tone="green">{mode === "demo" ? "Demo Account" : "Signed in"}</Badge>
-        </section>
-        <div className={styles.settingsGrid}>
-          <section
-            className={styles.card}
-            aria-labelledby="profile-account-heading"
-          >
-            <h2 id="profile-account-heading">Account</h2>
-            {mode === "demo" && (
-              <div style={{ marginBottom: "16px", padding: "12px", background: "rgba(33, 150, 83, 0.08)", borderRadius: "8px", border: "1px solid rgba(33, 150, 83, 0.2)" }}>
-                <p style={{ margin: "0 0 10px 0", fontSize: "12px", lineHeight: 1.5, color: "#315d43" }}>
-                  This is the <strong>AI Testing Demo Account</strong> with full access to accounts, credit cards, loans, EMIs, and transactions.
-                </p>
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            {isEditingName ? (
+              <form onSubmit={submit} className={styles.nameEditForm}>
+                <Field label="Profile name">
+                  <input
+                    name="displayName"
+                    defaultValue={profile.displayName}
+                    maxLength={80}
+                    autoComplete="nickname"
+                    required
+                  />
+                </Field>
+                {error && (
+                  <p className="error" role="alert">
+                    {error}
+                  </p>
+                )}
+                <div className={styles.nameEditActions}>
                   <button
-                    className="button secondary"
-                    type="button"
-                    style={{ fontSize: "12px" }}
-                    onClick={resetDemo}
+                    className="button primary"
+                    type="submit"
+                    disabled={busy}
                   >
-                    Reset Demo Data
+                    {busy && !signingOut ? "Saving…" : "Save profile"}
                   </button>
                   <button
                     className="button"
                     type="button"
-                    style={{ fontSize: "12px" }}
-                    onClick={logout}
-                    disabled={busy}
+                    onClick={() => {
+                      setIsEditingName(false);
+                      setError("");
+                    }}
                   >
-                    <LogOut size={14} aria-hidden="true" />
-                    {signingOut ? "Signing out…" : "Sign out"}
+                    Cancel
                   </button>
                 </div>
+              </form>
+            ) : (
+              <div className={styles.nameRow}>
+                <h2>{profile.displayName}</h2>
+                <button
+                  type="button"
+                  className={styles.nameEditToggle}
+                  onClick={() => setIsEditingName(true)}
+                  aria-label="Edit profile name"
+                  title="Edit profile name"
+                >
+                  <Pencil size={14} aria-hidden="true" />
+                </button>
               </div>
             )}
-            <form onSubmit={submit} className={styles.form}>
-              <h3>Personal information</h3>
-              <Field label="Profile name">
-                <input
-                  name="displayName"
-                  defaultValue={profile.displayName}
-                  maxLength={80}
-                  autoComplete="nickname"
-                  required
-                />
-              </Field>
-              <p className={styles.region}>Indian rupee (INR) · Asia/Kolkata</p>
-              {error && (
-                <p className="error" role="alert">
-                  {error}
-                </p>
-              )}
-              <div className={styles.sessionActions}>
-                <button
-                  className="button primary"
-                  type="submit"
-                  disabled={busy}
-                >
-                  {busy && !signingOut ? "Saving…" : "Save profile"}
-                </button>
-                <button
-                  className="button"
-                  type="button"
-                  onClick={logout}
-                  disabled={busy}
-                >
-                  <LogOut size={15} aria-hidden="true" />
-                  {signingOut ? "Signing out…" : "Sign out"}
-                </button>
-              </div>
-            </form>
-            <Link className={styles.settingLink} href="/accounts">
-              <Building2 size={19} aria-hidden="true" />
-              <span>Linked accounts</span>
-              <ChevronRight size={17} aria-hidden="true" />
-            </Link>
-          </section>
-          <div className={styles.groups}>
-            <section
-              className={styles.card}
-              aria-labelledby="profile-preferences-heading"
-            >
-              <h2 id="profile-preferences-heading">Preferences</h2>
-              <Link className={styles.settingLink} href="/notifications">
-                <Bell size={19} aria-hidden="true" />
-                <span>Reminders</span>
-                <ChevronRight size={17} aria-hidden="true" />
-              </Link>
-            </section>
-            <section
-              className={styles.card}
-              aria-labelledby="profile-data-heading"
-            >
-              <h2 id="profile-data-heading">Data &amp; support</h2>
-              <nav aria-label="Profile settings">
-                <Link className={styles.settingLink} href="/settings#data">
-                  <Database size={19} aria-hidden="true" />
-                  <span>Data &amp; privacy</span>
-                  <ChevronRight size={17} aria-hidden="true" />
-                </Link>
-                <Link className={styles.settingLink} href="/imports">
-                  <Upload size={19} aria-hidden="true" />
-                  <span>Import records</span>
-                  <ChevronRight size={17} aria-hidden="true" />
-                </Link>
-                <Link className={styles.settingLink} href="/settings">
-                  <Settings size={19} aria-hidden="true" />
-                  <span>Workspace settings</span>
-                  <ChevronRight size={17} aria-hidden="true" />
-                </Link>
-              </nav>
-            </section>
+            {profile.email && (
+              <a
+                href={`mailto:${profile.email}`}
+                className={styles.profileEmail}
+                aria-label={profile.email}
+              >
+                {mode === "demo" ? profile.email : maskedEmail ?? profile.email}
+              </a>
+            )}
           </div>
-        </div>
-        {mode === "private" && (
-          <section
-            className={`${styles.card} ${styles.transfer}`}
-            aria-labelledby="profile-transfer-heading"
-          >
-            <div>
-              <h2 id="profile-transfer-heading">
-                Use this profile on your phone
-              </h2>
-              <p>
-                Download a private copy of your records, then sign in to the
-                cloud profile and import it.
-              </p>
+          <Badge tone={mode === "demo" ? "amber" : "green"}>
+            {mode === "demo" ? "Demo Account" : "Signed in"}
+          </Badge>
+        </section>
+
+        {/* Demo Mode Banner (Only for demo workspace) */}
+        {mode === "demo" && (
+          <section className={styles.demoBanner} aria-label="Demo mode details">
+            <p className={styles.demoText}>
+              This is the <strong>AI Testing Demo Account</strong> with full access to accounts, credit cards, loans, EMIs, and transactions.
+            </p>
+            <div className={styles.demoActions}>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={resetDemo}
+              >
+                Reset Demo Data
+              </button>
+              <button
+                className="button"
+                type="button"
+                onClick={logout}
+                disabled={busy}
+              >
+                <LogOut size={14} aria-hidden="true" />
+                {signingOut ? "Signing out…" : "Sign out"}
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* Workspace Shortcuts Card */}
+        <section
+          className={styles.shortcutsCard}
+          aria-labelledby="profile-shortcuts-heading"
+        >
+          <h2 id="profile-shortcuts-heading" className={styles.sectionHeading}>
+            Workspace Shortcuts
+          </h2>
+          <nav className={styles.shortcutsList} aria-label="Workspace navigation">
+            <Link className={styles.shortcutRow} href="/notifications">
+              <span className={styles.shortcutIcon} aria-hidden="true">
+                <Bell size={18} />
+              </span>
+              <div className={styles.shortcutContent}>
+                <strong>Reminders &amp; Alerts</strong>
+                <span>Bill due dates &amp; payment reminders</span>
+              </div>
+              <ChevronRight size={17} className={styles.shortcutArrow} aria-hidden="true" />
+            </Link>
+
+            <Link className={styles.shortcutRow} href="/split-bills">
+              <span className={styles.shortcutIcon} aria-hidden="true">
+                <Users size={18} />
+              </span>
+              <div className={styles.shortcutContent}>
+                <strong>Split Bills</strong>
+                <span>Shared expenses, participants &amp; settlements</span>
+              </div>
+              <ChevronRight size={17} className={styles.shortcutArrow} aria-hidden="true" />
+            </Link>
+
+            <Link className={styles.shortcutRow} href="/loans">
+              <span className={styles.shortcutIcon} aria-hidden="true">
+                <HandCoins size={18} />
+              </span>
+              <div className={styles.shortcutContent}>
+                <strong>Personal Loans</strong>
+                <span>Borrowings, lendings &amp; repayments</span>
+              </div>
+              <ChevronRight size={17} className={styles.shortcutArrow} aria-hidden="true" />
+            </Link>
+
+            <Link className={styles.shortcutRow} href="/imports">
+              <span className={styles.shortcutIcon} aria-hidden="true">
+                <Upload size={18} />
+              </span>
+              <div className={styles.shortcutContent}>
+                <strong>Import Records</strong>
+                <span>Upload statements &amp; CSV files</span>
+              </div>
+              <ChevronRight size={17} className={styles.shortcutArrow} aria-hidden="true" />
+            </Link>
+
+            <Link className={styles.shortcutRow} href="/settings">
+              <span className={styles.shortcutIcon} aria-hidden="true">
+                <Settings size={18} />
+              </span>
+              <div className={styles.shortcutContent}>
+                <strong>Workspace Settings</strong>
+                <span>Data privacy, backup &amp; configuration</span>
+              </div>
+              <ChevronRight size={17} className={styles.shortcutArrow} aria-hidden="true" />
+            </Link>
+          </nav>
+        </section>
+
+        {/* Financial Accounts Hub */}
+        <ProfileAccounts />
+
+        {/* Standalone Session Sign Out */}
+        {mode !== "demo" && (
+          <section className={styles.sessionCard} aria-label="Session actions">
+            <div className={styles.sessionInfo}>
+              <strong>Signed in as {profile.displayName}</strong>
+              <p>Your session is active and secure on this device.</p>
             </div>
             <button
               className="button"
               type="button"
-              onClick={exportForCloud}
-              disabled={transferBusy}
+              onClick={logout}
+              disabled={busy}
             >
-              {transferBusy ? "Preparing…" : "Download transfer file"}
+              <LogOut size={15} aria-hidden="true" />
+              {signingOut ? "Signing out…" : "Sign out"}
             </button>
           </section>
         )}
-        <ProfileAccounts />
-        <nav
-          className={`profile-workspace-navigation ${styles.card} ${styles.financeNavigation}`}
-          aria-labelledby="profile-workspace-heading"
-        >
-          <h2 id="profile-workspace-heading">Explore Money Nest</h2>
-          <div className={styles.financeLinks}>
-            {NAV_ITEMS.filter(
-              (item) => item.href !== "/orders" || mode === "private",
-            ).map((item) => (
-              <Link key={item.href} href={item.href}>
-                <item.icon size={17} aria-hidden="true" />
-                <span>{item.href === "/dashboard" ? "Home" : item.title}</span>
-                <ChevronRight size={15} aria-hidden="true" />
-              </Link>
-            ))}
-          </div>
-        </nav>
+
+        {/* Signature Footer */}
+        <footer className={styles.signatureFooter} aria-label="Creator branding">
+          <p className={styles.signatureBrand}>Money Nest by Ashwini</p>
+          <p className={styles.signatureHeart}>Made with 🩵</p>
+        </footer>
       </div>
     );
   }
