@@ -486,6 +486,7 @@ describe("all checked-in migrations with separate authenticated workspaces", () 
       "allocate_emi_payment",
       "bootstrap_finance_cloud",
       "commit_finance_commerce",
+      "commit_personal_loan",
       "commit_reviewed_import",
       "merge_finance_handoff",
       "merge_private_profile_cloud",

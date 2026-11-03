@@ -14,8 +14,10 @@ import { cloudRequestAllowed } from "@/lib/cloud-request";
 import { readCloudProfile } from "@/lib/cloud-profile";
 import {
   readCloudFinanceState,
+  commitCloudPersonalLoan,
   type CloudFinanceState,
 } from "@/lib/supabase/commerce-store";
+import { assertPersonalLoanRecordEdit } from "@/lib/personal-loans";
 import { validateWorkspaceRecord } from "@/lib/validation";
 import { assertCommerceTransactionEdit } from "@/lib/commerce";
 import type { Transaction } from "@/lib/types";
@@ -160,6 +162,14 @@ export async function POST(request: NextRequest) {
   if (Number(request.headers.get("content-length") || 0) > 100000)
     return response({ error: "Request is too large." }, 413);
   const body = await request.json().catch(() => null);
+  if (body?.personalLoan) {
+    try {
+      await commitCloudPersonalLoan(supabase, user.id, body.personalLoan);
+      return response({ok: true});
+    } catch (error) {
+      return response({error: error instanceof Error ? error.message : "Loan event could not be saved."}, 400);
+    }
+  }
   if (
     !body ||
     typeof body.collection !== "string" ||
@@ -190,6 +200,7 @@ export async function POST(request: NextRequest) {
   }
   const sanitized = sanitizeWorkspaceTransactions(state.workspace);
   try {
+    assertPersonalLoanRecordEdit(sanitized, collection, parsed.data);
     validateWorkspaceRecord(
       sanitized,
       collection,
@@ -320,6 +331,7 @@ export async function DELETE(request: NextRequest) {
     return response({ error: "Invalid delete parameters." }, 400);
 
   const collection = body.collection as MutableCollection;
+  if (collection === "accounts") return response({error: "Archive accounts to preserve history."}, 400);
   const result = await supabase
     .from(tables[collection])
     .delete()

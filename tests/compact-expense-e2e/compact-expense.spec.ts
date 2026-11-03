@@ -52,7 +52,7 @@ async function expandSearch(dialog: Locator, label: string) {
 }
 
 const save = (editor: Locator, kind = "expense") =>
-  editor.getByRole("button", { name: `Save ${kind}`, exact: true });
+  editor.getByRole("button", { name: `Save ${kind === "refund" ? "refund / money back" : kind}`, exact: true });
 
 async function fillExpense(
   page: Page,
@@ -328,6 +328,10 @@ test("picker supports search, arrow keys, Home/End, Escape and focus restoration
   await expect(
     editor.getByRole("button", { name: "Category", exact: true }),
   ).toBeFocused();
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toBe("Discard unsaved changes?");
+    await dialog.accept();
+  });
   await page.keyboard.press("Escape");
   await expect(editor).toHaveCount(0);
   await expect(
@@ -507,7 +511,7 @@ test("someone else paid explicitly reveals payer and saves without inventing an 
   expect(state.unexpectedApis).toEqual([]);
 });
 
-test("manual expense requires description and account and saves only once with optional metadata", async ({
+test("manual expense requires account and saves only once with optional metadata", async ({
   context,
   page,
   baseURL,
@@ -518,7 +522,7 @@ test("manual expense requires description and account and saves only once with o
   await editor.locator('input[name="amount"]').fill("50.00");
   await save(editor).click();
   expect(state.writes).toEqual([]);
-  await expect(editor.locator('textarea[name="description"]')).toBeFocused();
+  await expect(editor.getByRole("alert")).toContainText(/Choose an account|source account/i);
   await editor.locator('textarea[name="description"]').fill("QA compact lunch");
   await save(editor).click();
   await expect(editor.getByRole("alert")).toContainText(
@@ -857,7 +861,7 @@ test("editing retains saved custom category, platform, source, archived account 
   await page.goto("/transactions");
   await page
     .getByRole("button", {
-      name: `View transaction: ${original.description}`,
+      name: `View transaction: ${original.merchant || original.description}`,
       exact: true,
     })
     .click();
@@ -923,7 +927,7 @@ test("editing a pending payment retains pending status until explicit confirmati
   await page.goto("/transactions");
   await page
     .getByRole("button", {
-      name: `View transaction: ${original.description}`,
+      name: `View transaction: ${original.merchant || original.description}`,
       exact: true,
     })
     .click();
@@ -1033,7 +1037,7 @@ test("correcting a scanned transaction type clears account/refund links and requ
     editor.getByRole("checkbox", { name: /I checked the extracted details/ }),
   ).not.toBeChecked();
   await expect(save(editor)).toBeDisabled();
-  await choose(page, editor, "Transaction type", "Refund");
+  await choose(page, editor, "Transaction type", "Refund / Money Back");
   await expect(
     editor.getByRole("button", { name: "To account", exact: true }),
   ).toContainText("Choose account");

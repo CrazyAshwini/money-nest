@@ -10,6 +10,7 @@ import {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cloneDemoData, DEMO_USER_ID } from "@/lib/seed";
+import { applyPersonalLoanCommand, assertPersonalLoanRecordEdit, type PersonalLoanCommand } from "@/lib/personal-loans";
 import { validateWorkspaceRecord } from "@/lib/validation";
 import { resolveAppPage } from "@/lib/page-metadata";
 import type { WorkspaceData, OwnedRecord } from "@/lib/types";
@@ -63,6 +64,7 @@ type ContextValue = {
     collection: K,
     id: string,
   ) => Promise<void>;
+  commitPersonalLoan: (command: PersonalLoanCommand) => Promise<void>;
   refresh: () => Promise<boolean>;
   resetDemo: () => void;
   commitImport: (
@@ -392,6 +394,7 @@ export function FinanceProvider({
       throw new Error("Audit history is recorded automatically.");
     const owner = mode === "demo" ? DEMO_USER_ID : authUserId;
     const current = currentData.current;
+    assertPersonalLoanRecordEdit(current, collection, record);
     const checked = validateWorkspaceRecord(current, collection, record, owner);
     if (mode === "cloud" || mode === "private") {
       const res = await fetch("/api/workspace", {
@@ -438,6 +441,19 @@ export function FinanceProvider({
       ],
     });
   }
+  async function commitPersonalLoan(command: PersonalLoanCommand) {
+    if (!["demo", "cloud", "private"].includes(mode)) throw new Error("Your workspace is not ready.");
+    const identity = activeIdentity.current;
+    const owner = mode === "demo" ? DEMO_USER_ID : authUserId;
+    const next = applyPersonalLoanCommand(currentData.current, owner, command);
+    if (mode === "demo") { replaceData(next); return; }
+    const res = await fetch("/api/workspace", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({personalLoan: command})});
+    const result = await res.json();
+    if (identity !== activeIdentity.current) throw new Error("Your sign-in changed. Reopen the current workspace.");
+    if (!res.ok) throw new Error(result.error || "The loan event could not be saved.");
+    if (!await refresh()) throw new Error("Saved, but balances could not be refreshed. Reload before retrying.");
+    if (identity !== activeIdentity.current) throw new Error("Your sign-in changed. Reopen the current workspace.");
+  }
   async function deleteRecord<K extends keyof WorkspaceData>(
     collection: K,
     id: string,
@@ -468,6 +484,8 @@ export function FinanceProvider({
       }
       return;
     }
+    assertPersonalLoanRecordEdit(currentData.current, collection, {id});
+    if (collection === "accounts") throw new Error("Archive accounts to preserve history.");
     // demo mode:
     const current = currentData.current;
     const rows = current[collection] as OwnedRecord[];
@@ -601,6 +619,7 @@ export function FinanceProvider({
         refresh,
         resetDemo,
         commitImport,
+        commitPersonalLoan,
       }}
     >
       <Fragment key={identity}>{children}</Fragment>

@@ -360,6 +360,28 @@ export function accountBalance(
     snapshot,
   };
 }
+/** Personal share only where a complete, owned split explicitly matches the payment. */
+export function consumptionAmount(data: WorkspaceData, t: Transaction): Money {
+  const groups = data.groups.filter(g => g.userId === t.userId && g.transactionId === t.id && g.kind !== "contribution_pool" && g.paidBy === "You" && dec(g.totalCost).eq(t.amount));
+  if (groups.length !== 1) return t.amount;
+  const shares = data.shares.filter(s => s.userId === t.userId && s.groupId === groups[0].id);
+  if (!shares.some(s => s.isOwner) || !dec(sumMoney(shares.map(s => s.amount))).eq(t.amount)) return t.amount;
+  return sumMoney(shares.filter(s => s.isOwner).map(s => s.amount));
+}
+/** Actual bank/wallet cash. Internal asset transfers are excluded; liability repayments remain cash out. */
+export function monthlyCashFlow(data: WorkspaceData, month: string) {
+  let incoming = ZERO, outgoing = ZERO;
+  for (const t of data.transactions) {
+    if (t.status !== "posted" || !t.occurredOn?.startsWith(`${month}-`)) continue;
+    const from = data.accounts.find(a => a.id === t.fromAccountId && a.userId === t.userId);
+    const to = data.accounts.find(a => a.id === t.toAccountId && a.userId === t.userId);
+    const assetFrom = from && !isDebtAccount(from), assetTo = to && !isDebtAccount(to);
+    if (assetFrom && assetTo) continue;
+    if (assetFrom) outgoing = outgoing.plus(t.amount);
+    if (assetTo) incoming = incoming.plus(t.amount);
+  }
+  return {incoming: incoming.toFixed(2), outgoing: outgoing.toFixed(2)};
+}
 export interface MonthlySummary {
   gross: Money;
   refunds: Money;
@@ -383,6 +405,7 @@ export function monthlySummary(
         t.status === "posted" &&
         t.occurredOn &&
         t.kind === "refund" &&
+        t.refundReason !== "shared_reimbursement" &&
         t.refundOfTransactionId,
     )
     .sort(
@@ -405,7 +428,7 @@ export function monthlySummary(
     const previous = alreadyMatched.get(original.id) ?? ZERO;
     const matched = Decimal.min(
       dec(refund.amount),
-      Decimal.max(0, dec(original.amount).minus(previous)),
+      Decimal.max(0, dec(consumptionAmount(data, original)).minus(previous)),
     );
     alreadyMatched.set(original.id, previous.plus(matched));
     if (refund.occurredOn!.startsWith(`${month}-`)) {
@@ -415,16 +438,15 @@ export function monthlySummary(
       );
     }
   }
-  const gross = sumMoney(expenses.map((t) => t.amount));
+  const gross = sumMoney(expenses.map((t) => consumptionAmount(data, t)));
   const refundTotal = matchedThisMonth.toFixed(2);
   return {
     gross,
     refunds: refundTotal,
     unexplainedRefunds: unexplainedThisMonth.toFixed(2),
     net: subtractMoney(gross, refundTotal),
-    income: sumMoney(
-      posted.filter((t) => t.kind === "income").map((t) => t.amount),
-    ),
+    income: subtractMoney(sumMoney(posted.filter(t => t.kind === "income").map(t => t.amount)),
+      sumMoney(posted.filter(t => t.loanEvent === "reversal" && data.transactions.some(original => original.id === t.reversesTransactionId && original.userId === t.userId && original.kind === "income")).map(t => t.amount))),
     expenseCount: expenses.length,
   };
 }
@@ -443,7 +465,7 @@ export function spendingByCategory(
     const category = transaction.category || "Other";
     const current = totals.get(category) ?? { amount: "0.00", count: 0 };
     totals.set(category, {
-      amount: addMoney(current.amount, transaction.amount),
+      amount: addMoney(current.amount, consumptionAmount(data, transaction)),
       count: current.count + 1,
     });
   }
@@ -502,7 +524,7 @@ export function dailySpending(
                   t.status === "posted" &&
                   t.occurredOn === date,
               )
-              .map((t) => t.amount),
+              .map((t) => consumptionAmount(data, t)),
           ),
         );
     const amount = subtractMoney(next, cumulative);
@@ -830,7 +852,11 @@ export function groupSummary(data: WorkspaceData, groupId: string) {
   const shares = data.shares.filter(
     (s) => s.groupId === groupId && s.userId === group.userId,
   );
-  const settlements = data.settlements.filter(
+  // Linked reimbursements are already committed cash events; derive their allocation
+  // without a second write or a second balance. Explicit legacy allocations win.
+  const inferredSettlements = data.transactions.filter(t => t.userId === group.userId && t.kind === "refund" && t.refundReason === "shared_reimbursement" && t.refundOfTransactionId === group.transactionId && t.externalPayer && !data.settlements.some(s => s.transactionId === t.id)).map(t => ({id:t.id,userId:t.userId,groupId,transactionId:t.id,counterparty:t.externalPayer!,direction:"incoming" as const,amount:t.amount}));
+  const allSettlements = [...data.settlements, ...inferredSettlements];
+  const settlements = allSettlements.filter(
     (s) =>
       s.groupId === groupId &&
       s.userId === group.userId &&
@@ -848,7 +874,7 @@ export function groupSummary(data: WorkspaceData, groupId: string) {
             : Boolean(t.fromAccountId)) &&
           dec(
             sumMoney(
-              data.settlements
+              allSettlements
                 .filter((other) => other.transactionId === t.id)
                 .map((other) => other.amount),
             ),

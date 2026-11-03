@@ -18,7 +18,8 @@ import "./dashboard.css";
 import "./workspace-layout.css";
 import { FinancialCardCarousel } from "./financial-card-carousel";
 import { VirtualAccountCard } from "./virtual-account-card";
-import { AccountManagement } from "./account-management";
+import { PersonalLoans } from "./personal-loans";
+
 import {
   ownedAnalyticsData,
   type SpendingMode,
@@ -94,6 +95,7 @@ const AnalyticsWorkspace = dynamic(
 );
 const kindLabel = (s: string) => s.replaceAll("_", " ");
 export function FinanceApp() {
+  const router = useRouter();
   const {
     mode,
     backend,
@@ -172,6 +174,7 @@ export function FinanceApp() {
   );
   const metrics = dashboardMetrics(data, month);
   const open = (e: EditorState) => {
+    if (e.type === "transaction" && e.record?.loanId) { router.push(`/loans/${e.record.loanId}`); return; }
     setEditorTrigger(
       document.activeElement instanceof HTMLElement
         ? document.activeElement
@@ -356,7 +359,7 @@ export function FinanceApp() {
                   {(page === "accounts" || page === "pay-later") && (
                     <button
                       className="button primary"
-                      onClick={() => open({ type: "account" })}
+                      onClick={() => router.push("/profile?manage=bank")}
                     >
                       <Plus size={16} aria-hidden="true" /> Add account
                     </button>
@@ -1040,7 +1043,7 @@ function AccountsPage({
     );
   if (a) {
     if (searchParams.get("manage") === "reports")
-      return <AccountManagement account={a} onOpenEditor={open} />;
+      return <Link className="button" href={`/profile?account=${a.id}`}>Manage in Profile</Link>;
     const accounts = data.accounts.filter(
       (account) =>
         account.userId === userId &&
@@ -1078,7 +1081,7 @@ function AccountsPage({
                 data={data}
                 today={today}
                 onEdit={(selected) =>
-                  open({ type: "account", record: selected })
+                  router.push(`/profile?account=${selected.id}`)
                 }
               />
             )}
@@ -1225,8 +1228,8 @@ function AccountsPage({
 
 function AccountGroup({
   accounts,
-  label,
   open,
+  label,
   data,
   today,
 }: {
@@ -1236,6 +1239,7 @@ function AccountGroup({
   data: WorkspaceData;
   today: string;
 }) {
+  const router = useRouter();
   const [selection, setSelection] = useState<string | null>(null);
   const selectedId = resolveSelectedAccountId(accounts, selection);
   return (
@@ -1251,7 +1255,7 @@ function AccountGroup({
             account={account}
             data={data}
             today={today}
-            onEdit={(selected) => open({ type: "account", record: selected })}
+            onEdit={(selected) => router.push(`/profile?account=${selected.id}`)}
           />
         )}
       />
@@ -1634,9 +1638,11 @@ function LoansPage({
         </Link>
       </>
     );
-  const loans = id ? data.loans.filter((l) => l.id === id) : data.loans;
+  if (loan?.ledgerManaged) return <PersonalLoans id={id} />;
+  const loans = (id ? data.loans.filter((l) => l.id === id) : data.loans).filter(l => !l.ledgerManaged);
   return (
     <>
+      {!id && !calendar && <PersonalLoans />}
       {loan && (
         <DetailHeading
           title={loan.name}
@@ -1672,7 +1678,7 @@ function LoansPage({
         </div>
         <button className="button" onClick={() => open({ type: "loan" })}>
           <Plus size={15} />
-          Add loan
+          Add institutional loan
         </button>
       </div>
       {!calendar && (

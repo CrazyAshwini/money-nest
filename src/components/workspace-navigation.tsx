@@ -30,7 +30,7 @@ export const NAV_ITEMS = [
   { href: "/bills", title: "Bills & payments", icon: CreditCard },
   { href: "/pay-later", title: "Pay Later", icon: Wallet },
   { href: "/fixed-deposits", title: "Fixed deposits", icon: Sprout },
-  { href: "/loans", title: "Loans & EMIs", icon: HandCoins },
+  { href: "/loans", title: "Loans & Borrowings", icon: HandCoins },
   { href: "/split-bills", title: "Split bills", icon: Users },
   { href: "/imports", title: "Imports", icon: Upload },
   { href: "/orders", title: "Orders & refunds", icon: ArrowLeftRight },

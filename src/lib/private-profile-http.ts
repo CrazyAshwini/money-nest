@@ -7,6 +7,7 @@ import {
   logoutPrivateProfile,
   readPrivateProfile,
   savePrivateRecord,
+  commitPrivatePersonalLoan,
   deletePrivateRecord,
   setupPrivateProfile,
   updatePrivateProfile,
@@ -110,9 +111,12 @@ export async function privateWorkspacePOST(request: NextRequest) {
   try {
     if (!(await readPrivateProfile(token(request))))
       return privateResponse({ error: "Authentication required." }, 401);
-    const input = z
-      .object({ collection: z.string(), record: z.unknown() })
-      .parse(await body(request, 100000));
+    const raw = await body(request, 100000);
+    if (raw && typeof raw === "object" && "personalLoan" in raw) {
+      await commitPrivatePersonalLoan(token(request), raw.personalLoan);
+      return privateResponse({ok: true});
+    }
+    const input = z.object({collection: z.string(), record: z.unknown()}).parse(raw);
     if (
       !Object.hasOwn(workspaceRecordSchemas, input.collection) ||
       input.collection === "auditEvents"

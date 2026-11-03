@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Decimal from "decimal.js";
 import Link from "next/link";
 import { CalendarDays, ChevronDown } from "lucide-react";
@@ -8,7 +8,8 @@ import { Modal, Field } from "./ui";
 import {
   ACCOUNT_KINDS,
   CATEGORIES,
-  TRANSACTION_KINDS,
+  ENTRY_TRANSACTION_KINDS,
+  TRANSACTION_LABELS,
   type Account,
   type Transaction,
   type TransactionKind,
@@ -57,6 +58,7 @@ type TransactionValues = {
   externalLender: string;
   externalRepayment: boolean;
   notes: string;
+  refundReason: string;
 };
 
 function transactionValues(
@@ -93,6 +95,7 @@ function transactionValues(
     externalReference: record?.externalReference || "",
     status: record?.status || "posted",
     refundOfTransactionId: record?.refundOfTransactionId || "",
+    refundReason: record?.refundReason || "merchant_refund",
     externalLender,
     externalRepayment: Boolean(externalLender),
     notes:
@@ -120,7 +123,7 @@ function amount(value: FormDataEntryValue | null, optional = false) {
     throw new Error("Enter a valid amount with at most two decimal places.");
   return new Decimal(text).toFixed(2);
 }
-const human = (s: string) => s.replaceAll("_", " ");
+const human = (s: string) => TRANSACTION_LABELS[s as TransactionKind]?.toLowerCase() ?? s.replaceAll("_", " ");
 export function RecordEditor({
   editor,
   onClose,
@@ -131,6 +134,17 @@ export function RecordEditor({
   returnFocusTo?: HTMLElement | null;
 }) {
   const { data, userId, today, save, deleteRecord, toast } = useFinance();
+  const dirty = useRef(false);
+  useEffect(() => {
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (dirty.current) { event.preventDefault(); event.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, []);
+
+  const submitting = useRef(false);
+  function closeWithCheck() { if (!submitting.current && (!dirty.current || window.confirm("Discard unsaved changes?"))) onClose(); }
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -230,6 +244,7 @@ export function RecordEditor({
     key: K,
     value: TransactionValues[K],
   ) {
+    dirty.current = true;
     setTransaction((current) => ({ ...current, [key]: value }));
     setReceiptReviewed(false);
     setReceiptPaymentConfirmed(false);
@@ -278,6 +293,7 @@ export function RecordEditor({
     applyReceiptFields(receipts[0]);
   }
   function changeCategory(category: string) {
+    dirty.current = true;
     setTransaction((current) => {
       const previousPresets = getCategoryPlatformOptions(current.category);
       const nextPresets = getCategoryPlatformOptions(category);
@@ -297,6 +313,7 @@ export function RecordEditor({
     setPendingConfirmed(false);
   }
   function changePlatform(platform: string) {
+    dirty.current = true;
     setOtherPlatform(platform === OTHER_PLATFORM);
     setTransaction((current) => ({
       ...current,
@@ -325,7 +342,8 @@ export function RecordEditor({
     ));
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || submitting.current) return;
+    submitting.current = true;
     setError("");
     setBusy(true);
     const f = new FormData(event.currentTarget);
@@ -345,6 +363,8 @@ export function RecordEditor({
           openingBalance: amount(f.get("openingBalance"), true),
           openingBalanceDate: text(f, "openingBalanceDate") || null,
           creditLimit: amount(f.get("creditLimit"), true),
+          billingDay: text(f, "billingDay") ? Number(text(f, "billingDay")) : null,
+          dueDay: text(f, "dueDay") ? Number(text(f, "dueDay")) : null,
           active: f.get("active") === "on",
           notes: text(f, "notes"),
           accent: editor.record?.accent || "#a3b7ef",
@@ -439,7 +459,8 @@ export function RecordEditor({
           kind,
           status,
           occurredOn: date,
-          description: transaction.description.trim(),
+          description: transaction.description.trim() || human(kind),
+          refundReason: kind === "refund" ? transaction.refundReason as Transaction["refundReason"] : null,
           merchant: transaction.merchant.trim() || null,
           platform: transaction.platform.trim() || null,
           fromAccountId: from,
@@ -647,6 +668,7 @@ export function RecordEditor({
           : "Unable to save. Please check the details.",
       );
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -750,6 +772,7 @@ export function RecordEditor({
                   (account) =>
                     account.userId === userId &&
                     account.kind === kind &&
+                    (transaction.kind !== "bill_payment" || (name === "fromAccountId" ? ["bank", "wallet"].includes(account.kind) : isDebtAccount(account))) &&
                     (account.active || account.id === transaction[name]),
                 )
                 .map((account) => {
@@ -788,7 +811,7 @@ export function RecordEditor({
           ? transactionTitle
           : `${record && editor.type !== "snapshot" ? "Edit" : "Add"} ${names[editor.type]}`
       }
-      onClose={onClose}
+      onClose={closeWithCheck}
       returnFocusTo={returnFocusTo}
       busy={busy}
       headerActions={
@@ -819,7 +842,7 @@ export function RecordEditor({
             : undefined
       }
     >
-      <form onSubmit={submit} className="editor-form">
+      <form onChange={() => { dirty.current = true; }} onSubmit={submit} className="editor-form">
         {receiptQueue.length > 1 && (
           <div className="receipt-save-review" role="status">
             <strong>
@@ -872,6 +895,9 @@ export function RecordEditor({
               <Field label="Credit limit · ₹ (optional)">
                 {input("creditLimit", editor.record?.creditLimit, "number")}
               </Field>
+              <Field label="Billing day (optional)"><input name="billingDay" type="number" min="1" max="31" step="1" defaultValue={editor.record?.billingDay ?? undefined}/></Field>
+              <Field label="Due day (optional)"><input name="dueDay" type="number" min="1" max="31" step="1" defaultValue={editor.record?.dueDay ?? undefined}/></Field>
+              <p className="form-note full">Amazon Pay Later bills on the 1st and is due on the 5th. Future interest does not consume principal credit. Other providers retain their own terms.</p>
               <Field label="Status">
                 <span className="check-row">
                   <input
@@ -887,8 +913,8 @@ export function RecordEditor({
               </Field>
               {editor.record && (
                 <Link
-                  href={`/accounts/${encodeURIComponent(editor.record.id)}?manage=reports`}
-                  onClick={onClose}
+                  href={`/profile?account=${encodeURIComponent(editor.record.id)}`}
+                  onClick={closeWithCheck}
                   className="account-management-editor-link full"
                 >
                   Statements and reports
@@ -903,15 +929,15 @@ export function RecordEditor({
                   label="Transaction type"
                   value={transaction.kind}
                   searchable={false}
+                  placeholder={transaction.kind === "adjustment" ? "Adjustment (legacy)" : "Choose type"}
                   disabled={busy}
-                  options={TRANSACTION_KINDS.map((kind) => ({
+                  options={ENTRY_TRANSACTION_KINDS.map((kind) => ({
                     value: kind,
-                    label: human(kind).replace(/^./, (letter) =>
-                      letter.toUpperCase(),
-                    ),
+                    label: TRANSACTION_LABELS[kind],
                   }))}
                   onChange={(kind) => {
                     if (kind === transaction.kind) return;
+                    dirty.current = true;
                     updateTransaction("kind", kind);
                     setTransaction((current) => ({
                       ...current,
@@ -920,7 +946,10 @@ export function RecordEditor({
                       toAccountId: "",
                       externalPayer: "",
                       externalRepayment: false,
+                      externalLender: "",
                       refundOfTransactionId: "",
+                      refundReason: "merchant_refund",
+                      platform: "", merchant: "", category: kind === "income" ? "Other" : "Other",
                     }));
                     setExternalPayerChosen(false);
                     setBalanceChoices({});
@@ -975,10 +1004,9 @@ export function RecordEditor({
                   }
                   rows={1}
                   maxLength={200}
-                  required
                 />
               </Field>
-              <div className="transaction-category-row full">
+              {["expense", "income"].includes(transaction.kind) && <div className="transaction-category-row full">
                 <Field label="Category">
                   <TransactionPicker
                     label="Category"
@@ -987,7 +1015,7 @@ export function RecordEditor({
                     disabled={busy}
                     options={[
                       ...new Set([
-                        ...CATEGORIES,
+                        ...(transaction.kind === "income" ? ["Salary", "Fellowship", "Gift Received", "Other"] : CATEGORIES.filter(c => c !== "Gift Received")),
                         transaction.category,
                         ...data.transactions
                           .filter((item) => item.userId === userId)
@@ -1004,7 +1032,7 @@ export function RecordEditor({
                       }))}
                   />
                 </Field>
-                <Field label="Platform">
+                {transaction.kind === "expense" && <Field label="Platform">
                   <TransactionPicker
                     label="Platform"
                     value={
@@ -1024,9 +1052,9 @@ export function RecordEditor({
                       })),
                     ]}
                   />
-                </Field>
-              </div>
-              {otherPlatform && (
+                </Field>}
+              </div>}
+              {transaction.kind === "expense" && otherPlatform && (
                 <Field label="Other platform / source" className="full">
                   {transactionInput("platform")}
                 </Field>
@@ -1040,7 +1068,7 @@ export function RecordEditor({
               {(incomingTransaction || twoAccountTransaction) &&
                 transactionAccount(
                   "toAccountId",
-                  "To account",
+                  transaction.kind === "bill_payment" ? "Liability account" : "To account",
                   !twoAccountTransaction,
                 )}
               {receipt?.accountHint && (
@@ -1085,6 +1113,9 @@ export function RecordEditor({
                   </span>
                 </Field>
               ))}
+              {transaction.kind === "bill_payment" && <p className="form-note full">For a personal loan repayment, open <Link href="/loans">Loans & Borrowings</Link> and choose its agreement.</p>}
+              {transaction.kind === "refund" && transaction.refundReason === "shared_reimbursement" && <Field label="Repaid by" className="full"><select value={transaction.externalPayer} onChange={e => updateTransaction("externalPayer",e.target.value)}><option value="">Choose participant after linking the purchase</option>{data.shares.filter(share => share.userId === userId && !share.isOwner && data.groups.some(g => g.id === share.groupId && g.transactionId === transaction.refundOfTransactionId)).map(share => <option key={share.id} value={share.participant}>{share.participant}</option>)}</select></Field>}
+              {transaction.kind === "refund" && <Field label="Reason" className="full"><select value={transaction.refundReason} onChange={e => updateTransaction("refundReason", e.target.value)}><option value="merchant_refund">Merchant refund</option><option value="shared_reimbursement">Shared-expense reimbursement</option><option value="other">Other reversal</option></select><span className="form-note">Link the original purchase where possible. For shared expenses, link the purchase and choose the participant to settle the receivable.</span></Field>}
               {transaction.kind !== "expense" && (
                 <>
                   {(transaction.kind === "refund" ||
@@ -1121,9 +1152,7 @@ export function RecordEditor({
                       </select>
                     </Field>
                   )}
-                  {(["bill_payment", "transfer"].includes(transaction.kind) ||
-                    transaction.externalLender ||
-                    transaction.externalRepayment) && (
+                  {(transaction.externalLender || transaction.externalRepayment || allocatedLoan) && (
                     <>
                       <Field label="External lender (for EMI repayment)">
                         {transactionInput("externalLender")}
@@ -1364,8 +1393,8 @@ export function RecordEditor({
                   defaultValue={editor.record?.kind || "institutional"}
                 >
                   <option value="institutional">Institutional</option>
-                  <option value="lent">Money lent</option>
-                  <option value="borrowed">Money borrowed</option>
+                  {editor.record?.kind === "lent" && <option value="lent">Money lent (legacy)</option>}
+                  {editor.record?.kind === "borrowed" && <option value="borrowed">Money borrowed (legacy)</option>}
                 </select>
               </Field>
               <Field label="Original contractual principal · ₹">
@@ -1589,7 +1618,7 @@ export function RecordEditor({
           <button
             type="button"
             className="button"
-            onClick={onClose}
+            onClick={closeWithCheck}
             disabled={busy}
           >
             Cancel

@@ -16,6 +16,7 @@ import {
   formatDate,
   formatMoney,
   monthlySummary,
+  monthlyCashFlow,
   monthLabel,
   spendingByCategory,
 } from "@/lib/finance";
@@ -37,6 +38,7 @@ export function AnalyticsWorkspace({
     () => ownedAnalyticsData(workspace, userId),
     [workspace, userId],
   );
+  const cash = useMemo(() => monthlyCashFlow(data, month), [data, month]);
   const summary = useMemo(() => monthlySummary(data, month), [data, month]);
   const grossDays = useMemo(() => dailySpending(data, month), [data, month]);
   const days = useMemo(
@@ -126,6 +128,7 @@ export function AnalyticsWorkspace({
         </div>
       </section>
 
+      <p className="form-note">Money In {formatMoney(cash.incoming)} · Money Out {formatMoney(cash.outgoing)}. Bank/wallet cash movements, including loan principal and bill repayments; internal bank/wallet transfers excluded.</p>
       <div className="analytics-chart-grid">
         <section
           className="analytics-panel analytics-daily-panel"

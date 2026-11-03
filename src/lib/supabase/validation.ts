@@ -62,6 +62,11 @@ export const transactionSchema = z
     sourceObjectId: short.nullable().optional(),
     receiptDocumentId: id.nullable().optional(),
     refundOfTransactionId: id.nullable().optional(),
+    loanCommand: z.string().max(6000).nullish(),
+    loanId: id.nullish(),
+    loanEvent: z.enum(["disbursement", "repayment", "interest", "reversal"]).nullish(),
+    reversesTransactionId: id.nullish(),
+    refundReason: z.enum(["merchant_refund", "shared_reimbursement", "other"]).nullish(),
     notes: optionalText,
   })
   .superRefine((v, context) => {
@@ -107,7 +112,9 @@ export const recordSchemas = {
       maskedSuffix: z
         .string()
         .regex(/^\d{0,4}$/, "Use only the last four digits, or leave blank."),
-      creditLimit: nonnegative.nullable().optional(),
+      billingDay: z.number().int().min(1).max(31).nullish(),
+    dueDay: z.number().int().min(1).max(31).nullish(),
+    creditLimit: nonnegative.nullable().optional(),
       openingBalance: money.nullable().optional(),
       openingBalanceDate: nullableDate.optional(),
       active: z.boolean(),
@@ -210,6 +217,9 @@ export const recordSchemas = {
     name: short,
     lender: short,
     kind: z.enum(["institutional", "lent", "borrowed"]),
+    ledgerManaged: z.boolean().optional(),
+    dueDate: date.nullish(),
+    interestTerms: z.string().max(2000).nullish(),
     contractualPrincipal: nonnegative.nullable(),
     netDisbursed: nonnegative.nullable(),
     reportedOutstanding: nonnegative.nullable(),

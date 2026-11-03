@@ -199,7 +199,7 @@ function workspace(owner: string) {
 describe("explicit same-day balance report persistence", () => {
   it("applies the receipt migration without rewriting legacy finance rows or normalized duplicate references", async () => {
     await db.exec("reset role");
-    expect((await db.query("select to_jsonb(t) as value from transactions t order by id")).rows).toEqual(beforeReceiptMigration);
+    expect((await db.query("select to_jsonb(t) - 'loan_id' - 'loan_event' - 'reverses_transaction_id' - 'loan_command' - 'refund_reason' as value from transactions t order by id")).rows).toEqual(beforeReceiptMigration);
   });
 
   it("leaves existing rows untouched and appends exact-decimal, owner-scoped view columns", async () => {
@@ -218,6 +218,7 @@ describe("explicit same-day balance report persistence", () => {
       ...previousViewColumns,
       "from_balance_snapshot_id",
       "to_balance_snapshot_id",
+      "loan_id", "loan_event", "reverses_transaction_id", "loan_command", "refund_reason",
     ]);
     await newOwner();
     expect(await readTransaction(legacyTransaction)).toBeUndefined();

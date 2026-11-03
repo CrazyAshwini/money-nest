@@ -8,6 +8,7 @@ export const profiles = pgTable("profiles", {
   preferences: jsonb("preferences").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  displayName: text("display_name"),
 });
 
 export const categories = pgTable("categories", {
@@ -38,6 +39,8 @@ export const accounts = pgTable("accounts", {
   accent: text("accent"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  billingDay: integer("billing_day"),
+  dueDay: integer("due_day"),
 }, table => [
   unique().on(table.userId, table.id),
 ]);
@@ -118,6 +121,13 @@ export const transactions = pgTable("transactions", {
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   platform: text("platform"),
+  fromBalanceSnapshotId: uuid("from_balance_snapshot_id"),
+  toBalanceSnapshotId: uuid("to_balance_snapshot_id"),
+  loanId: uuid("loan_id"),
+  loanEvent: text("loan_event"),
+  reversesTransactionId: uuid("reverses_transaction_id"),
+  loanCommand: text("loan_command"),
+  refundReason: text("refund_reason"),
 }, table => [
   unique().on(table.userId, table.id),
   foreignKey({ columns: [table.userId, table.fromAccountId], foreignColumns: [accounts.userId, accounts.id] }),
@@ -126,6 +136,8 @@ export const transactions = pgTable("transactions", {
   foreignKey({ columns: [table.userId, table.receiptDocumentId], foreignColumns: [documents.userId, documents.id] }),
   foreignKey({ columns: [table.userId, table.refundOfTransactionId], foreignColumns: [table.userId, table.id] }),
   foreignKey({ columns: [table.userId, table.importBatchId], foreignColumns: [importBatches.userId, importBatches.id] }),
+  foreignKey({ columns: [table.userId, table.loanId], foreignColumns: [loans.userId, loans.id] }),
+  foreignKey({ columns: [table.userId, table.reversesTransactionId], foreignColumns: [table.userId, table.id] }),
 ]);
 
 export const bills = pgTable("bills", {
@@ -212,6 +224,9 @@ export const loans = pgTable("loans", {
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  ledgerManaged: boolean("ledger_managed").notNull().default(false),
+  dueDate: date("due_date", { mode: "string" }),
+  interestTerms: text("interest_terms"),
 }, table => [
   unique().on(table.userId, table.id),
   foreignKey({ columns: [table.userId, table.repaymentAccountId], foreignColumns: [accounts.userId, accounts.id] }),
@@ -291,6 +306,7 @@ export const expenseGroups = pgTable("expense_groups", {
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  kind: text("kind").notNull().default("expense"),
 }, table => [
   unique().on(table.userId, table.id),
   foreignKey({ columns: [table.userId, table.transactionId], foreignColumns: [transactions.userId, transactions.id] }),
@@ -385,4 +401,64 @@ export const auditEvents = pgTable("audit_events", {
   occurredAt: timestamp("occurred_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, table => [
   unique().on(table.userId, table.id),
+]);
+
+export const workspaceRevisions = pgTable("workspace_revisions", {
+  userId: uuid("user_id").primaryKey(),
+});
+
+export const commerceState = pgTable("commerce_state", {
+  userId: uuid("user_id").primaryKey(),
+  data: jsonb("data").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+});
+
+export const legacyFinanceAuditState = pgTable("legacy_finance_audit_state", {
+  userId: uuid("user_id").primaryKey(),
+  data: jsonb("data").notNull(),
+  importKey: text("import_key"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+});
+
+export const financeHandoffBatches = pgTable("finance_handoff_batches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  inputHash: text("input_hash").notNull(),
+  manifest: jsonb("manifest").notNull(),
+  decisions: jsonb("decisions").notNull().default("[]"),
+  preview: jsonb("preview").notNull().default({}),
+  state: text("state").notNull().default("staged"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, table => [
+  unique().on(table.userId, table.inputHash),
+  unique().on(table.userId, table.id),
+]);
+
+export const financeSourceObservations = pgTable("finance_source_observations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  collection: text("collection").notNull(),
+  recordId: uuid("record_id").notNull(),
+  sourceSystem: text("source_system").notNull(),
+  sourceObjectId: text("source_object_id").notNull(),
+  evidence: jsonb("evidence").notNull(),
+  confirmationState: text("confirmation_state").notNull(),
+  batchId: uuid("batch_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, table => [
+  unique().on(table.userId, table.sourceSystem, table.sourceObjectId),
+  foreignKey({ columns: [table.userId, table.batchId], foreignColumns: [financeHandoffBatches.userId, financeHandoffBatches.id] }),
+]);
+
+export const financeHandoffBackups = pgTable("finance_handoff_backups", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull(),
+  batchId: uuid("batch_id").notNull(),
+  workspace: jsonb("workspace").notNull(),
+  commerce: jsonb("commerce").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, table => [
+  foreignKey({ columns: [table.userId, table.batchId], foreignColumns: [financeHandoffBatches.userId, financeHandoffBatches.id] }),
 ]);

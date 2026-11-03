@@ -2,6 +2,7 @@ import { z } from "zod";
 import Decimal from "decimal.js";
 import {
   isDebtAccount,
+  groupSummary,
   localDateISO,
   sumMoney,
   validateBillAllocation,
@@ -60,6 +61,8 @@ export const accountSchema = z
         /^(?:\d{1,4})?$/,
         "Use only the last four digits, or leave blank.",
       ),
+    billingDay: z.number().int().min(1).max(31).nullish(),
+    dueDay: z.number().int().min(1).max(31).nullish(),
     creditLimit: optionalMoney,
     openingBalance: z
       .string()
@@ -114,6 +117,11 @@ export const transactionSchema = z
     sourceObjectId: z.string().trim().max(200).nullish(),
     receiptDocumentId: uuid.nullish(),
     refundOfTransactionId: uuid.nullish(),
+    loanCommand: z.string().max(6000).nullish(),
+    loanId: uuid.nullish(),
+    loanEvent: z.enum(["disbursement", "repayment", "interest", "reversal"]).nullish(),
+    reversesTransactionId: uuid.nullish(),
+    refundReason: z.enum(["merchant_refund", "shared_reimbursement", "other"]).nullish(),
     notes: z.string().max(2000).nullish(),
     createdAt: z.string().datetime({ offset: true }).optional(),
     updatedAt: z.string().datetime({ offset: true }).optional(),
@@ -269,6 +277,9 @@ export const loanSchema = z.object({
   name: z.string().trim().min(1).max(100),
   lender: z.string().trim().min(1).max(100),
   kind: z.enum(["institutional", "lent", "borrowed"]),
+  ledgerManaged: z.boolean().optional(),
+  dueDate: isoDateSchema.nullish(),
+  interestTerms: z.string().max(2000).nullish(),
   contractualPrincipal: moneySchema.nullable(),
   netDisbursed: moneySchema.nullable(),
   reportedOutstanding: moneySchema.nullable(),
@@ -280,7 +291,7 @@ export const loanSchema = z.object({
   scheduledTotal: optionalMoney,
   repaymentAccountId: uuid.nullable(),
   disbursedOn: isoDateSchema.nullable(),
-  notes: boundedText.optional(),
+  notes: z.string().max(2000).optional(),
 });
 export const emiSchema = z
   .object({
@@ -432,6 +443,10 @@ export function validateWorkspaceRecord<K extends keyof WorkspaceData>(
   const existing = data[collection].find((row) => row.id === record.id);
   if (existing && existing.userId !== userId)
     throw new Error("This record belongs to a different workspace.");
+  if (collection === "transactions" && ((record as Transaction).loanId || (existing as Transaction | undefined)?.loanId))
+    throw new Error("Use Loans & Borrowings for immutable linked loan events.");
+  if (collection === "loans" && ((record as Loan).ledgerManaged || (existing as Loan | undefined)?.ledgerManaged))
+    throw new Error("Use Loans & Borrowings for managed agreements.");
   const account = (id: string | null | undefined) => {
     if (!id) return undefined;
     const found = data.accounts.find((a) => a.id === id && a.userId === userId);
@@ -460,8 +475,27 @@ export function validateWorkspaceRecord<K extends keyof WorkspaceData>(
   } else if (collection === "transactions") {
     const next = record as Transaction;
     const previous = existing as Transaction | undefined;
-    account(next.fromAccountId);
-    account(next.toAccountId);
+    for (const side of ["fromAccountId", "toAccountId"] as const) {
+      const linked = account(next[side]);
+      if (linked && !linked.active && (!previous || previous[side] !== next[side])) throw new Error("Choose an active account for new movements.");
+    }
+    if (next.kind === "bill_payment" && next.toAccountId && (!previous || previous.kind !== next.kind || previous.fromAccountId !== next.fromAccountId || previous.toAccountId !== next.toAccountId)) {
+      const from = account(next.fromAccountId), to = account(next.toAccountId);
+      if (!from || isDebtAccount(from) || !to || !isDebtAccount(to)) throw new Error("Bill repayments need a bank/wallet source and a card/Pay Later liability.");
+    }
+    if (next.refundReason === "shared_reimbursement" && next.refundOfTransactionId) {
+      const groups = data.groups.filter(g => g.userId === userId && g.transactionId === next.refundOfTransactionId && g.paidBy === "You" && g.kind !== "contribution_pool");
+      if (groups.length !== 1) throw new Error("Link a purchase with a recorded shared-expense agreement.");
+      const group = groups[0];
+      const share = data.shares.find(s => s.userId === userId && s.groupId === group.id && !s.isOwner && s.participant === next.externalPayer);
+      if (!share) throw new Error("Choose the participant who repaid their share.");
+      const before = {...data, transactions: data.transactions.filter(t => t.id !== next.id), settlements: data.settlements.filter(s => s.transactionId !== next.id)};
+      const repaid = sumMoney([
+        ...before.settlements.filter(s => s.userId === userId && s.groupId === group.id && s.counterparty === share.participant && s.direction === "incoming" && before.transactions.some(t => t.id === s.transactionId && t.status === "posted")).map(s => s.amount),
+        ...before.transactions.filter(t => t.userId === userId && t.status === "posted" && t.refundReason === "shared_reimbursement" && t.refundOfTransactionId === group.transactionId && t.externalPayer === share.participant && !before.settlements.some(s => s.transactionId === t.id)).map(t => t.amount)
+      ]);
+      if (new Decimal(next.amount).plus(repaid).gt(share.amount) || new Decimal(next.amount).gt(groupSummary(before,group.id).receivable)) throw new Error("Reimbursement exceeds this participant's remaining share.");
+    }
     if (next.sourceSystem === "receipt_ai") {
       const sameSource = previous?.sourceSystem === next.sourceSystem &&
         previous?.sourceObjectId === next.sourceObjectId;

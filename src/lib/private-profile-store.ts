@@ -1,3 +1,4 @@
+import { applyPersonalLoanCommand, assertPersonalLoanRecordEdit } from "./personal-loans";
 /** Node-only persistence. Never import this module into client components. */
 import {
   createCipheriv,
@@ -600,6 +601,7 @@ export async function savePrivateRecord<K extends keyof WorkspaceData>(
     try {
       if (!(collection in workspaceRecordSchemas)) throw new Error();
       if ((input as OwnedRecord).userId !== store.profile.id) throw new Error();
+      assertPersonalLoanRecordEdit(store.workspace, collection, input as OwnedRecord);
       const sanitized = sanitizeWorkspaceTransactions(store.workspace);
       record = validateWorkspaceRecord(
         sanitized,
@@ -654,6 +656,8 @@ export async function deletePrivateRecord<K extends keyof WorkspaceData>(
       (row) => row.id === id,
     );
     if (!existing) return store.workspace;
+    assertPersonalLoanRecordEdit(store.workspace, collection, existing);
+    if (collection === "accounts") throw new PrivateProfileError("invalid", "Archive accounts to preserve financial history.");
     if (existing.userId !== store.profile.id) {
       throw new PrivateProfileError("auth", "Unauthorized.");
     }
@@ -939,5 +943,18 @@ export async function authenticatePrivateProfile(
   return withStore(async (_dir, maybeStore) => {
     const store = requireSession(maybeStore, sessionToken);
     return { ownerId: store.profile.id };
+  });
+}
+
+export async function commitPrivatePersonalLoan(sessionToken: string, input: unknown) {
+  return withStore(async (dir, maybeStore) => {
+    const store = requireSession(maybeStore, sessionToken);
+    const next = applyPersonalLoanCommand(store.workspace, store.profile.id, input);
+    if (next !== store.workspace) {
+      store.workspace = next;
+      audit(store, "loans", (input as {loanId:string}).loanId, "created", "Linked loan event committed.");
+      await writeStore(dir, store);
+    }
+    return store.workspace;
   });
 }

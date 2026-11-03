@@ -48,14 +48,21 @@ for migration in sorted((root / 'supabase/migrations').glob('*.sql')):
             continue
         if name not in tables:
             raise ValueError(f'{migration.name}: added column targets unknown table {name}')
-        column = column_pattern.fullmatch(body.strip())
-        if not column or len(split_columns(body)) != 1:
-            raise ValueError(f'{migration.name}: unsupported ADD COLUMN metadata: {body.strip()}')
-        field = column[1].lower()
-        if any(existing and existing[1].lower() == field
-               for part in tables[name] if (existing := column_pattern.fullmatch(part))):
-            raise ValueError(f'{migration.name}: duplicate column {name}.{field}')
-        tables[name].append(body.strip())
+        for addition in split_columns(body):
+            addition = re.sub(r'^add\s+column\s+', '', addition, flags=re.I)
+            if re.match(r'^add\s+foreign\b', addition, re.I):
+                tables[name].append(re.sub(r'^add\s+', '', addition, flags=re.I))
+                continue
+            if re.match(r'^add\s+(check|constraint)\b', addition, re.I):
+                continue
+            column = column_pattern.fullmatch(addition)
+            if not column:
+                raise ValueError(f'{migration.name}: unsupported ADD COLUMN metadata: {addition}')
+            field = column[1].lower()
+            if any(existing and existing[1].lower() == field
+                   for part in tables[name] if (existing := column_pattern.fullmatch(part))):
+                raise ValueError(f'{migration.name}: duplicate column {name}.{field}')
+            tables[name].append(addition)
 
 lines = ['// Generated with scripts/generate-db-schema.py. Canonical DDL/security: supabase/migrations.',
          'import { pgTable, uuid, text, numeric, boolean, integer, date, timestamp, jsonb, unique, foreignKey } from "drizzle-orm/pg-core";', '']

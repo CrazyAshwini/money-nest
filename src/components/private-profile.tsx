@@ -18,6 +18,7 @@ import {
 import { useFinance } from "./finance-provider";
 import { BrandLogo } from "./brand-lockup";
 import { Badge, Field, PasswordField } from "./ui";
+import { ProfileAccounts } from "./profile-accounts";
 import { NAV_ITEMS } from "./workspace-navigation";
 import "./profile-theme.css";
 import styles from "./private-profile.module.css";
@@ -312,6 +313,7 @@ export function PrivateProfilePage() {
             </button>
           </section>
         )}
+        <ProfileAccounts />
         <nav
           className={`profile-workspace-navigation ${styles.card} ${styles.financeNavigation}`}
           aria-labelledby="profile-workspace-heading"

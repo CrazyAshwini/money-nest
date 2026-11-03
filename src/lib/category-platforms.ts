@@ -63,6 +63,8 @@ export const CATEGORY_PLATFORMS: Readonly<Record<Category, readonly string[]>> =
     ],
     Travel: ["IRCTC", "MakeMyTrip", "Goibibo", "Airline", OTHER_PLATFORM],
     Entertainment: ["BookMyShow", "PVR INOX", "Gaming", OTHER_PLATFORM],
+    "Gift Given": ["Gift shop", OTHER_PLATFORM],
+    "Gift Received": ["Personal gift", OTHER_PLATFORM],
     Other: ["Local merchant", "Online purchase", OTHER_PLATFORM],
   };
 

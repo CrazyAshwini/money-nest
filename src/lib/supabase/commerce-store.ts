@@ -143,3 +143,23 @@ export async function commitCloudCommerce(
     409,
   );
 }
+
+export async function commitCloudPersonalLoan(supabase: SupabaseClient, userId: string, input: unknown) {
+  const { applyPersonalLoanCommand } = await import("../personal-loans");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const before = await readCloudFinanceState(supabase, userId);
+    const after = applyPersonalLoanCommand(before.workspace, userId, input);
+    if (after === before.workspace) return;
+    const added = after.transactions.filter(t => !before.workspace.transactions.some(old => old.id === t.id));
+    const loan = after.loans.find(l => !before.workspace.loans.some(old => old.id === l.id));
+    const result = await supabase.rpc("commit_personal_loan", {
+      p_expected_revision: before.revision,
+      p_loan: loan ? toDatabase(recordSchemas.loans.parse(loan), userId) : null,
+      p_transactions: added.map(t => toDatabase(recordSchemas.transactions.parse(t), userId)),
+    });
+    if (result.error?.code === "40001") continue;
+    if (result.error) throw new CloudCommerceError(safeDatabaseError(result.error.code, result.error.message));
+    return;
+  }
+  throw new CloudCommerceError("Your workspace changed. Reload and retry.", 409);
+}

@@ -17,6 +17,8 @@ export type Category =
   | "Health"
   | "Travel"
   | "Entertainment"
+  | "Gift Given"
+  | "Gift Received"
   | "Other";
 
 export interface OwnedRecord {
@@ -28,6 +30,8 @@ export interface Account extends OwnedRecord {
   institution: string;
   kind: AccountKind;
   maskedSuffix: string;
+  billingDay?: number | null;
+  dueDay?: number | null;
   creditLimit?: Money | null;
   openingBalance?: Money | null;
   openingBalanceDate?: string | null;
@@ -72,6 +76,11 @@ export interface Transaction extends OwnedRecord {
   sourceObjectId?: string | null;
   receiptDocumentId?: string | null;
   refundOfTransactionId?: string | null;
+  loanCommand?: string | null;
+  loanId?: string | null;
+  loanEvent?: "disbursement" | "repayment" | "interest" | "reversal" | null;
+  reversesTransactionId?: string | null;
+  refundReason?: "merchant_refund" | "shared_reimbursement" | "other" | null;
   notes?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -113,6 +122,10 @@ export interface FixedDeposit extends OwnedRecord {
   notes?: string;
 }
 export interface Loan extends OwnedRecord {
+  /** Only new, atomically disbursed agreements use event-derived balances. */
+  ledgerManaged?: boolean;
+  dueDate?: string | null;
+  interestTerms?: string | null;
   name: string;
   lender: string;
   kind: "institutional" | "lent" | "borrowed";
@@ -256,6 +269,8 @@ export const CATEGORIES: Category[] = [
   "Health",
   "Travel",
   "Entertainment",
+  "Gift Given",
+  "Gift Received",
   "Other",
 ];
 export const TRANSACTION_KINDS: TransactionKind[] = [
@@ -272,3 +287,7 @@ export const ACCOUNT_KINDS: AccountKind[] = [
   "credit_card",
   "pay_later",
 ];
+
+/** Creation choices only. Legacy adjustment remains a readable internal kind. */
+export const ENTRY_TRANSACTION_KINDS: TransactionKind[] = ["expense", "income", "bill_payment", "transfer", "refund"];
+export const TRANSACTION_LABELS: Record<TransactionKind, string> = {expense: "Expense", income: "Income", bill_payment: "Bill Repayment", transfer: "Transfer", refund: "Refund / Money Back", adjustment: "Adjustment"};
