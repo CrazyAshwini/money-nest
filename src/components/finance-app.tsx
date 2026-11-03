@@ -144,7 +144,7 @@ export function FinanceApp() {
     );
   if (page === "login" || mode === "login")
     return backend === "local" ? <PrivateProfilePage /> : <LoginPage />;
-  if (page === "profile" && mode !== "private" && mode !== "cloud")
+  if (page === "profile" && mode !== "private" && mode !== "cloud" && mode !== "demo")
     return <PrivateProfilePage />;
   const title =
     page === "analytics"

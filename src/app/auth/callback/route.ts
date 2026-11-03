@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { privateProfileEnabled } from "@/lib/private-profile-store";
 import { cloudUserAllowed } from "@/lib/cloud-owner";
 import { cloudApplicationOrigin } from "@/lib/cloud-request";
+import { DEMO_SESSION_COOKIE } from "@/lib/demo-session";
 
 export const dynamic = "force-dynamic";
 const otpTypes = new Set([
@@ -107,7 +108,9 @@ export async function GET(request: NextRequest) {
       await supabase.auth.signOut();
       return failed();
     }
-    return redirect(origin, destination(params.get("next")));
+    const confirmed = redirect(origin, destination(params.get("next")));
+    confirmed.cookies.delete(DEMO_SESSION_COOKIE);
+    return confirmed;
   } catch {
     return failed();
   }

@@ -9,6 +9,7 @@ import { privateProfileEnabled } from "@/lib/private-profile-store";
 import { privateImportPOST } from "@/lib/private-profile-http";
 import { cloudRequestAllowed } from "@/lib/cloud-request";
 import { cloudUserAllowed } from "@/lib/cloud-owner";
+import { isDemoSession, demoReadOnlyResponse } from "@/lib/demo-session";
 
 const input = z.object({
   transactions: z.array(transactionSchema).min(1).max(1000),
@@ -22,6 +23,7 @@ export async function POST(request: NextRequest) {
       { error: "Request origin is not allowed." },
       { status: 403 },
     );
+  if (isDemoSession(request)) return demoReadOnlyResponse();
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return NextResponse.json(

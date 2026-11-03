@@ -13,6 +13,7 @@ import {
   isCloudOwner,
 } from "./cloud-owner";
 import { MAX_HOSTED_RECEIPT_BYTES, MAX_RECEIPT_BYTES } from "./receipt-scan";
+import { isDemoSession, DEMO_READ_ONLY_MESSAGE } from "./demo-session";
 
 export class AIOwnerAuthenticationError extends Error {
   constructor(
@@ -51,6 +52,8 @@ export async function authenticateAIOwnerRequest(
     );
     return { ownerId, cloud: false };
   }
+  if (isDemoSession(request))
+    throw new AIOwnerAuthenticationError("demo_read_only", DEMO_READ_ONLY_MESSAGE);
   if (!cloudOwnerConfigured())
     throw new AIOwnerAuthenticationError(
       "cloud_owner_required",

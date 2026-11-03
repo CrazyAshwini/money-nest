@@ -27,6 +27,7 @@ import {
   privateWorkspaceDELETE,
 } from "@/lib/private-profile-http";
 import { createDemoData, DEMO_USER_ID } from "@/lib/seed";
+import { isDemoSession, demoReadOnlyResponse } from "@/lib/demo-session";
 
 export const dynamic = "force-dynamic";
 const response = (body: unknown, status = 200) =>
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
     return response({ error: "Request origin is not allowed." }, 403);
 
   const isDemo =
-    request.cookies.get("money-nest-demo-session")?.value === "1" ||
+    isDemoSession(request) ||
     request.nextUrl.searchParams.get("demo") === "true";
 
   if (isDemo) {
@@ -137,9 +138,7 @@ export async function POST(request: NextRequest) {
   if (!cloudRequestAllowed(request, true))
     return response({ error: "Request origin is not allowed." }, 403);
 
-  if (request.cookies.get("money-nest-demo-session")?.value === "1") {
-    return response({ ok: true, status: "saved" });
-  }
+  if (isDemoSession(request)) return demoReadOnlyResponse();
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return response(
@@ -292,9 +291,7 @@ export async function DELETE(request: NextRequest) {
   if (!cloudRequestAllowed(request, true))
     return response({ error: "Request origin is not allowed." }, 403);
 
-  if (request.cookies.get("money-nest-demo-session")?.value === "1") {
-    return response({ ok: true, status: "deleted" });
-  }
+  if (isDemoSession(request)) return demoReadOnlyResponse();
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return response(

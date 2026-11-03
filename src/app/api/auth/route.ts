@@ -14,6 +14,7 @@ import {
   cloudApplicationOrigin,
   cloudRequestAllowed,
 } from "@/lib/cloud-request";
+import { DEMO_SESSION_COOKIE, isDemoSession, demoReadOnlyResponse } from "@/lib/demo-session";
 
 export const dynamic = "force-dynamic";
 const response = (body: unknown, status = 200, retryAfter?: number) =>
@@ -28,10 +29,11 @@ const response = (body: unknown, status = 200, retryAfter?: number) =>
 
 const emailInput = z.string().trim().toLowerCase().max(254).pipe(z.email());
 const input = z.discriminatedUnion("action", [
+  z.strictObject({ action: z.literal("exit-demo") }),
   z.object({
     action: z.enum(["login", "signup", "logout", "reset", "update-password"]),
     email: emailInput.optional(),
-    password: z.string().min(4).max(128).optional(),
+    password: z.string().min(8).max(128).optional(),
   }),
   z.strictObject({
     action: z.literal("verify-signup-otp"),
@@ -104,16 +106,6 @@ export async function POST(request: NextRequest) {
   if (privateProfileEnabled()) return privateAuthPOST(request);
   if (!cloudRequestAllowed(request, true))
     return response({ error: "Request origin is not allowed." }, 403);
-  const supabase = await createSupabaseServerClient();
-  if (!supabase)
-    return response(
-      {
-        configured: false,
-        error:
-          "Supabase is not configured. Add your project URL and public key to .env.local.",
-      },
-      503,
-    );
   if (Number(request.headers.get("content-length") || 0) > 8192)
     return response({ error: "Request is too large." }, 413);
   const body = await boundedBody(request);
@@ -127,7 +119,21 @@ export async function POST(request: NextRequest) {
       },
       400,
     );
+  if (parsed.data.action === "exit-demo") {
+    if (!isDemoSession(request))
+      return response({ error: "No demo session is active." }, 403);
+    const exited = response({ ok: true });
+    exited.cookies.delete(DEMO_SESSION_COOKIE);
+    return exited;
+  }
   const { action, email } = parsed.data;
+  if (action === "update-password" && isDemoSession(request)) return demoReadOnlyResponse();
+  const supabase = await createSupabaseServerClient();
+  if (!supabase)
+    return response(
+      { configured: false, error: "Supabase is not configured. Add your project URL and public key to .env.local." },
+      503,
+    );
 
   if (action === "resend-signup-otp") {
     const origin = cloudApplicationOrigin(request);
@@ -235,11 +241,13 @@ export async function POST(request: NextRequest) {
           403,
         );
       }
-      return response({
+      const confirmed = response({
         ok: true,
         authenticated: true,
         redirectTo: "/dashboard",
       });
+      confirmed.cookies.delete(DEMO_SESSION_COOKIE);
+      return confirmed;
     } catch {
       await clearSession();
       return response(
@@ -264,13 +272,15 @@ export async function POST(request: NextRequest) {
       403,
     );
   if (action === "logout") {
-    const { error } = await supabase.auth.signOut().catch(() => ({ error: null }));
-    const res = response(
-      error ? { error: "Could not sign out. Try again." } : { ok: true },
-      error ? 400 : 200,
-    );
-    res.cookies.delete("money-nest-demo-session");
-    return res;
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) return response({ error: "Could not sign out. Try again." }, 400);
+      const res = response({ ok: true });
+      res.cookies.delete(DEMO_SESSION_COOKIE);
+      return res;
+    } catch {
+      return response({ error: "Could not sign out. Try again." }, 503);
+    }
   }
   if (action === "reset") {
     if (!email) return response({ error: "Enter a valid email address." }, 400);
@@ -344,10 +354,11 @@ export async function POST(request: NextRequest) {
         email: "demo@moneynest.com",
       },
     });
-    res.cookies.set("money-nest-demo-session", "1", {
+    res.cookies.set(DEMO_SESSION_COOKIE, "1", {
       path: "/",
       httpOnly: true,
       sameSite: "lax",
+      secure: request.nextUrl.protocol === "https:",
       maxAge: 60 * 60 * 24 * 7,
     });
     return res;
@@ -457,11 +468,13 @@ export async function POST(request: NextRequest) {
       );
     }
   }
-  return response({
+  const res = response({
     ok: true,
     needsEmailConfirmation: action === "signup" && !result.data.session,
     ...(action === "signup" && !result.data.session
       ? { retryAfter: OTP_RETRY_AFTER }
       : {}),
   });
+  if (action === "login") res.cookies.delete(DEMO_SESSION_COOKIE);
+  return res;
 }

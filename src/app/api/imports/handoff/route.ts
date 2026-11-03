@@ -8,6 +8,7 @@ import { readCloudFinanceState } from "@/lib/supabase/commerce-store";
 import { planHandoffImport } from "@/lib/handoff-import";
 import { fromDatabase, recordSchemas } from "@/lib/supabase/validation";
 import type { WorkspaceData } from "@/lib/types";
+import { isDemoSession, demoReadOnlyResponse } from "@/lib/demo-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +40,7 @@ const input = z
 async function authenticate(request: NextRequest, write = false) {
   if (!cloudRequestAllowed(request, write))
     return { error: reply({ error: "Request origin is not allowed." }, 403) };
+  if (isDemoSession(request)) return { error: demoReadOnlyResponse() };
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return { error: reply({ error: "Cloud storage is not configured." }, 503) };

@@ -8,6 +8,13 @@ const syntheticPassword = "Fictional-signup-only-42";
 const syntheticCode = "001234";
 const screenshots = path.resolve("artifacts/signup-otp");
 
+async function pauseSignupClock(page: Page) {
+  await page.clock.install({ time: new Date("2030-01-01T10:00:00Z") });
+  // A fixed epoch and generous future pause do not race the host clock on a
+  // busy machine. All cooldown assertions below still advance exact durations.
+  await page.clock.pauseAt(new Date("2030-01-01T10:10:00Z"));
+}
+
 type AuthRequest = {
   action: string;
   email?: string;
@@ -385,8 +392,7 @@ test("resend respects server cooldowns and a provider rate-limit retryAfter", as
     },
   });
   await openSignup(page);
-  await page.clock.install();
-  await page.clock.pauseAt(new Date(Date.now() + 1_000));
+  await pauseSignupClock(page);
   await fillSignup(page);
   await page
     .getByRole("button", { name: "Create account", exact: true })
@@ -497,7 +503,7 @@ test("verification success without workspace authentication never redirects into
   expect(state.workspaceReads).toBeGreaterThan(1);
 });
 
-test("workspace refresh network failure after verification keeps the user on sign-in", async ({
+test("workspace refresh network failure after verification stays outside finance and offers retry", async ({
   page,
 }) => {
   const state = await isolatedSignup(page);
@@ -507,14 +513,22 @@ test("workspace refresh network failure after verification keeps the user on sig
     .getByLabel("Verification code", { exact: true })
     .fill(syntheticCode);
   await page.getByRole("button", { name: "Verify email", exact: true }).click();
+  const failure = page.locator("[data-workspace-loading]");
+  await expect(failure.getByRole("alert")).toContainText(
+    /couldn.t load your workspace|connection/i,
+  );
+  await expect(page.locator(".app-shell")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/login$/);
+  expect(state.workspaceReads).toBeGreaterThan(1);
+  state.refreshFails = false;
+  await failure.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Sign in", exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".login-form").getByRole("alert")).toContainText(
-    /sign in|session|workspace/i,
-  );
   await expect(page).toHaveURL(/\/login$/);
-  expect(state.workspaceReads).toBeGreaterThan(1);
+  await expect(page.getByLabel("Password", { exact: true })).toBeEmpty();
+  expect(state.blockedFinanceWrites).toBe(0);
+  await expectNoPersistedCredentials(page);
 });
 
 for (const response of [
@@ -670,9 +684,23 @@ for (const width of [320, 375, 390, 430, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: width < 768 ? 844 : 1000 });
     await openSignup(page);
     await expectResponsiveControls(page);
-    await expect(
-      page.locator('img[src*="panda-money-bag"]:visible').first(),
-    ).toBeVisible();
+    const mascot = page
+      .locator(
+        width <= 760
+          ? ".access-mobile-brand img.money-nest-brand-mascot:visible"
+          : "img.access-panda:visible",
+      )
+      .first();
+    await expect(mascot).toBeVisible();
+    await expect(mascot).toHaveAttribute("src", "/brand/moneynest-mascot.webp");
+    await expect
+      .poll(() =>
+        mascot.evaluate((element) => {
+          const image = element as HTMLImageElement;
+          return image.complete && image.naturalWidth > 0;
+        }),
+      )
+      .toBe(true);
     await mkdir(screenshots, { recursive: true });
     await page.screenshot({
       path: path.join(screenshots, `signup-${width}.png`),
@@ -718,8 +746,7 @@ for (const width of [390, 1440]) {
     const state = await isolatedSignup(page);
     await page.setViewportSize({ width, height: width < 768 ? 844 : 1000 });
     await enterVerification(page);
-    await page.clock.install();
-    await page.clock.pauseAt(new Date(Date.now() + 1_000));
+    await pauseSignupClock(page);
     await page
       .getByLabel("Verification code", { exact: true })
       .fill(syntheticCode);

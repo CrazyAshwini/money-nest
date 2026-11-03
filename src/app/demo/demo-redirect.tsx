@@ -1,37 +1,74 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useFinance } from "@/components/finance-provider";
 
 export function DemoRedirect() {
   const router = useRouter();
-  const { refresh, toast } = useFinance();
+  const { refresh, mode, backend } = useFinance();
   const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const startedAttempt = useRef<number | null>(null);
+  const displayError =
+    error ||
+    (backend === "local"
+      ? "The demo is available in the cloud app. Your private profile stays on this computer."
+      : mode === "error"
+        ? "The demo workspace could not be opened. Please retry."
+        : "");
 
   useEffect(() => {
+    if (mode === "demo") {
+      router.replace("/dashboard");
+      return;
+    }
+    if (
+      mode === "loading" ||
+      backend === "local" ||
+      startedAttempt.current === attempt
+    )
+      return;
+    startedAttempt.current = attempt;
+    const request = new AbortController();
+    let active = true;
+    let authSettled = false;
     async function startDemo() {
       try {
         const res = await fetch("/api/auth", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: request.signal,
           body: JSON.stringify({
             action: "login",
             email: "demo@moneynest.com",
             password: "demo1234",
           }),
         });
+        authSettled = true;
         if (!res.ok) throw new Error("Could not initialize demo session.");
-        await refresh();
-        toast("Welcome to the Money Nest Demo Account!");
-        router.replace("/dashboard");
+        if (!active) return;
+        if (!(await refresh()))
+          throw new Error(
+            "The demo workspace could not be opened. Please retry.",
+          );
+        if (active) router.replace("/dashboard");
       } catch (err) {
+        authSettled = true;
+        if (!active) return;
         setError(err instanceof Error ? err.message : "Failed to enter demo.");
-        setTimeout(() => router.replace("/login?demo=1"), 1200);
       }
     }
     void startDemo();
-  }, [refresh, router, toast]);
+    return () => {
+      active = false;
+      request.abort();
+      // Development effect replay cancels an unfinished request before starting
+      // it again. Completed attempts stay guarded until an explicit retry.
+      if (!authSettled && startedAttempt.current === attempt)
+        startedAttempt.current = null;
+    };
+  }, [refresh, router, attempt, mode, backend]);
 
   return (
     <div
@@ -71,10 +108,29 @@ export function DemoRedirect() {
             lineHeight: 1.5,
           }}
         >
-          Preparing all accounts, credit cards, loans, EMIs, and transactions for AI testing…
+          Preparing all accounts, credit cards, loans, EMIs, and transactions
+          for AI testing…
         </p>
-        {error ? (
-          <p style={{ color: "#ff8585", fontSize: "12px" }}>{error}</p>
+        {displayError ? (
+          <>
+            <p role="alert" style={{ color: "#ff8585", fontSize: "12px" }}>
+              {displayError}
+            </p>
+            {backend !== "local" && (
+              <button
+                className="button primary"
+                onClick={() => {
+                  setError("");
+                  setAttempt((current) => current + 1);
+                }}
+              >
+                Retry demo
+              </button>
+            )}
+            <button className="button" onClick={() => router.replace("/login")}>
+              Back to sign in
+            </button>
+          </>
         ) : (
           <div
             style={{

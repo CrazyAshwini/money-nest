@@ -5,6 +5,7 @@ import { cloudUserAllowed } from "@/lib/cloud-owner";
 import { cloudRequestAllowed } from "@/lib/cloud-request";
 import { readCloudProfile } from "@/lib/cloud-profile";
 import { privateProfileEnabled } from "@/lib/private-profile-store";
+import { isDemoSession, demoReadOnlyResponse } from "@/lib/demo-session";
 import {
   privateAuthPOST,
   privateProfileGET,
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
   if (!cloudRequestAllowed(request))
     return privateResponse({ error: "Request origin is not allowed." }, 403);
 
-  if (request.cookies.get("money-nest-demo-session")?.value === "1") {
+  if (isDemoSession(request)) {
     return privateResponse({
       profile: {
         displayName: "AI Agent Demo Account",
@@ -55,6 +56,7 @@ export async function GET(request: NextRequest) {
 }
 export async function POST(request: NextRequest) {
   if (privateProfileEnabled()) return privateAuthPOST(request);
+  if (isDemoSession(request)) return demoReadOnlyResponse();
   return privateResponse({ error: "Use the profile update form." }, 405);
 }
 
@@ -70,9 +72,7 @@ export async function PATCH(request: NextRequest) {
   if (!cloudRequestAllowed(request, true))
     return privateResponse({ error: "Request origin is not allowed." }, 403);
 
-  if (request.cookies.get("money-nest-demo-session")?.value === "1") {
-    return privateResponse({ ok: true });
-  }
+  if (isDemoSession(request)) return demoReadOnlyResponse();
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return privateResponse({ error: "Cloud storage is not configured." }, 503);

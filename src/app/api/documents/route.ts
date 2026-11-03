@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { fromDatabase } from "@/lib/supabase/validation";
 import { cloudRequestAllowed } from "@/lib/cloud-request";
 import { cloudUserAllowed } from "@/lib/cloud-owner";
+import { isDemoSession, demoReadOnlyResponse } from "@/lib/demo-session";
 import {
   requireRouteRateLimit,
   RouteRateLimitError,
@@ -26,6 +27,7 @@ export async function POST(request: NextRequest) {
       { error: "Request origin is not allowed." },
       { status: 403 },
     );
+  if (isDemoSession(request)) return demoReadOnlyResponse();
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return NextResponse.json(
@@ -155,6 +157,7 @@ export async function GET(request: NextRequest) {
       { error: "Request origin is not allowed." },
       { status: 403 },
     );
+  if (isDemoSession(request)) return demoReadOnlyResponse();
   const supabase = await createSupabaseServerClient();
   if (!supabase)
     return NextResponse.json(

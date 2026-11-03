@@ -96,6 +96,74 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllEnvs());
 
+describe("demo and real authentication transitions", () => {
+  const demoCookie = {cookie:"money-nest-demo-session=1"};
+  it("exits demo without initializing Supabase or signing out the underlying real session",async()=>{
+    const result=await POST(request({action:"exit-demo"},{cookie:"money-nest-demo-session=1; synthetic-real-session=present"}));
+    expect(result.status).toBe(200);
+    expect(await result.json()).toEqual({ok:true});
+    expect(result.cookies.get("money-nest-demo-session")?.value).toBe("");
+    expect(result.cookies.getAll().map((cookie)=>cookie.name)).toEqual(["money-nest-demo-session"]);
+    expect(mocks.client).not.toHaveBeenCalled();
+    expect(mocks.getUser).not.toHaveBeenCalled();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+  it("rejects a demo-exit request without its marker before touching real authentication",async()=>{
+    const result=await POST(request({action:"exit-demo"}));
+    expect(result.status).toBe(403);
+    expect((await result.json()).ok).not.toBe(true);
+    expect(result.cookies.getAll()).toEqual([]);
+    expect(mocks.client).not.toHaveBeenCalled();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+  it.each(["login","signup","update-password"])("keeps an eight-character minimum for real %s passwords",async(action)=>{
+    const result=await POST(request({action,email:OWNER_EMAIL,password:"short4"}));
+    expect(result.status).toBe(400);
+    expect(mocks.client).not.toHaveBeenCalled();
+    expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+    expect(mocks.signUp).not.toHaveBeenCalled();
+    expect(mocks.updateUser).not.toHaveBeenCalled();
+  });
+  it("clears demo mode only after a verified real password login",async()=>{
+    const result=await POST(request({action:"login",email:OWNER_EMAIL,password:"owner-password"},demoCookie));
+    expect(result.status).toBe(200);
+    expect(mocks.getUser).toHaveBeenCalledOnce();
+    expect(result.cookies.get("money-nest-demo-session")?.value).toBe("");
+  });
+  it("clears demo mode after email-code verification establishes the verified session",async()=>{
+    const result=await POST(request({action:"verify-signup-otp",email:OWNER_EMAIL,token:"012345"},demoCookie));
+    expect(result.status).toBe(200);
+    expect((await result.json()).authenticated).toBe(true);
+    expect(result.cookies.get("money-nest-demo-session")?.value).toBe("");
+  });
+  it("keeps demo mode when real credentials fail",async()=>{
+    mocks.signInWithPassword.mockResolvedValue({error:{code:"invalid_credentials"}});
+    const result=await POST(request({action:"login",email:OWNER_EMAIL,password:"wrong-password"},demoCookie));
+    expect(result.status).toBe(400);
+    expect(result.cookies.get("money-nest-demo-session")).toBeUndefined();
+  });
+  it("blocks an underlying real password mutation while demo mode is active",async()=>{
+    const result=await POST(request({action:"update-password",password:"new-password"},demoCookie));
+    expect(result.status).toBe(403);
+    expect((await result.json()).code).toBe("demo_read_only");
+    expect(mocks.client).not.toHaveBeenCalled();
+  });
+  it.each(["returned","thrown"])("reports a %s logout failure without claiming success or clearing demo mode",async(kind)=>{
+    if(kind==="returned") mocks.signOut.mockResolvedValue({error:{message:"Synthetic failure"}});
+    else mocks.signOut.mockRejectedValue(new Error("Synthetic failure"));
+    const result=await POST(request({action:"logout"},demoCookie));
+    expect(result.status).toBe(kind==="returned"?400:503);
+    expect((await result.json()).ok).not.toBe(true);
+    expect(result.cookies.get("money-nest-demo-session")).toBeUndefined();
+  });
+  it("clears demo mode after a successful sign-out",async()=>{
+    const result=await POST(request({action:"logout"},demoCookie));
+    expect(result.status).toBe(200);
+    expect((await result.json()).ok).toBe(true);
+    expect(result.cookies.get("money-nest-demo-session")?.value).toBe("");
+  });
+});
+
 function ownerUser(overrides: Record<string, unknown> = {}) {
   return {
     id: OWNER_ID,
@@ -232,7 +300,7 @@ describe("cloud signup and existing authentication", () => {
       request({
         action: "login",
         email: "demo@moneynest.com",
-        password: "demo",
+        password: "demo1234",
       }),
     );
 

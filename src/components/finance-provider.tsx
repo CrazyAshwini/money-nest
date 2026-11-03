@@ -160,33 +160,7 @@ export function FinanceProvider({
     setMonth(localDate().slice(0, 7));
     dismissMessage();
   }, [replaceData, dismissMessage, activateIdentity]);
-  const enterDemo = useCallback(() => {
-    if (!allowTestFixtures) return;
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      const parsed = stored ? JSON.parse(stored) : null;
-      replaceData(
-        parsed &&
-          Object.keys(cloneDemoData()).every(
-            (key) =>
-              Array.isArray(parsed[key]) &&
-              parsed[key].every(
-                (row: OwnedRecord) => row.userId === DEMO_USER_ID,
-              ),
-          )
-          ? parsed
-          : cloneDemoData(),
-      );
-    } catch {
-      replaceData(cloneDemoData());
-    }
-    setMode("demo");
-    activateIdentity("demo");
-    setAuthUserId("");
-    setBackend(null);
-    setProfile(null);
-  }, [allowTestFixtures, replaceData, activateIdentity]);
-  const requestWorkspace = useCallback(async (): Promise<boolean> => {
+  const requestWorkspace = useCallback((): Promise<boolean> => {
     // A response belongs to the refresh that requested it. A delayed response
     // from a previous session must never replace the next user's workspace.
     const generation = ++refreshGeneration.current;
@@ -195,13 +169,9 @@ export function FinanceProvider({
       return latest && latest.generation > generation ? latest.promise : false;
     };
     activeLoad.current?.abort();
-    if (needsLoadingScreen.current) {
-      setMode("loading");
-      setLoadingError("");
-      setLoadingStage("checking-session");
-    }
     // Browser storage cannot choose an authenticated workspace. Only an explicitly
     // isolated server permits this legacy flag for synthetic UI regression tests.
+    let fixtureDemo = false;
     try {
       if (!allowTestFixtures) sessionStorage.removeItem("finance-os:mode");
       else if (
@@ -209,9 +179,7 @@ export function FinanceProvider({
         !window.location.pathname.startsWith("/profile") &&
         window.location.pathname !== "/login"
       ) {
-        enterDemo();
-        needsLoadingScreen.current = false;
-        return true;
+        fixtureDemo = true;
       }
     } catch {
       // Unavailable browser storage must still fall through to server authentication.
@@ -225,119 +193,134 @@ export function FinanceProvider({
       timedOut = true;
       controller.abort();
     }, WORKSPACE_LOAD_TIMEOUT_MS);
+    let response: Promise<Response>;
     try {
-      const res = await fetch("/api/workspace", {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (generation !== refreshGeneration.current) return supersedingResult();
-      if (needsLoadingScreen.current) setLoadingStage("loading-records");
-      const result = await res.json();
-      if (generation !== refreshGeneration.current) return supersedingResult();
-      setBackend(
-        result.backend === "local"
-          ? "local"
-          : result.backend === "demo"
-            ? null
-            : result.configured === false
-              ? null
-              : "supabase",
+      response = fetch(
+        fixtureDemo ? "/api/workspace?demo=true" : "/api/workspace",
+        {
+          cache: "no-store",
+          signal: controller.signal,
+        },
       );
-      setNeedsSetup(result.needsSetup === true);
-      setSignupEnabled(result.signupEnabled === true);
-      setTransactionSourceIds(
-        result.backend === "supabase"
-          ? (result.transactionSourceIds ?? {})
-          : {},
-      );
-      setEmailRequired(
-        result.emailRequired === true || Boolean(result.profile?.email),
-      );
-      if (result.configured === false) {
-        clearWorkspace();
-        needsLoadingScreen.current = false;
-        setMode("login");
-        return false;
-      }
-      if (!res.ok && res.status !== 401)
-        throw new Error("Workspace request failed.");
-      if (!result.authenticated) {
-        clearWorkspace();
-        needsLoadingScreen.current = false;
-        setMode("login");
-        return false;
-      }
-      if (
-        !res.ok ||
-        !result.workspace ||
-        typeof result.userId !== "string" ||
-        !result.userId
-      )
-        throw new Error("Workspace response was incomplete.");
-      if (needsLoadingScreen.current) setLoadingStage("preparing-dashboard");
-      const isDemo = result.backend === "demo";
-      const identity = isDemo
-        ? "demo"
-        : `${result.backend === "local" ? "local" : "supabase"}:${result.userId}`;
-      if (identity !== activeIdentity.current) {
-        dismissMessage();
-        setMonth(isDemo ? "2026-10" : localDate().slice(0, 7));
-      }
-      activateIdentity(identity);
-      let workspaceToUse = result.workspace;
-      if (isDemo) {
-        try {
-          const stored = localStorage.getItem(STORAGE_KEY);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            if (
-              parsed &&
-              Object.keys(cloneDemoData()).every(
-                (key) =>
-                  Array.isArray(parsed[key]) &&
-                  parsed[key].every(
-                    (row: OwnedRecord) => row.userId === DEMO_USER_ID,
-                  ),
-              )
-            ) {
-              workspaceToUse = parsed;
-            }
-          }
-        } catch {
-          // Fall back to server workspace if stored state is unreadable
-        }
-      }
-      replaceData(workspaceToUse);
-      setAuthUserId(result.userId);
-      setProfile(result.profile ?? null);
-      needsLoadingScreen.current = false;
-      setMode(isDemo ? "demo" : result.backend === "local" ? "private" : "cloud");
-      return true;
-    } catch {
-      if (generation !== refreshGeneration.current) return supersedingResult();
-      clearWorkspace();
-      needsLoadingScreen.current = true;
-      const safeMessage = timedOut
-        ? "This is taking longer than expected. Check your connection and retry."
-        : "We couldn’t load your workspace. Check your connection and try again.";
-      setLoadingError(safeMessage);
-      setMode("error");
-      toast(safeMessage, "error");
-      return false;
-    } finally {
-      window.clearTimeout(timeout);
-      if (activeLoad.current === controller) activeLoad.current = null;
+    } catch (issue) {
+      response = Promise.reject(issue);
     }
+    return response
+      .then(async (res) => {
+        if (generation !== refreshGeneration.current)
+          return supersedingResult();
+        if (needsLoadingScreen.current) setLoadingStage("loading-records");
+        const result = await res.json();
+        if (generation !== refreshGeneration.current)
+          return supersedingResult();
+        setBackend(
+          result.backend === "local"
+            ? "local"
+            : result.backend === "demo"
+              ? null
+              : result.configured === false
+                ? null
+                : "supabase",
+        );
+        setNeedsSetup(result.needsSetup === true);
+        setSignupEnabled(result.signupEnabled === true);
+        setTransactionSourceIds(
+          result.backend === "supabase"
+            ? (result.transactionSourceIds ?? {})
+            : {},
+        );
+        setEmailRequired(
+          result.emailRequired === true || Boolean(result.profile?.email),
+        );
+        if (result.configured === false) {
+          clearWorkspace();
+          needsLoadingScreen.current = false;
+          setMode("login");
+          return false;
+        }
+        if (!res.ok && res.status !== 401)
+          throw new Error("Workspace request failed.");
+        if (!result.authenticated) {
+          clearWorkspace();
+          needsLoadingScreen.current = false;
+          setMode("login");
+          return false;
+        }
+        if (
+          !res.ok ||
+          !result.workspace ||
+          typeof result.userId !== "string" ||
+          !result.userId
+        )
+          throw new Error("Workspace response was incomplete.");
+        if (needsLoadingScreen.current) setLoadingStage("preparing-dashboard");
+        const isDemo = result.backend === "demo";
+        const identity = isDemo
+          ? "demo"
+          : `${result.backend === "local" ? "local" : "supabase"}:${result.userId}`;
+        if (identity !== activeIdentity.current) {
+          dismissMessage();
+          setMonth(isDemo ? "2026-10" : localDate().slice(0, 7));
+        }
+        activateIdentity(identity);
+        let workspaceToUse = result.workspace;
+        if (isDemo) {
+          try {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+              const parsed = JSON.parse(stored);
+              if (
+                parsed &&
+                Object.keys(cloneDemoData()).every(
+                  (key) =>
+                    Array.isArray(parsed[key]) &&
+                    parsed[key].every(
+                      (row: OwnedRecord) => row.userId === DEMO_USER_ID,
+                    ),
+                )
+              ) {
+                workspaceToUse = parsed;
+              }
+            }
+          } catch {
+            // Fall back to server workspace if stored state is unreadable
+          }
+        }
+        replaceData(workspaceToUse);
+        setAuthUserId(result.userId);
+        setProfile(result.profile ?? null);
+        needsLoadingScreen.current = false;
+        setMode(
+          isDemo ? "demo" : result.backend === "local" ? "private" : "cloud",
+        );
+        return true;
+      })
+      .catch(() => {
+        if (generation !== refreshGeneration.current)
+          return supersedingResult();
+        clearWorkspace();
+        needsLoadingScreen.current = true;
+        const safeMessage = timedOut
+          ? "This is taking longer than expected. Check your connection and retry."
+          : "We couldn’t load your workspace. Check your connection and try again.";
+        setLoadingError(safeMessage);
+        setMode("error");
+        toast(safeMessage, "error");
+        return false;
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (activeLoad.current === controller) activeLoad.current = null;
+      });
   }, [
     allowTestFixtures,
-    enterDemo,
     toast,
     replaceData,
     clearWorkspace,
     dismissMessage,
     activateIdentity,
   ]);
-  const refresh = useCallback(() => {
+  const startWorkspaceRequest = useCallback(() => {
     const promise = requestWorkspace();
     // Cancellation is not a failed balance refresh. Await the replacement so
     // pending save/import callers check the settled session before surfacing
@@ -345,17 +328,26 @@ export function FinanceProvider({
     latestRefresh.current = { generation: refreshGeneration.current, promise };
     return promise;
   }, [requestWorkspace]);
+  const refresh = useCallback(() => {
+    // User-triggered retries can reset the loading UI. Initial hydration already
+    // starts in that state and calls the request directly from its effect.
+    if (needsLoadingScreen.current) {
+      setMode("loading");
+      setLoadingError("");
+      setLoadingStage("checking-session");
+    }
+    return startWorkspaceRequest();
+  }, [startWorkspaceRequest]);
   // Hydration loads authenticated server state, or explicitly isolated test fixtures.
   useEffect(() => {
     const requests = refreshGeneration;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refresh();
+    void startWorkspaceRequest();
     return () => {
       requests.current++;
       activeLoad.current?.abort();
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [refresh]);
+  }, [startWorkspaceRequest]);
   useEffect(() => {
     if (mode !== "cloud") return;
     const reload = () => {
@@ -368,19 +360,32 @@ export function FinanceProvider({
       document.removeEventListener("visibilitychange", reload);
     };
   }, [mode, refresh]);
-  // Surface a browser-storage quota failure to the user when persisting the external store fails.
+  // Only fictional state may be serialized. Cancel stale writes when the data,
+  // mode or session changes; identity is checked again before touching storage.
   useEffect(() => {
-    if (mode === "demo") {
+    if (mode !== "demo") return;
+    const epoch = sessionEpoch.current;
+    const pending = window.setTimeout(() => {
+      if (activeIdentity.current !== "demo" || sessionEpoch.current !== epoch)
+        return;
+      if (
+        !Object.values(data).every(
+          (rows) =>
+            Array.isArray(rows) &&
+            rows.every((row: OwnedRecord) => row.userId === DEMO_USER_ID),
+        )
+      )
+        return;
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       } catch {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         toast(
           "Browser storage is full. Export your demo changes before closing.",
           "error",
         );
       }
-    }
+    }, 500);
+    return () => window.clearTimeout(pending);
   }, [data, mode, toast]);
   useEffect(() => {
     const resolved = resolveAppPage(path.split("/").filter(Boolean));
@@ -637,11 +642,12 @@ export function FinanceProvider({
     });
     return fresh.length;
   }
-  const identity = authUserId
-    ? `${backend}:${authUserId}`
-    : mode === "demo"
+  const identity =
+    mode === "demo"
       ? "demo"
-      : "signed-out";
+      : authUserId
+        ? `${backend}:${authUserId}`
+        : "signed-out";
   const epoch = sessionEpoch.current;
   const sessionToast = useCallback(
     (text: string, kind?: "success" | "error" | "info") => {

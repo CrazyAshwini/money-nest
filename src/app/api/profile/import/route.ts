@@ -11,6 +11,7 @@ import {
 } from "@/lib/private-profile-merge";
 import type { WorkspaceData } from "@/lib/types";
 import { validateWorkspaceRecord, workspaceRecordSchemas } from "@/lib/validation";
+import { isDemoSession, demoReadOnlyResponse } from "@/lib/demo-session";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,7 @@ const bundleSchema = z
 export async function POST(request: NextRequest) {
   if (!cloudRequestAllowed(request, true))
     return response({ error: "Request origin is not allowed." }, 403);
+  if (isDemoSession(request)) return demoReadOnlyResponse();
   const supabase = await createSupabaseServerClient();
   if (!supabase) return response({ error: "Cloud storage is not configured." }, 503);
   const { data: { user }, error } = await supabase.auth.getUser();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -26,7 +26,12 @@ export function PrivateProfilePage() {
   const { mode, backend, profile, needsSetup, emailRequired, refresh, toast, resetDemo } =
     useFinance();
   const router = useRouter();
-  const [setupToken, setSetupToken] = useState("");
+  const setupToken = useRef("");
+  const [hasSetupInvitation] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      Boolean(new URLSearchParams(window.location.hash.slice(1)).get("token")),
+  );
   const [busy, setBusy] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState("");
@@ -37,26 +42,26 @@ export function PrivateProfilePage() {
       "token",
     );
     if (token) {
-      // Synchronize the private invitation from the URL, then remove it from the address bar.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSetupToken(token);
+      // The invitation is submitted later; it never needs to render in the UI.
+      setupToken.current = token;
       window.history.replaceState(
         null,
         "",
         window.location.pathname + window.location.search,
       );
     }
-    if (mode === "demo") void refresh();
-  }, [mode, refresh]);
+  }, []);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || mode === "demo") return;
     const form = new FormData(event.currentTarget);
     setBusy(true);
     setError("");
     try {
       const updating = (mode === "private" || mode === "cloud") && profile;
+      if (!updating && needsSetup && !setupToken.current)
+        throw new Error("Open your private setup link to create this profile.");
       const password = String(form.get("password") ?? "");
       if (!updating && needsSetup && password !== form.get("confirmation"))
         throw new Error("The passwords do not match.");
@@ -71,7 +76,7 @@ export function PrivateProfilePage() {
               : needsSetup
                 ? {
                     action: "setup",
-                    token: setupToken,
+                    token: setupToken.current,
                     displayName: form.get("displayName"),
                     email: form.get("email"),
                     password,
@@ -109,17 +114,18 @@ export function PrivateProfilePage() {
     setError("");
     try {
       const response = await fetch(
-        mode === "cloud" ? "/api/auth" : "/api/profile",
+        mode === "private" ? "/api/profile" : "/api/auth",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "logout" }),
+          body: JSON.stringify({ action: mode === "demo" ? "exit-demo" : "logout" }),
         },
       );
-      if (!response.ok) throw new Error("Please try signing out again.");
-      await refresh();
-      toast("Signed out.");
-      router.replace("/login");
+      if (!response.ok) throw new Error(mode === "demo" ? "Please try exiting the demo again." : "Please try signing out again.");
+      try { sessionStorage.removeItem("finance-os:mode"); } catch { /* Continue with the server session when browser storage is unavailable. */ }
+      const authenticated = await refresh();
+      toast(mode === "demo" ? "Exited demo." : "Signed out.");
+      router.replace(mode === "demo" && authenticated ? "/dashboard" : "/login");
     } catch (issue) {
       setError(issue instanceof Error ? issue.message : "Please try again.");
     } finally {
@@ -204,7 +210,7 @@ export function PrivateProfilePage() {
                     disabled={busy}
                   >
                     <LogOut size={14} aria-hidden="true" />
-                    {signingOut ? "Signing out…" : "Sign out"}
+                  {mode === "demo" ? (signingOut ? "Exiting demo…" : "Exit demo") : signingOut ? "Signing out…" : "Sign out"}
                   </button>
                 </div>
               </div>
@@ -217,9 +223,16 @@ export function PrivateProfilePage() {
                   defaultValue={profile.displayName}
                   maxLength={80}
                   autoComplete="nickname"
+                  readOnly={mode === "demo"}
                   required
                 />
               </Field>
+              {mode === "demo" && (
+                <p className={styles.region}>
+                  Demo profile details are fixed. Transaction changes stay in
+                  this browser.
+                </p>
+              )}
               <p className={styles.region}>Indian rupee (INR) · Asia/Kolkata</p>
               {error && (
                 <p className="error" role="alert">
@@ -230,7 +243,7 @@ export function PrivateProfilePage() {
                 <button
                   className="button primary"
                   type="submit"
-                  disabled={busy}
+                  disabled={busy || mode === "demo"}
                 >
                   {busy && !signingOut ? "Saving…" : "Save profile"}
                 </button>
@@ -241,7 +254,7 @@ export function PrivateProfilePage() {
                   disabled={busy}
                 >
                   <LogOut size={15} aria-hidden="true" />
-                  {signingOut ? "Signing out…" : "Sign out"}
+                  {mode === "demo" ? (signingOut ? "Exiting demo…" : "Exit demo") : signingOut ? "Signing out…" : "Sign out"}
                 </button>
               </div>
             </form>
@@ -349,7 +362,7 @@ export function PrivateProfilePage() {
             A private local profile is not configured yet.
           </p>
         )}
-        {needsSetup && !setupToken && (
+        {needsSetup && !hasSetupInvitation && (
           <p className="profile-setup-note">
             Open your private setup link to choose your name and password.
           </p>
@@ -400,7 +413,7 @@ export function PrivateProfilePage() {
           <button
             className="button primary"
             disabled={
-              busy || backend !== "local" || (needsSetup && !setupToken)
+              busy || backend !== "local" || (needsSetup && !hasSetupInvitation)
             }
           >
             {busy ? "Opening…" : needsSetup ? "Create profile" : "Sign in"}

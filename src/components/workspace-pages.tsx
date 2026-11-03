@@ -3,7 +3,7 @@ import { ReceiptAISettingsPanel } from "./ai-settings";
 import { useEffect, useId, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Decimal from "decimal.js";
 import {
   Download,
@@ -427,12 +427,13 @@ export function SettingsPage() {
       const response = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "logout" }),
+        body: JSON.stringify({ action: mode === "demo" ? "exit-demo" : "logout" }),
       });
-      if (!response.ok) throw new Error("Sign out failed. Please retry.");
-      await refresh();
-      toast("Signed out.");
-      router.replace("/login");
+      if (!response.ok) throw new Error(mode === "demo" ? "Demo exit failed. Please retry." : "Sign out failed. Please retry.");
+      try { sessionStorage.removeItem("finance-os:mode"); } catch { /* The server session is authoritative. */ }
+      const authenticated = await refresh();
+      toast(mode === "demo" ? "Exited demo." : "Signed out.");
+      router.replace(mode === "demo" && authenticated ? "/dashboard" : "/login");
     } catch (issue) {
       setError(
         issue instanceof Error
@@ -528,7 +529,7 @@ export function SettingsPage() {
               onClick={() => void signOut()}
             >
               <LogOut size={15} />
-              {signingOut ? "Signing out…" : "Sign out"}
+              {mode === "demo" ? (signingOut ? "Exiting demo…" : "Exit demo") : signingOut ? "Signing out…" : "Sign out"}
             </button>
           </div>
           {error && (
@@ -809,7 +810,12 @@ function maskedSignupEmail(email: string) {
 export function LoginPage() {
   const { refresh, toast, signupEnabled } = useFinance();
   const router = useRouter();
-  const [stage, setStage] = useState<AccessStage>("login");
+  const searchParams = useSearchParams();
+  const authError = searchParams.get("auth_error");
+  const demoRequested = searchParams.get("demo");
+  const [stage, setStage] = useState<AccessStage>(() =>
+    authError === "recovery" ? "reset" : "login",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -817,7 +823,13 @@ export function LoginPage() {
   // Pending registration details and codes stay in memory, never in a URL or storage.
   const [pendingEmail, setPendingEmail] = useState("");
   const [token, setToken] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() =>
+    authError === "recovery"
+      ? "This password-reset link has expired. Request another one."
+      : authError === "confirmation"
+        ? "This confirmation link is invalid or expired. Sign in again or request a new code from your signup screen."
+        : "",
+  );
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
   const [resending, setResending] = useState(false);
@@ -839,22 +851,12 @@ export function LoginPage() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    const authError = url.searchParams.get("auth_error");
     if (authError === "confirmation" || authError === "recovery") {
-      // Synchronize the server's safe callback result, then clear it from the address.
-      if (authError === "recovery") {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setStage("reset");
-        setError("This password-reset link has expired. Request another one.");
-      } else {
-        setError(
-          "This confirmation link is invalid or expired. Sign in again or request a new code from your signup screen.",
-        );
-      }
+      // Initial state already reflects the callback; only clean the address here.
       url.searchParams.delete("auth_error");
       window.history.replaceState(null, "", url.pathname + url.search);
     }
-  }, []);
+  }, [authError]);
 
   useEffect(() => {
     if (previousStage.current !== stage) {
@@ -1061,7 +1063,7 @@ export function LoginPage() {
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/auth", {
+      const response = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1070,13 +1072,15 @@ export function LoginPage() {
           password: "demo1234",
         }),
       });
-      const data = await res.json();
-      if (!res.ok)
-        throw new Error(data.error || "Could not sign in to demo account.");
-      await openWorkspace("Welcome to the Demo Account! All features enabled.");
-    } catch (err) {
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Could not sign in to demo account.");
+      await openWorkspace("Welcome to the Demo Account!");
+    } catch (issue) {
       setError(
-        err instanceof Error ? err.message : "Could not sign in to demo account.",
+        issue instanceof Error
+          ? issue.message
+          : "Could not sign in to demo account.",
       );
     } finally {
       setBusy(false);
@@ -1084,17 +1088,9 @@ export function LoginPage() {
   }
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const url = new URL(window.location.href);
-      if (
-        url.searchParams.get("demo") === "true" ||
-        url.searchParams.get("demo") === "1"
-      ) {
-        void loginDemo();
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (demoRequested === "true" || demoRequested === "1")
+      router.replace("/demo");
+  }, [demoRequested, router]);
 
   async function resend() {
     if (working || retrySeconds > 0 || !pendingEmail) return;

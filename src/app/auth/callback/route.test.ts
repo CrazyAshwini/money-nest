@@ -59,6 +59,17 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("confirmed public account callbacks", () => {
+  it("clears the demo cookie only after a verified callback session",async()=>{
+    const result=await GET(callback("code=synthetic-auth-code",{cookie:"money-nest-demo-session=1"}));
+    expect(result.headers.get("location")).toBe(`${origin}/dashboard`);
+    expect(result.cookies.get("money-nest-demo-session")?.value).toBe("");
+  });
+  it("preserves demo mode after a failed callback exchange",async()=>{
+    mocks.exchangeCodeForSession.mockResolvedValue({error:{message:"Synthetic exchange failure"}});
+    const result=await GET(callback("code=synthetic-auth-code",{cookie:"money-nest-demo-session=1"}));
+    expect(result.headers.get("location")).toContain("auth_error=confirmation");
+    expect(result.cookies.get("money-nest-demo-session")).toBeUndefined();
+  });
   it.each(users)(
     "accepts a legitimate cross-site code link for $email using fresh Auth",
     async (user) => {

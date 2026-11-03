@@ -33,7 +33,7 @@ const failure = (error: unknown) =>
       )
     : error instanceof CloudCommerceError ||
         error instanceof AIOwnerAuthenticationError
-      ? privateResponse({ error: error.message }, error.status)
+      ? privateResponse({ error: error.message, ...(error instanceof AIOwnerAuthenticationError ? {code:error.code} : {}) }, error.status)
       : error instanceof ReceiptAIError
         ? privateResponse(
             { error: "The request is too large or invalid." },

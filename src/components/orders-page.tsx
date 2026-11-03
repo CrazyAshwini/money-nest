@@ -94,31 +94,38 @@ export function OrdersPage() {
   } | null>(null);
 
   const load = useCallback(
-    async (signal?: AbortSignal) => {
+    (signal?: AbortSignal) => {
       if (mode !== "private" && mode !== "cloud") return;
-      setLoading(true);
+      let pending: Promise<Response>;
       try {
-        const response = await fetch("/api/orders", {
+        pending = fetch("/api/orders", {
           cache: "no-store",
           signal,
         });
-        const body = await response.json();
-        if (signal?.aborted) return;
-        if (!response.ok)
-          throw new Error(body.error || "Orders could not be loaded.");
-        setCommerce(body.commerce);
-        setLoaded(true);
-        setError("");
-      } catch (failure) {
-        if (signal?.aborted) return;
-        setError(
-          failure instanceof Error
-            ? failure.message
-            : "Orders could not be loaded.",
-        );
-      } finally {
-        if (!signal?.aborted) setLoading(false);
+      } catch (issue) {
+        pending = Promise.reject(issue);
       }
+      return pending
+        .then(async (response) => {
+          const body = await response.json();
+          if (signal?.aborted) return;
+          if (!response.ok)
+            throw new Error(body.error || "Orders could not be loaded.");
+          setCommerce(body.commerce);
+          setLoaded(true);
+          setError("");
+        })
+        .catch((failure: unknown) => {
+          if (signal?.aborted) return;
+          setError(
+            failure instanceof Error
+              ? failure.message
+              : "Orders could not be loaded.",
+          );
+        })
+        .finally(() => {
+          if (!signal?.aborted) setLoading(false);
+        });
     },
     [mode],
   );
@@ -126,7 +133,6 @@ export function OrdersPage() {
   useEffect(() => {
     const request = new AbortController();
     // Synchronize the external authenticated store when the profile becomes ready.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load(request.signal);
     return () => request.abort();
   }, [load]);
@@ -307,7 +313,10 @@ export function OrdersPage() {
         </button>
         <button
           className="button"
-          onClick={() => void load()}
+          onClick={() => {
+            setLoading(true);
+            void load();
+          }}
           aria-label="Refresh orders"
           disabled={loading}
         >
