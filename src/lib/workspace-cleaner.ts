@@ -2312,6 +2312,42 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     }
   }
 
+  // Remove unwanted Pizza Country and Zomato Nawabi Club groups from split bill section
+  const removedGroupIds = new Set<string>();
+  const sanitizedGroups = Array.isArray(workspace.groups)
+    ? workspace.groups.filter((g) => {
+        const title = (g.title || "").toLowerCase();
+        const notes = (g.notes || "").toLowerCase();
+        const merchant = (g.merchant || "").toLowerCase();
+        const txId = (g.transactionId || "").toLowerCase();
+        const isPizzaCountry =
+          title.includes("pizza country") ||
+          notes.includes("pizza country") ||
+          merchant.includes("pizza country");
+        const isNawabi =
+          title.includes("nawabi") ||
+          notes.includes("nawabi") ||
+          title.includes("16654") ||
+          notes.includes("16654") ||
+          txId.includes("16654") ||
+          title.includes("zomato-order-history-20261009-1913-nawabi-16654") ||
+          notes.includes("zomato-order-history-20261009-1913-nawabi-16654");
+        if (isPizzaCountry || isNawabi) {
+          removedGroupIds.add(g.id);
+          return false;
+        }
+        return true;
+      })
+    : workspace.groups;
+
+  const sanitizedShares = Array.isArray(workspace.shares)
+    ? workspace.shares.filter((s) => !removedGroupIds.has(s.groupId))
+    : workspace.shares;
+
+  const sanitizedSettlements = Array.isArray(workspace.settlements)
+    ? workspace.settlements.filter((s) => !removedGroupIds.has(s.groupId))
+    : workspace.settlements;
+
   return {
     ...workspace,
     accounts: sanitizedAccounts || workspace.accounts,
@@ -2323,6 +2359,9 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
     emis: sanitizedEmis,
     emiAllocations: sanitizedEmiAllocations,
     transactions: sanitizedTransactions,
+    groups: sanitizedGroups,
+    shares: sanitizedShares,
+    settlements: sanitizedSettlements,
     ...(sanitizedEmiAgreements.length > 0
       ? { emiAgreements: sanitizedEmiAgreements }
       : {}),

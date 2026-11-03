@@ -457,6 +457,26 @@ export function GroupsPage({
       </>
     );
   }
+  const isSplitExcluded = (g: { title?: string; notes?: string; merchant?: string; transactionId?: string | null }) => {
+    const title = (g.title || "").toLowerCase();
+    const notes = (g.notes || "").toLowerCase();
+    const merchant = (g.merchant || "").toLowerCase();
+    const txId = (g.transactionId || "").toLowerCase();
+    return (
+      title.includes("pizza country") ||
+      notes.includes("pizza country") ||
+      merchant.includes("pizza country") ||
+      title.includes("nawabi") ||
+      notes.includes("nawabi") ||
+      title.includes("16654") ||
+      notes.includes("16654") ||
+      txId.includes("16654") ||
+      title.includes("zomato-order-history-20261009-1913-nawabi-16654") ||
+      notes.includes("zomato-order-history-20261009-1913-nawabi-16654")
+    );
+  };
+  const visibleGroups = data.groups.filter((g) => !isSplitExcluded(g));
+
   return (
     <>
       <div className="list-toolbar">
@@ -467,7 +487,7 @@ export function GroupsPage({
         </button>
       </div>
       <div className="bills-grid">
-        {data.groups.map((g) => {
+        {visibleGroups.map((g) => {
           const s = groupSummary(data, g.id);
           return (
             <Section key={g.id} title={g.title} action={<Users size={18} />}>
@@ -512,7 +532,7 @@ export function GroupsPage({
           );
         })}
       </div>
-      {!data.groups.length && (
+      {!visibleGroups.length && (
         <Empty
           title="Share the experience"
           description="Link an existing purchase, split the cost, and match real contributions."

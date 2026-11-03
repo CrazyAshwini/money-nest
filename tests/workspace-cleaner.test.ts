@@ -570,4 +570,110 @@ describe("workspace-cleaner", () => {
     expect(summaryOct.remaining).toBe("170.00");
     expect(summaryOct.status).toBe("unpaid");
   });
+
+  it("removes Pizza Country and Zomato Nawabi Club groups and shares from split bills while preserving transactions", () => {
+    const ws = createBaseWorkspace();
+    const pizzaTx: Transaction = {
+      id: "tx-pizza-country-001",
+      userId,
+      amount: "141.00",
+      currency: "INR",
+      kind: "expense",
+      status: "posted",
+      occurredOn: "2026-10-02",
+      description: "Pizza Country",
+      fromAccountId: sbiAccountId,
+      toAccountId: null,
+    };
+    const nawabiTx: Transaction = {
+      id: "tx-zomato-nawabi-002",
+      userId,
+      amount: "166.54",
+      currency: "INR",
+      kind: "expense",
+      status: "posted",
+      occurredOn: "2026-10-09",
+      description: "Zomato Nawabi Club",
+      fromAccountId: idfcAccountId,
+      toAccountId: null,
+    };
+    const regularTx: Transaction = {
+      id: "tx-regular-group-003",
+      userId,
+      amount: "500.00",
+      currency: "INR",
+      kind: "expense",
+      status: "posted",
+      occurredOn: "2026-10-15",
+      description: "Team Dinner",
+      fromAccountId: sbiAccountId,
+      toAccountId: null,
+    };
+
+    ws.transactions.push(pizzaTx, nawabiTx, regularTx);
+    ws.groups = [
+      {
+        id: "grp-pizza-1",
+        userId,
+        title: "Pizza Country — group costs",
+        merchant: "Pizza Country",
+        occurredOn: "2026-10-02",
+        totalCost: "141.00",
+        paidBy: "You",
+        transactionId: pizzaTx.id,
+      },
+      {
+        id: "grp-nawabi-2",
+        userId,
+        title: "ZOMATO-ORDER-HISTORY-20261009-1913-NAWABI-16654",
+        merchant: "Zomato",
+        occurredOn: "2026-10-09",
+        totalCost: "166.54",
+        paidBy: "You",
+        transactionId: nawabiTx.id,
+      },
+      {
+        id: "grp-team-3",
+        userId,
+        title: "Team Dinner Split",
+        merchant: "Cafe",
+        occurredOn: "2026-10-15",
+        totalCost: "500.00",
+        paidBy: "You",
+        transactionId: regularTx.id,
+      },
+    ];
+    ws.shares = [
+      { id: "sh-1", userId, groupId: "grp-pizza-1", participant: "Bikash", amount: "76.00", isOwner: false },
+      { id: "sh-2", userId, groupId: "grp-nawabi-2", participant: "Rahul", amount: "80.00", isOwner: false },
+      { id: "sh-3", userId, groupId: "grp-team-3", participant: "Sneha", amount: "250.00", isOwner: false },
+    ];
+    ws.settlements = [
+      { id: "st-1", userId, groupId: "grp-pizza-1", transactionId: "tx-settle-1", counterparty: "Bikash", direction: "incoming", amount: "76.00" },
+      { id: "st-2", userId, groupId: "grp-team-3", transactionId: "tx-settle-2", counterparty: "Sneha", direction: "incoming", amount: "250.00" },
+    ];
+
+    const result = sanitizeWorkspaceTransactions(ws);
+
+    // 1. Unwanted groups must be excluded from groups
+    expect(result.groups.find((g) => g.id === "grp-pizza-1")).toBeUndefined();
+    expect(result.groups.find((g) => g.id === "grp-nawabi-2")).toBeUndefined();
+    expect(result.groups.find((g) => g.id === "grp-team-3")).toBeDefined();
+    expect(result.groups).toHaveLength(1);
+
+    // 2. Shares and settlements for excluded groups must be cleaned
+    expect(result.shares.find((s) => s.groupId === "grp-pizza-1")).toBeUndefined();
+    expect(result.shares.find((s) => s.groupId === "grp-nawabi-2")).toBeUndefined();
+    expect(result.shares.find((s) => s.groupId === "grp-team-3")).toBeDefined();
+    expect(result.shares).toHaveLength(1);
+
+    expect(result.settlements.find((s) => s.groupId === "grp-pizza-1")).toBeUndefined();
+    expect(result.settlements.find((s) => s.groupId === "grp-team-3")).toBeDefined();
+    expect(result.settlements).toHaveLength(1);
+
+    // 3. Transactions must be preserved completely
+    expect(result.transactions.find((t) => t.id === pizzaTx.id)).toBeDefined();
+    expect(result.transactions.find((t) => t.id === nawabiTx.id)).toBeDefined();
+    expect(result.transactions.find((t) => t.id === regularTx.id)).toBeDefined();
+  });
 });
