@@ -308,29 +308,24 @@ export function PrivateProfilePage() {
         {/* Financial Accounts Hub */}
         <ProfileAccounts />
 
-        {/* Standalone Session Sign Out */}
-        {mode !== "demo" && (
-          <section className={styles.sessionCard} aria-label="Session actions">
-            <div className={styles.sessionInfo}>
-              <strong>Signed in as {profile.displayName}</strong>
-              <p>Your session is active and secure on this device.</p>
-            </div>
-            <button
-              className="button"
-              type="button"
-              onClick={logout}
-              disabled={busy}
-            >
-              <LogOut size={15} aria-hidden="true" />
-              {signingOut ? "Signing out…" : "Sign out"}
-            </button>
-          </section>
-        )}
+        {/* Compact Sign Out */}
+        <div className={styles.signOutRow}>
+          <button
+            className={styles.signOutButton}
+            type="button"
+            onClick={logout}
+            disabled={busy}
+            aria-label="Sign out"
+          >
+            <LogOut size={16} aria-hidden="true" />
+            <span>{signingOut ? "Signing out…" : "Sign out"}</span>
+          </button>
+        </div>
 
-        {/* Signature Footer */}
-        <footer className={styles.signatureFooter} aria-label="Creator branding">
-          <p className={styles.signatureBrand}>Money Nest by Ashwini</p>
-          <p className={styles.signatureHeart}>Made with 🩵</p>
+        {/* Minimal Centered Footer */}
+        <footer className={styles.minimalFooter} aria-label="Creator branding">
+          <p className={styles.footerBrand}>Made with ❤️ by Ashwini</p>
+          <p className={styles.footerTagline}>MoneyNest · Personal Finance Manager</p>
         </footer>
       </div>
     );

@@ -414,7 +414,8 @@ export function FinanceApp() {
                 description="Use the sidebar to return to your workspace."
               />
             )}
-            <footer className="page-footer">
+            {page !== "profile" && (
+              <footer className="page-footer">
               <span>
                 <span className="status-dot" />{" "}
                 {mode === "demo"
@@ -448,6 +449,7 @@ export function FinanceApp() {
                 <Link href="/settings#data">Data & privacy</Link>
               </nav>
             </footer>
+            )}
           </main>
         </div>
         <MobileBottomBar
