@@ -54,10 +54,9 @@ function value(details: Locator, label: string) {
       '[data-metric="outstanding"] strong',
     );
   if (label === "Current balance")
-    return details
-      .locator(".fac-summary .fac-primary-balance")
-      .filter({ hasText: new RegExp(`^${label}`) })
-      .locator("strong");
+    return selectedCard(details.locator(".financial-carousel")).locator(
+      '[data-metric="balance"] strong',
+    );
   return details
     .locator(".fac-value")
     .filter({ has: details.page().getByText(label, { exact: true }) })
@@ -142,13 +141,6 @@ for (const width of [320, 390, 768, 1440]) {
         await expect(value(details, "Current balance")).toContainText(
           formatMoney(accountBalance(owned, account.id, TODAY).current!),
         );
-        await expect(value(details, "Recorded credits")).toContainText(
-          "₹30.00",
-        );
-        await expect(value(details, "Recorded debits")).toContainText("₹30.00");
-        await expect(details.locator(".fac-summary")).toContainText(
-          "Report + posted movements",
-        );
         await expect(dialog).toContainText("1111");
         await expect(dialog).not.toContainText("1234567890121111");
       } else {
@@ -178,27 +170,13 @@ for (const width of [320, 390, 768, 1440]) {
       const recentBox = (await details
         .locator(".recent-account-transactions")
         .boundingBox())!;
-      if (section.kind === "bank") {
-        await expect(details.locator(".fac-summary")).toBeVisible();
-        const summaryBox = (await details
-          .locator(".fac-summary")
-          .boundingBox())!;
-        if (width >= 1000) {
-          expect(carouselBox.x + carouselBox.width).toBeLessThanOrEqual(
-            summaryBox.x,
-          );
-        } else {
-          expect(cardBox.y).toBeLessThan(summaryBox.y);
-        }
-        expect(summaryBox.y).toBeLessThan(recentBox.y);
-      } else {
-        await expect(
-          details.locator(".fac-summary, .fac-statements"),
-        ).toHaveCount(0);
-        await expect(
-          details.locator(".financial-carousel + .recent-account-transactions"),
-        ).toHaveCount(1);
-      }
+      await expect(
+        details.locator(".fac-summary, .fac-statements"),
+      ).toHaveCount(0);
+      await expect(
+        details.locator(".financial-carousel + .recent-account-transactions"),
+      ).toHaveCount(1);
+      expect(cardBox.y).toBeLessThan(recentBox.y);
       expect(carouselBox.y).toBeLessThan(recentBox.y);
       await noOverflow(page);
       await noDialogOverflow(dialog);
