@@ -16,7 +16,7 @@ import {
 import { CATEGORIES, type Transaction, type WorkspaceData } from "../src/lib/types";
 import { EVERYDAY_TRANSACTION_KINDS } from "../src/components/editors";
 import { validateWorkspaceRecord } from "../src/lib/validation";
-import { accountBalance } from "../src/lib/finance";
+import { accountBalance, computeEqualShares, consumptionAmount, groupSummary } from "../src/lib/finance";
 
 const USER_ID = "4aed7ac5-23e7-4878-aa7a-13ad6d24b597";
 const BANK_1_ID = "2e84b7fc-dc55-4052-a087-7910619c3f2e";
@@ -445,5 +445,442 @@ describe("Account and ledger validation across transaction types", () => {
 
     const validated = validateWorkspaceRecord(ws, "transactions", legacyTxn, USER_ID);
     expect(validated.category).toBe("Stationery");
+  });
+});
+
+describe("Split Expense, Ordered for Someone Else & Repayment Accounting", () => {
+  it("calculates deterministic equal shares with paise rounding", () => {
+    // ₹600 split 3 ways (User + 2 friends)
+    const split600 = computeEqualShares("600.00", true, 2);
+    expect(split600.myShare).toBe("200.00");
+    expect(split600.perPersonShares).toEqual(["200.00", "200.00"]);
+
+    // ₹100 split 3 ways: 10000 paise / 3 = 3333 with 1 remainder
+    const split100 = computeEqualShares("100.00", true, 2);
+    expect(split100.myShare).toBe("33.34");
+    expect(split100.perPersonShares).toEqual(["33.33", "33.33"]);
+
+    // ₹500 ordered for 1 friend (user not included)
+    const order500 = computeEqualShares("500.00", false, 1);
+    expect(order500.myShare).toBe("0.00");
+    expect(order500.perPersonShares).toEqual(["500.00"]);
+
+    // ₹500 ordered for 2 friends (user not included)
+    const order500_2 = computeEqualShares("500.00", false, 2);
+    expect(order500_2.perPersonShares).toEqual(["250.00", "250.00"]);
+  });
+
+  it("Example A: ₹600 food order split 3 ways -> source -600, consumption 200, receivable 400, repayment 200", () => {
+    const ws = mockWorkspace();
+    const expenseTx: Transaction = {
+      id: "tx-split-food-600",
+      userId: USER_ID,
+      amount: "600.00",
+      currency: "INR",
+      kind: "expense",
+      status: "posted",
+      occurredOn: "2026-11-03",
+      description: "Dinner at Bistro",
+      fromAccountId: BANK_1_ID,
+      toAccountId: null,
+      category: "Food & Drinks",
+      subcategory: "Restaurant",
+    };
+    ws.transactions.push(expenseTx);
+
+    // Group and shares
+    const groupId = "grp-split-food-600";
+    ws.groups.push({
+      id: groupId,
+      userId: USER_ID,
+      kind: "expense",
+      title: "Dinner at Bistro",
+      occurredOn: "2026-11-03",
+      merchant: "Bistro",
+      totalCost: "600.00",
+      paidBy: "You",
+      transactionId: expenseTx.id,
+    });
+
+    ws.shares.push(
+      {
+        id: "sh-owner-200",
+        userId: USER_ID,
+        groupId,
+        participant: "You",
+        amount: "200.00",
+        isOwner: true,
+      },
+      {
+        id: "sh-lalit-200",
+        userId: USER_ID,
+        groupId,
+        participant: "Lalit",
+        amount: "200.00",
+        isOwner: false,
+      },
+      {
+        id: "sh-dhiraj-200",
+        userId: USER_ID,
+        groupId,
+        participant: "Dhiraj",
+        amount: "200.00",
+        isOwner: false,
+      },
+    );
+
+    // 1. Bank 1 balance was 10000 - 600 = 9400
+    expect(accountBalance(ws, BANK_1_ID, "2026-11-03").current).toBe("9400.00");
+
+    // 2. Personal consumption expense is user's share (200.00)
+    expect(consumptionAmount(ws, expenseTx)).toBe("200.00");
+
+    // 3. Receivable is 400.00
+    const summaryBefore = groupSummary(ws, groupId);
+    expect(summaryBefore.receivable).toBe("400.00");
+
+    // 4. Lalit repays ₹200 into Bank 2
+    const repaymentTx: Transaction = {
+      id: "tx-lalit-repay-200",
+      userId: USER_ID,
+      amount: "200.00",
+      currency: "INR",
+      kind: "refund",
+      status: "posted",
+      occurredOn: "2026-11-03",
+      description: "Reimbursement from Lalit · Dinner at Bistro",
+      fromAccountId: null,
+      toAccountId: BANK_2_ID,
+      category: "Shared Expense / Paid-for-Others Repayment",
+      refundReason: "shared_reimbursement",
+      refundOfTransactionId: expenseTx.id,
+      externalPayer: "Lalit",
+    };
+    ws.transactions.push(repaymentTx);
+    ws.settlements.push({
+      id: "st-lalit-200",
+      userId: USER_ID,
+      groupId,
+      transactionId: repaymentTx.id,
+      counterparty: "Lalit",
+      direction: "incoming",
+      amount: "200.00",
+    });
+
+    // Bank 2 balance was 5000 + 200 = 5200
+    expect(accountBalance(ws, BANK_2_ID, "2026-11-03").current).toBe("5200.00");
+
+    // Receivable reduced to 200.00 (Dhiraj only)
+    const summaryAfter = groupSummary(ws, groupId);
+    expect(summaryAfter.receivable).toBe("200.00");
+  });
+
+  it("Example B1: ₹500 ordered for someone as full Gift -> personal expense 500, receivable 0", () => {
+    const ws = mockWorkspace();
+    const giftTx: Transaction = {
+      id: "tx-gift-500",
+      userId: USER_ID,
+      amount: "500.00",
+      currency: "INR",
+      kind: "expense",
+      status: "posted",
+      occurredOn: "2026-11-03",
+      description: "Birthday present for Friend",
+      fromAccountId: BANK_1_ID,
+      toAccountId: null,
+      category: "Gift Given",
+      merchant: "Friend",
+    };
+    ws.transactions.push(giftTx);
+
+    // Group with 100% owner consumption as Gift, ₹0 allocated to friend
+    const groupId = "grp-gift-500";
+    ws.groups.push({
+      id: groupId,
+      userId: USER_ID,
+      kind: "expense",
+      title: "Birthday present",
+      occurredOn: "2026-11-03",
+      merchant: "Friend",
+      totalCost: "500.00",
+      paidBy: "You",
+      transactionId: giftTx.id,
+    });
+    ws.shares.push(
+      {
+        id: "sh-owner-gift-500",
+        userId: USER_ID,
+        groupId,
+        participant: "You",
+        amount: "500.00",
+        isOwner: true,
+      },
+      {
+        id: "sh-friend-gift-0",
+        userId: USER_ID,
+        groupId,
+        participant: "Friend",
+        amount: "0.00",
+        isOwner: false,
+      },
+    );
+
+    expect(consumptionAmount(ws, giftTx)).toBe("500.00");
+    expect(groupSummary(ws, groupId).receivable).toBe("0.00");
+  });
+
+  it("Example B2: ₹500 ordered for someone Not Paid Yet -> consumption 0, receivable 500", () => {
+    const ws = mockWorkspace();
+    const orderTx: Transaction = {
+      id: "tx-order-500",
+      userId: USER_ID,
+      amount: "500.00",
+      currency: "INR",
+      kind: "expense",
+      status: "posted",
+      occurredOn: "2026-11-03",
+      description: "Shoes ordered for Rahul",
+      fromAccountId: BANK_1_ID,
+      toAccountId: null,
+      category: "Shopping",
+    };
+    ws.transactions.push(orderTx);
+
+    const groupId = "grp-order-500";
+    ws.groups.push({
+      id: groupId,
+      userId: USER_ID,
+      kind: "expense",
+      title: "Shoes for Rahul",
+      occurredOn: "2026-11-03",
+      merchant: "Rahul",
+      totalCost: "500.00",
+      paidBy: "You",
+      transactionId: orderTx.id,
+    });
+    ws.shares.push(
+      {
+        id: "sh-owner-0",
+        userId: USER_ID,
+        groupId,
+        participant: "You",
+        amount: "0.00",
+        isOwner: true,
+      },
+      {
+        id: "sh-rahul-500",
+        userId: USER_ID,
+        groupId,
+        participant: "Rahul",
+        amount: "500.00",
+        isOwner: false,
+      },
+    );
+
+    expect(consumptionAmount(ws, orderTx)).toBe("0.00");
+    expect(groupSummary(ws, groupId).receivable).toBe("500.00");
+  });
+
+  it("Example B3 & B4: ₹500 ordered with Partial ₹200 then Full settlement", () => {
+    const ws = mockWorkspace();
+    const orderTx: Transaction = {
+      id: "tx-order-500-b3",
+      userId: USER_ID,
+      amount: "500.00",
+      currency: "INR",
+      kind: "expense",
+      status: "posted",
+      occurredOn: "2026-11-03",
+      description: "Books for Priya",
+      fromAccountId: BANK_1_ID,
+      toAccountId: null,
+      category: "Shopping",
+    };
+    ws.transactions.push(orderTx);
+
+    const groupId = "grp-order-500-b3";
+    ws.groups.push({
+      id: groupId,
+      userId: USER_ID,
+      kind: "expense",
+      title: "Books for Priya",
+      occurredOn: "2026-11-03",
+      merchant: "Priya",
+      totalCost: "500.00",
+      paidBy: "You",
+      transactionId: orderTx.id,
+    });
+    ws.shares.push(
+      {
+        id: "sh-owner-0-b3",
+        userId: USER_ID,
+        groupId,
+        participant: "You",
+        amount: "0.00",
+        isOwner: true,
+      },
+      {
+        id: "sh-priya-500",
+        userId: USER_ID,
+        groupId,
+        participant: "Priya",
+        amount: "500.00",
+        isOwner: false,
+      },
+    );
+
+    // Initial receivable: 500
+    expect(groupSummary(ws, groupId).receivable).toBe("500.00");
+
+    // Partial payment of 200
+    const partialTx: Transaction = {
+      id: "tx-priya-partial-200",
+      userId: USER_ID,
+      amount: "200.00",
+      currency: "INR",
+      kind: "refund",
+      status: "posted",
+      occurredOn: "2026-11-03",
+      description: "Reimbursement from Priya · Books",
+      fromAccountId: null,
+      toAccountId: BANK_1_ID,
+      category: "Shared Expense / Paid-for-Others Repayment",
+      refundReason: "shared_reimbursement",
+      refundOfTransactionId: orderTx.id,
+      externalPayer: "Priya",
+    };
+    ws.transactions.push(partialTx);
+    ws.settlements.push({
+      id: "st-priya-200",
+      userId: USER_ID,
+      groupId,
+      transactionId: partialTx.id,
+      counterparty: "Priya",
+      direction: "incoming",
+      amount: "200.00",
+    });
+
+    // Remaining receivable: 300
+    expect(groupSummary(ws, groupId).receivable).toBe("300.00");
+
+    // Remaining payment of 300 to fully settle
+    const finalTx: Transaction = {
+      id: "tx-priya-final-300",
+      userId: USER_ID,
+      amount: "300.00",
+      currency: "INR",
+      kind: "refund",
+      status: "posted",
+      occurredOn: "2026-11-03",
+      description: "Final reimbursement from Priya · Books",
+      fromAccountId: null,
+      toAccountId: BANK_1_ID,
+      category: "Shared Expense / Paid-for-Others Repayment",
+      refundReason: "shared_reimbursement",
+      refundOfTransactionId: orderTx.id,
+      externalPayer: "Priya",
+    };
+    ws.transactions.push(finalTx);
+    ws.settlements.push({
+      id: "st-priya-300",
+      userId: USER_ID,
+      groupId,
+      transactionId: finalTx.id,
+      counterparty: "Priya",
+      direction: "incoming",
+      amount: "300.00",
+    });
+
+    // Fully paid: receivable is 0.00
+    expect(groupSummary(ws, groupId).receivable).toBe("0.00");
+  });
+
+  it("Mixed split: Alice fully paid ₹200, Bob owes ₹200 -> distinct participant tracking", () => {
+    const ws = mockWorkspace();
+    const mixedTx: Transaction = {
+      id: "tx-mixed-600",
+      userId: USER_ID,
+      amount: "600.00",
+      currency: "INR",
+      kind: "expense",
+      status: "posted",
+      occurredOn: "2026-11-03",
+      description: "Movie tickets and popcorn",
+      fromAccountId: BANK_1_ID,
+      toAccountId: null,
+      category: "Entertainment",
+    };
+    ws.transactions.push(mixedTx);
+
+    const groupId = "grp-mixed-600";
+    ws.groups.push({
+      id: groupId,
+      userId: USER_ID,
+      kind: "expense",
+      title: "Movie night",
+      occurredOn: "2026-11-03",
+      merchant: "PVR",
+      totalCost: "600.00",
+      paidBy: "You",
+      transactionId: mixedTx.id,
+    });
+    ws.shares.push(
+      {
+        id: "sh-owner-200-m",
+        userId: USER_ID,
+        groupId,
+        participant: "You",
+        amount: "200.00",
+        isOwner: true,
+      },
+      {
+        id: "sh-alice-200",
+        userId: USER_ID,
+        groupId,
+        participant: "Alice",
+        amount: "200.00",
+        isOwner: false,
+      },
+      {
+        id: "sh-bob-200",
+        userId: USER_ID,
+        groupId,
+        participant: "Bob",
+        amount: "200.00",
+        isOwner: false,
+      },
+    );
+
+    // Alice paid her share immediately
+    const aliceTx: Transaction = {
+      id: "tx-alice-200",
+      userId: USER_ID,
+      amount: "200.00",
+      currency: "INR",
+      kind: "refund",
+      status: "posted",
+      occurredOn: "2026-11-03",
+      description: "Reimbursement from Alice · Movie",
+      fromAccountId: null,
+      toAccountId: BANK_1_ID,
+      category: "Shared Expense / Paid-for-Others Repayment",
+      refundReason: "shared_reimbursement",
+      refundOfTransactionId: mixedTx.id,
+      externalPayer: "Alice",
+    };
+    ws.transactions.push(aliceTx);
+    ws.settlements.push({
+      id: "st-alice-200",
+      userId: USER_ID,
+      groupId,
+      transactionId: aliceTx.id,
+      counterparty: "Alice",
+      direction: "incoming",
+      amount: "200.00",
+    });
+
+    const summary = groupSummary(ws, groupId);
+    // Bob owes 200, Alice owes 0, total receivable is 200
+    expect(summary.receivable).toBe("200.00");
   });
 });

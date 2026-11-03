@@ -21,11 +21,13 @@ import {
 } from "@/lib/types";
 import {
   accountBalance,
+  computeEqualShares,
   formatDate,
   formatMoney,
   latestAccountBalanceSnapshot,
   isDebtAccount,
   localDateISO,
+  sumMoney,
   validateBillAllocation,
   validateEmiAllocation,
 } from "@/lib/finance";
@@ -240,6 +242,154 @@ export function RecordEditor({
   const [balanceChoices, setBalanceChoices] = useState<Record<string, string>>(
     {},
   );
+
+  const linkedGroup =
+    editor.type === "transaction" && editor.record
+      ? data.groups.find(
+          (g) => g.transactionId === editor.record?.id && g.userId === userId,
+        )
+      : undefined;
+  const linkedShares = linkedGroup
+    ? data.shares.filter(
+        (s) => s.groupId === linkedGroup.id && s.userId === userId,
+      )
+    : [];
+  const linkedOwnerShare = linkedShares.find((s) => s.isOwner);
+  const linkedParticipantShares = linkedShares.filter((s) => !s.isOwner);
+
+  const [isSplitExpense, setIsSplitExpense] = useState(() =>
+    Boolean(linkedGroup),
+  );
+  const [splitMode, setSplitMode] = useState<"split" | "ordered_for_others">(
+    () =>
+      linkedOwnerShare && Number(linkedOwnerShare.amount) > 0
+        ? "split"
+        : linkedGroup
+          ? "ordered_for_others"
+          : "split",
+  );
+  const [includeMe, setIncludeMe] = useState(
+    () =>
+      !linkedGroup ||
+      Boolean(linkedOwnerShare && Number(linkedOwnerShare.amount) > 0),
+  );
+  const [splitMethod, setSplitMethod] = useState<"equal" | "custom">("equal");
+  const [myShare, setMyShare] = useState<string>(
+    () => linkedOwnerShare?.amount || "",
+  );
+  const [participants, setParticipants] = useState<
+    Array<{
+      id: string;
+      name: string;
+      shareAmount: string;
+      status: "not_paid" | "partially_paid" | "fully_paid" | "gift";
+      paidAmount: string;
+      receivingAccountId: string;
+      paidDate: string;
+    }>
+  >(() => {
+    if (!linkedGroup) return [];
+    return linkedParticipantShares.map((s) => {
+      const settlements = data.settlements.filter(
+        (st) =>
+          st.groupId === linkedGroup.id &&
+          st.counterparty === s.participant &&
+          st.direction === "incoming",
+      );
+      const paid = sumMoney(settlements.map((st) => st.amount));
+      let st: "not_paid" | "partially_paid" | "fully_paid" | "gift" = "not_paid";
+      if (Number(s.amount) === 0) st = "gift";
+      else if (Number(paid) >= Number(s.amount)) st = "fully_paid";
+      else if (Number(paid) > 0) st = "partially_paid";
+      return {
+        id: s.id,
+        name: s.participant,
+        shareAmount: s.amount,
+        status: st,
+        paidAmount: paid,
+        receivingAccountId: "",
+        paidDate: today,
+      };
+    });
+  });
+  const [newPersonName, setNewPersonName] = useState("");
+
+  const knownPeople = Array.from(
+    new Set(
+      [
+        ...data.shares
+          .filter((s) => s.userId === userId && !s.isOwner)
+          .map((s) => s.participant.trim()),
+        ...data.settlements
+          .filter((s) => s.userId === userId)
+          .map((s) => s.counterparty.trim()),
+        ...data.loans
+          .filter((l) => l.userId === userId)
+          .map((l) => l.lender.trim()),
+        ...data.transactions
+          .filter((t) => t.userId === userId && t.externalPayer)
+          .map((t) => t.externalPayer!.trim()),
+      ].filter(Boolean),
+    ),
+  ).sort();
+
+  useEffect(() => {
+    if (
+      !isSplitExpense ||
+      splitMethod !== "equal" ||
+      participants.length === 0
+    )
+      return;
+    const total = transaction.amount;
+    const willIncludeMe = splitMode === "split" && includeMe;
+    const { myShare: newMyShare, perPersonShares } = computeEqualShares(
+      total,
+      willIncludeMe,
+      participants.length,
+    );
+    setMyShare(splitMode === "ordered_for_others" ? "0.00" : newMyShare);
+    setParticipants((prev) =>
+      prev.map((p, idx) => ({
+        ...p,
+        shareAmount:
+          p.status === "gift" ? "0.00" : perPersonShares[idx] || "0.00",
+      })),
+    );
+  }, [
+    transaction.amount,
+    participants.length,
+    includeMe,
+    splitMode,
+    splitMethod,
+    isSplitExpense,
+  ]);
+
+  function addParticipant(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (
+      participants.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      setError(`"${trimmed}" is already added.`);
+      return;
+    }
+    setError("");
+    const newP = {
+      id: crypto.randomUUID(),
+      name: trimmed,
+      shareAmount: "0.00",
+      status: "not_paid" as const,
+      paidAmount: "",
+      receivingAccountId: "",
+      paidDate: transaction.occurredOn || today,
+    };
+    setParticipants((prev) => [...prev, newP]);
+    setNewPersonName("");
+  }
+
+  function removeParticipant(id: string) {
+    setParticipants((prev) => prev.filter((p) => p.id !== id));
+  }
   const sameDayBalances = (["from", "to"] as const).flatMap((side) => {
     const accountId = transaction[`${side}AccountId`];
     const snapshot = latestAccountBalanceSnapshot(data, accountId, today);
@@ -350,12 +500,27 @@ export function RecordEditor({
         current.platform !== OTHER_PLATFORM &&
         previousPresets.includes(current.platform) &&
         !nextPresets.includes(current.platform);
+      let nextRefundReason = current.refundReason;
+      if (kind === "refund") {
+        if (
+          category === "Shared Expense / Paid-for-Others Repayment" ||
+          category === "Split Bill Reimbursement"
+        ) {
+          nextRefundReason = "shared_reimbursement";
+        } else if (category === "Purchase Refund") {
+          nextRefundReason = "merchant_refund";
+        } else {
+          nextRefundReason = "other";
+        }
+      }
+
       return {
         ...current,
         category,
         subcategory: subcategoryStillValid ? current.subcategory : "",
         platform: incompatiblePreset ? "" : current.platform,
         toAccountId: nextTo,
+        refundReason: nextRefundReason,
       };
     });
     setReceiptReviewed(false);
@@ -384,6 +549,7 @@ export function RecordEditor({
   }
   function changeKind(nextKind: string) {
     if (nextKind === transaction.kind) return;
+    setIsSplitExpense(false);
     const typedKind = nextKind as TransactionKind;
     const allowedCategories = getCategoriesForKind(typedKind);
     const isCategoryCompatible = allowedCategories.some(
@@ -599,6 +765,108 @@ export function RecordEditor({
           toBalanceSnapshotId: snapshotIdForSide("to"),
         };
         await save("transactions", savedTransaction);
+        if (
+          kind === "expense" &&
+          isSplitExpense &&
+          participants.length > 0
+        ) {
+          const existingGroup = data.groups.find(
+            (g) => g.transactionId === savedTransaction.id && g.userId === userId,
+          );
+          const groupId = existingGroup?.id || crypto.randomUUID();
+          const group: ExpenseGroup = {
+            id: groupId,
+            userId,
+            kind: "expense",
+            title: savedTransaction.description || "Shared expense",
+            occurredOn: savedTransaction.occurredOn || today,
+            merchant: savedTransaction.merchant || savedTransaction.description,
+            totalCost: savedTransaction.amount,
+            paidBy: "You",
+            transactionId: savedTransaction.id,
+          };
+          await save("groups", group);
+
+          const existingOwnerShare = data.shares.find(
+            (s) => s.groupId === groupId && s.userId === userId && s.isOwner,
+          );
+          const finalMyShare =
+            splitMode === "ordered_for_others" ? "0.00" : myShare || "0.00";
+          await save("shares", {
+            id: existingOwnerShare?.id || crypto.randomUUID(),
+            userId,
+            groupId,
+            participant: "You",
+            amount: finalMyShare,
+            isOwner: true,
+          });
+
+          for (const p of participants) {
+            const existingShare = data.shares.find(
+              (s) =>
+                s.groupId === groupId &&
+                s.userId === userId &&
+                !s.isOwner &&
+                s.participant.toLowerCase() === p.name.trim().toLowerCase(),
+            );
+            const shareAmount = p.status === "gift" ? "0.00" : p.shareAmount;
+            await save("shares", {
+              id: existingShare?.id || crypto.randomUUID(),
+              userId,
+              groupId,
+              participant: p.name.trim(),
+              amount: shareAmount,
+              isOwner: false,
+            });
+
+            const receiptAmount =
+              p.status === "fully_paid" ? p.shareAmount : p.paidAmount;
+            if (
+              (p.status === "fully_paid" || p.status === "partially_paid") &&
+              Number(receiptAmount) > 0 &&
+              p.receivingAccountId
+            ) {
+              const existingSettlement = data.settlements.find(
+                (s) =>
+                  s.groupId === groupId &&
+                  s.counterparty === p.name.trim() &&
+                  s.amount === receiptAmount,
+              );
+              if (!existingSettlement) {
+                const receiptTxId = crypto.randomUUID();
+                const receiptTx: Transaction = {
+                  id: receiptTxId,
+                  userId,
+                  amount: receiptAmount,
+                  currency: "INR",
+                  kind: "refund",
+                  status: "posted",
+                  occurredOn: p.paidDate || savedTransaction.occurredOn || today,
+                  description: `Reimbursement from ${p.name.trim()} · ${savedTransaction.description}`,
+                  fromAccountId: null,
+                  toAccountId: p.receivingAccountId,
+                  category: "Shared Expense / Paid-for-Others Repayment",
+                  platform: null,
+                  merchant: p.name.trim(),
+                  refundReason: "shared_reimbursement",
+                  refundOfTransactionId: savedTransaction.id,
+                  externalPayer: p.name.trim(),
+                  notes: `Payment received for ${savedTransaction.description} share.`,
+                };
+                await save("transactions", receiptTx);
+                await save("settlements", {
+                  id: crypto.randomUUID(),
+                  userId,
+                  groupId,
+                  transactionId: receiptTxId,
+                  counterparty: p.name.trim(),
+                  direction: "incoming",
+                  amount: receiptAmount,
+                });
+              }
+            }
+          }
+        }
         if (
           kind === "bill_payment" &&
           to &&
@@ -1310,6 +1578,510 @@ export function RecordEditor({
                     {transactionInput("externalPayer")}
                   </Field>
                 )}
+              {transaction.kind === "expense" && (
+                <div className="full split-expense-container">
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={isSplitExpense}
+                      onChange={(e) => setIsSplitExpense(e.target.checked)}
+                    />
+                    <span>
+                      <strong>Split expense / Ordered for someone else</strong>
+                    </span>
+                  </label>
+                  {isSplitExpense && (
+                    <div className="split-expense-box">
+                      <div className="split-mode-selector">
+                        <button
+                          type="button"
+                          className={`split-mode-button ${splitMode === "split" ? "active" : ""}`}
+                          onClick={() => setSplitMode("split")}
+                        >
+                          Split expense
+                        </button>
+                        <button
+                          type="button"
+                          className={`split-mode-button ${splitMode === "ordered_for_others" ? "active" : ""}`}
+                          onClick={() => {
+                            setSplitMode("ordered_for_others");
+                            setIncludeMe(false);
+                          }}
+                        >
+                          Ordered for someone else
+                        </button>
+                      </div>
+
+                      {splitMode === "split" && (
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "16px",
+                            flexWrap: "wrap",
+                            alignItems: "center",
+                          }}
+                        >
+                          <label className="check-row">
+                            <input
+                              type="checkbox"
+                              checked={includeMe}
+                              onChange={(e) => setIncludeMe(e.target.checked)}
+                            />
+                            <span>Include my share</span>
+                          </label>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: "8px",
+                              alignItems: "center",
+                            }}
+                          >
+                            <label
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "4px",
+                                fontSize: "13px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <input
+                                type="radio"
+                                name="splitMethod"
+                                checked={splitMethod === "equal"}
+                                onChange={() => setSplitMethod("equal")}
+                              />
+                              Equal split
+                            </label>
+                            <label
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "4px",
+                                fontSize: "13px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <input
+                                type="radio"
+                                name="splitMethod"
+                                checked={splitMethod === "custom"}
+                                onChange={() => setSplitMethod("custom")}
+                              />
+                              Custom shares
+                            </label>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="split-add-person-row">
+                        <input
+                          type="text"
+                          placeholder="Add person name..."
+                          value={newPersonName}
+                          list="known-counterparties-list"
+                          onChange={(e) => setNewPersonName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              addParticipant(newPersonName);
+                            }
+                          }}
+                        />
+                        <datalist id="known-counterparties-list">
+                          {knownPeople
+                            .filter(
+                              (p) =>
+                                !participants.some(
+                                  (x) =>
+                                    x.name.toLowerCase() === p.toLowerCase(),
+                                ),
+                            )
+                            .map((p) => (
+                              <option key={p} value={p} />
+                            ))}
+                        </datalist>
+                        <button
+                          type="button"
+                          className="split-add-btn"
+                          onClick={() => addParticipant(newPersonName)}
+                        >
+                          + Add Person
+                        </button>
+                      </div>
+
+                      {participants.length > 0 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "10px",
+                          }}
+                        >
+                          {splitMode === "split" && includeMe && (
+                            <div className="split-participant-card">
+                              <div className="split-participant-top">
+                                <span className="split-participant-name">
+                                  You (my share)
+                                </span>
+                                {splitMethod === "custom" ? (
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                    }}
+                                  >
+                                    <span>₹</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      style={{
+                                        width: "90px",
+                                        padding: "4px 8px",
+                                        borderRadius: "8px",
+                                        border: "1px solid var(--border)",
+                                      }}
+                                      value={myShare}
+                                      onChange={(e) => setMyShare(e.target.value)}
+                                    />
+                                  </div>
+                                ) : (
+                                  <strong>₹{myShare || "0.00"}</strong>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {participants.map((p) => (
+                            <div key={p.id} className="split-participant-card">
+                              <div className="split-participant-top">
+                                <span className="split-participant-name">
+                                  {p.name}
+                                </span>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "8px",
+                                  }}
+                                >
+                                  {splitMethod === "custom" &&
+                                  p.status !== "gift" ? (
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "4px",
+                                      }}
+                                    >
+                                      <span>₹</span>
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        style={{
+                                          width: "90px",
+                                          padding: "4px 8px",
+                                          borderRadius: "8px",
+                                          border: "1px solid var(--border)",
+                                        }}
+                                        value={p.shareAmount}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setParticipants((prev) =>
+                                            prev.map((item) =>
+                                              item.id === p.id
+                                                ? {
+                                                    ...item,
+                                                    shareAmount: val,
+                                                  }
+                                                : item,
+                                            ),
+                                          );
+                                        }}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <strong>
+                                      {p.status === "gift"
+                                        ? "Gift (₹0.00 owed)"
+                                        : `₹${p.shareAmount}`}
+                                    </strong>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="split-remove-btn"
+                                    title="Remove participant"
+                                    onClick={() => removeParticipant(p.id)}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="split-payment-status-row">
+                                <label
+                                  style={{
+                                    fontSize: "12px",
+                                    color: "var(--muted)",
+                                    fontWeight: 550,
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "4px",
+                                  }}
+                                >
+                                  Payment Status:
+                                  <select
+                                    value={p.status}
+                                    onChange={(e) => {
+                                      const nextStatus = e.target.value as
+                                        | "not_paid"
+                                        | "partially_paid"
+                                        | "fully_paid"
+                                        | "gift";
+                                      setParticipants((prev) =>
+                                        prev.map((item) => {
+                                          if (item.id !== p.id) return item;
+                                          return {
+                                            ...item,
+                                            status: nextStatus,
+                                            paidAmount:
+                                              nextStatus === "fully_paid"
+                                                ? item.shareAmount
+                                                : nextStatus === "partially_paid"
+                                                  ? (
+                                                      Number(item.shareAmount) / 2
+                                                    ).toFixed(2)
+                                                  : "",
+                                            receivingAccountId:
+                                              nextStatus === "fully_paid" ||
+                                              nextStatus === "partially_paid"
+                                                ? item.receivingAccountId ||
+                                                  data.accounts.find(
+                                                    (a) => a.kind === "bank",
+                                                  )?.id ||
+                                                  ""
+                                                : "",
+                                          };
+                                        }),
+                                      );
+                                    }}
+                                    style={{
+                                      padding: "6px 10px",
+                                      borderRadius: "8px",
+                                      border: "1px solid var(--border)",
+                                      background: "#fff",
+                                    }}
+                                  >
+                                    <option value="not_paid">
+                                      Not Paid Yet — Full amount due
+                                    </option>
+                                    <option value="partially_paid">
+                                      Partially Paid — Record payment received
+                                    </option>
+                                    <option value="fully_paid">
+                                      Fully Paid — Paid in full
+                                    </option>
+                                    <option value="gift">
+                                      Gift — No repayment expected
+                                    </option>
+                                  </select>
+                                </label>
+
+                                {(p.status === "partially_paid" ||
+                                  p.status === "fully_paid") && (
+                                  <div className="split-payment-details">
+                                    {p.status === "partially_paid" && (
+                                      <div>
+                                        <label
+                                          style={{
+                                            fontSize: "11px",
+                                            color: "var(--muted)",
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: "2px",
+                                          }}
+                                        >
+                                          Amount received (₹):
+                                          <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0.01"
+                                            max={p.shareAmount}
+                                            value={p.paidAmount}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              setParticipants((prev) =>
+                                                prev.map((item) =>
+                                                  item.id === p.id
+                                                    ? {
+                                                        ...item,
+                                                        paidAmount: val,
+                                                      }
+                                                    : item,
+                                                ),
+                                              );
+                                            }}
+                                            style={{
+                                              width: "100%",
+                                              padding: "6px",
+                                              borderRadius: "6px",
+                                              border: "1px solid var(--border)",
+                                            }}
+                                          />
+                                        </label>
+                                      </div>
+                                    )}
+                                    <div>
+                                      <label
+                                        style={{
+                                          fontSize: "11px",
+                                          color: "var(--muted)",
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "2px",
+                                        }}
+                                      >
+                                        Received in account:
+                                        <select
+                                          value={p.receivingAccountId}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setParticipants((prev) =>
+                                              prev.map((item) =>
+                                                item.id === p.id
+                                                  ? {
+                                                      ...item,
+                                                      receivingAccountId: val,
+                                                    }
+                                                  : item,
+                                              ),
+                                            );
+                                          }}
+                                          style={{
+                                            width: "100%",
+                                            padding: "6px",
+                                            borderRadius: "6px",
+                                            border: "1px solid var(--border)",
+                                          }}
+                                        >
+                                          <option value="">
+                                            Choose bank / wallet
+                                          </option>
+                                          {data.accounts
+                                            .filter(
+                                              (a) =>
+                                                a.userId === userId &&
+                                                a.active &&
+                                                ["bank", "wallet"].includes(
+                                                  a.kind,
+                                                ),
+                                            )
+                                            .map((a) => (
+                                              <option key={a.id} value={a.id}>
+                                                {a.name}
+                                              </option>
+                                            ))}
+                                        </select>
+                                      </label>
+                                    </div>
+                                    <div>
+                                      <label
+                                        style={{
+                                          fontSize: "11px",
+                                          color: "var(--muted)",
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "2px",
+                                        }}
+                                      >
+                                        Date received:
+                                        <input
+                                          type="date"
+                                          value={p.paidDate}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setParticipants((prev) =>
+                                              prev.map((item) =>
+                                                item.id === p.id
+                                                  ? {
+                                                      ...item,
+                                                      paidDate: val,
+                                                    }
+                                                  : item,
+                                              ),
+                                            );
+                                          }}
+                                          style={{
+                                            width: "100%",
+                                            padding: "6px",
+                                            borderRadius: "6px",
+                                            border: "1px solid var(--border)",
+                                          }}
+                                        />
+                                      </label>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+
+                          <div className="split-summary-bar">
+                            <div>
+                              <small style={{ color: "var(--muted)" }}>
+                                Total Paid:
+                              </small>{" "}
+                              <strong>
+                                ₹{transaction.amount || "0.00"}
+                              </strong>
+                            </div>
+                            <div>
+                              <small style={{ color: "var(--muted)" }}>
+                                My Share:
+                              </small>{" "}
+                              <strong>
+                                ₹
+                                {splitMode === "ordered_for_others"
+                                  ? "0.00"
+                                  : myShare || "0.00"}
+                              </strong>
+                            </div>
+                            <div>
+                              <small style={{ color: "var(--muted)" }}>
+                                Receivable:
+                              </small>{" "}
+                              <strong>
+                                ₹
+                                {participants
+                                  .filter((p) => p.status !== "gift")
+                                  .reduce((sum, p) => {
+                                    const paid =
+                                      p.status === "fully_paid"
+                                        ? Number(p.shareAmount)
+                                        : p.status === "partially_paid"
+                                          ? Number(p.paidAmount || 0)
+                                          : 0;
+                                    return (
+                                      sum +
+                                      Math.max(
+                                        0,
+                                        Number(p.shareAmount) - paid,
+                                      )
+                                    );
+                                  }, 0)
+                                  .toFixed(2)}
+                              </strong>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               {sameDayBalances.map(({ account, snapshot, key, choice }) => (
                 <Field
                   key={key}
@@ -1392,12 +2164,111 @@ export function RecordEditor({
                   </details>
                 </>
               )}
-              {transaction.kind === "refund" && transaction.refundReason === "shared_reimbursement" && <Field label="Repaid by" className="full"><select value={transaction.externalPayer} onChange={e => updateTransaction("externalPayer",e.target.value)}><option value="">Choose participant after linking the purchase</option>{data.shares.filter(share => share.userId === userId && !share.isOwner && data.groups.some(g => g.id === share.groupId && g.transactionId === transaction.refundOfTransactionId)).map(share => <option key={share.id} value={share.participant}>{share.participant}</option>)}</select></Field>}
-              {transaction.kind === "refund" && <Field label="Reason" className="full"><select value={transaction.refundReason} onChange={e => updateTransaction("refundReason", e.target.value)}><option value="merchant_refund">Merchant refund</option><option value="shared_reimbursement">Shared-expense reimbursement</option><option value="other">Other reversal</option></select><span className="form-note">Link the original purchase where possible. For shared expenses, link the purchase and choose the participant to settle the receivable.</span></Field>}
-              {transaction.kind !== "expense" && (
+              {transaction.kind === "refund" && (
                 <>
-                  {(transaction.kind === "refund" ||
-                    transaction.refundOfTransactionId) && (
+                  <Field label="Refund Reason" className="full">
+                    <select
+                      value={transaction.refundReason || "merchant_refund"}
+                      onChange={(e) => {
+                        updateTransaction(
+                          "refundReason",
+                          e.target.value as
+                            | "merchant_refund"
+                            | "shared_reimbursement"
+                            | "other",
+                        );
+                        if (e.target.value !== "shared_reimbursement") {
+                          updateTransaction("externalPayer", "");
+                        }
+                      }}
+                    >
+                      <option value="merchant_refund">
+                        Purchase Refund
+                      </option>
+                      <option value="shared_reimbursement">
+                        Shared Expense / Paid-for-Others Repayment
+                      </option>
+                      <option value="other">
+                        Other Reversal / Money Back
+                      </option>
+                    </select>
+                  </Field>
+                  {transaction.refundReason === "shared_reimbursement" && (
+                    <Field label="Repaid by (participant)" className="full">
+                      <select
+                        value={transaction.externalPayer}
+                        onChange={(e) =>
+                          updateTransaction("externalPayer", e.target.value)
+                        }
+                      >
+                        <option value="">Choose participant</option>
+                        {knownPeople.map((person) => (
+                          <option key={person} value={person}>
+                            {person}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
+                  <Field
+                    label={
+                      transaction.refundReason === "shared_reimbursement"
+                        ? "Original shared purchase (required)"
+                        : "Refund of purchase (optional)"
+                    }
+                    className="full"
+                  >
+                    <select
+                      name="refundOfTransactionId"
+                      value={transaction.refundOfTransactionId}
+                      onChange={(event) =>
+                        updateTransaction(
+                          "refundOfTransactionId",
+                          event.target.value,
+                        )
+                      }
+                    >
+                      <option value="">
+                        {transaction.refundReason === "shared_reimbursement"
+                          ? "Choose original purchase"
+                          : "Unmatched"}
+                      </option>
+                      {data.transactions
+                        .filter(
+                          (t) =>
+                            t.userId === userId &&
+                            t.kind === "expense" &&
+                            t.status === "posted" &&
+                            t.occurredOn &&
+                            t.id !== editor.record?.id &&
+                            (transaction.refundReason !==
+                              "shared_reimbursement" ||
+                              data.groups.some(
+                                (g) =>
+                                  g.transactionId === t.id &&
+                                  (!transaction.externalPayer ||
+                                    data.shares.some(
+                                      (s) =>
+                                        s.groupId === g.id &&
+                                        !s.isOwner &&
+                                        s.participant ===
+                                          transaction.externalPayer,
+                                    )),
+                              )),
+                        )
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.description} · ₹{t.amount} (
+                            {formatDate(t.occurredOn!)})
+                          </option>
+                        ))}
+                    </select>
+                  </Field>
+                </>
+              )}
+              {transaction.kind !== "expense" && transaction.kind !== "refund" && (
+                <>
+                  {transaction.refundOfTransactionId && (
                     <Field label="Refund of (optional)">
                       <select
                         name="refundOfTransactionId"

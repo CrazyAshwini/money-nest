@@ -368,6 +368,42 @@ export function consumptionAmount(data: WorkspaceData, t: Transaction): Money {
   if (!shares.some(s => s.isOwner) || !dec(sumMoney(shares.map(s => s.amount))).eq(t.amount)) return t.amount;
   return sumMoney(shares.filter(s => s.isOwner).map(s => s.amount));
 }
+
+/** Deterministic paise-level distribution for equal split expenses. */
+export function computeEqualShares(
+  totalAmountStr: string,
+  includeMe: boolean,
+  participantCount: number,
+): { myShare: string; perPersonShares: string[] } {
+  const total = Number(totalAmountStr);
+  if (!total || total <= 0 || participantCount === 0) {
+    return {
+      myShare: totalAmountStr || "0.00",
+      perPersonShares: Array(participantCount).fill("0.00"),
+    };
+  }
+  const totalPaise = Math.round(total * 100);
+  const heads = includeMe ? participantCount + 1 : participantCount;
+  const basePaise = Math.floor(totalPaise / heads);
+  let remainder = totalPaise % heads;
+
+  let mySharePaise = 0;
+  if (includeMe) {
+    mySharePaise = basePaise + (remainder > 0 ? 1 : 0);
+    if (remainder > 0) remainder--;
+  }
+
+  const perPersonPaise = Array(participantCount).fill(0).map(() => {
+    const p = basePaise + (remainder > 0 ? 1 : 0);
+    if (remainder > 0) remainder--;
+    return p;
+  });
+
+  return {
+    myShare: (mySharePaise / 100).toFixed(2),
+    perPersonShares: perPersonPaise.map((p) => (p / 100).toFixed(2)),
+  };
+}
 /** Actual bank/wallet cash. Internal asset transfers are excluded; liability repayments remain cash out. */
 export function monthlyCashFlow(data: WorkspaceData, month: string) {
   let incoming = ZERO, outgoing = ZERO;

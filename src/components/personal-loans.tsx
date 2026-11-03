@@ -21,6 +21,24 @@ export function PersonalLoans({ id }: { id?: string }) {
   const loans = data.loans.filter(
     (l) => l.userId === userId && l.ledgerManaged,
   );
+  const knownPeople = Array.from(
+    new Set(
+      [
+        ...data.shares
+          .filter((s) => s.userId === userId && !s.isOwner)
+          .map((s) => s.participant.trim()),
+        ...data.settlements
+          .filter((s) => s.userId === userId)
+          .map((s) => s.counterparty.trim()),
+        ...data.loans
+          .filter((l) => l.userId === userId)
+          .map((l) => l.lender.trim()),
+        ...data.transactions
+          .filter((t) => t.userId === userId && t.externalPayer)
+          .map((t) => t.externalPayer!.trim()),
+      ].filter(Boolean),
+    ),
+  ).sort();
   const [draft, setDraft] = useState<{
     loan?: Loan;
     direction?: "lent" | "borrowed";
@@ -270,7 +288,17 @@ export function PersonalLoans({ id }: { id?: string }) {
             <div className="form-grid">
               {!draft.loan && (
                 <Field label="Person">
-                  <input name="person" maxLength={100} required />
+                  <input
+                    name="person"
+                    maxLength={100}
+                    list="known-loan-people"
+                    required
+                  />
+                  <datalist id="known-loan-people">
+                    {knownPeople.map((p) => (
+                      <option key={p} value={p} />
+                    ))}
+                  </datalist>
                 </Field>
               )}
               <Field label="Principal amount · ₹">

@@ -62,6 +62,22 @@ export const TRANSACTION_TYPE_CATEGORIES: Readonly<
   adjustment: ADJUSTMENT_CATALOG_CATEGORIES,
 };
 
+export const CATEGORY_ALIASES: Readonly<Record<string, string>> = {
+  Food: "Food & Drinks",
+  "Bills & Utilities": "Utilities",
+  "Stationery & Education": "Education",
+  "Health & Personal Care": "Health",
+  Gifts: "Gift Given",
+  Others: "Other",
+  "Credit Card": "Credit Card Payment",
+  "Pay Later": "Pay Later Payment",
+  "Own Accounts": "Own Account Transfer",
+  "Wallet / Cash": "Wallet Top-up",
+  "Savings & Investments": "Savings / Investment",
+  "Shared Expense / Paid-for-Others Repayment": "Split Bill Reimbursement",
+  "Other Refund": "Other Money Back",
+};
+
 export const EXPENSE_SUBCATEGORIES: Readonly<Record<string, readonly string[]>> =
   {
     "Food & Drinks": ["Groceries", "Restaurant", "Snacks"],
@@ -69,8 +85,12 @@ export const EXPENSE_SUBCATEGORIES: Readonly<Record<string, readonly string[]>> 
     Shopping: ["Clothing", "Electronics", "Household"],
     Transport: ["Auto/Cab", "Bus/Train", "Fuel"],
     Utilities: ["Electricity", "Mobile Recharge", "Internet", "Water"],
+    "Bills & Utilities": ["Electricity", "Mobile Recharge", "Internet", "Water"],
     Education: ["Books", "Stationery", "Courses"],
+    "Stationery & Education": ["Books", "Stationery", "Courses"],
+    Stationery: ["Books", "Stationery", "Courses"],
     Health: ["Medicines", "Consultation"],
+    "Health & Personal Care": ["Medicines", "Consultation"],
     Entertainment: ["Movies", "Games", "Subscriptions"],
     Housing: ["Rent", "Maintenance"],
   };
@@ -175,7 +195,14 @@ export function getCategoryPlatformOptions(
     category &&
     Object.prototype.hasOwnProperty.call(CATEGORY_PLATFORMS, category)
       ? CATEGORY_PLATFORMS[category as Category]
-      : CATEGORY_PLATFORMS.Other;
+      : category &&
+          Object.prototype.hasOwnProperty.call(CATEGORY_ALIASES, category) &&
+          Object.prototype.hasOwnProperty.call(
+            CATEGORY_PLATFORMS,
+            CATEGORY_ALIASES[category],
+          )
+        ? CATEGORY_PLATFORMS[CATEGORY_ALIASES[category] as Category]
+        : CATEGORY_PLATFORMS.Other;
   if (!currentPlatform?.trim() || options.includes(currentPlatform)) {
     return [...options];
   }
@@ -342,5 +369,10 @@ export function isCategoryValidForKind(
   if (!category) return false;
   const allowed = getCategoriesForKind(kind);
   const normalized = normalizeTransactionFilter(category);
-  return allowed.some((c) => normalizeTransactionFilter(c) === normalized);
+  const aliasTarget = CATEGORY_ALIASES[category];
+  const normalizedAlias = aliasTarget ? normalizeTransactionFilter(aliasTarget) : null;
+  return allowed.some((c) => {
+    const norm = normalizeTransactionFilter(c);
+    return norm === normalized || (normalizedAlias !== null && norm === normalizedAlias);
+  });
 }

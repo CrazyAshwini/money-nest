@@ -213,9 +213,9 @@
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  min-height: 48px;
+  min-height: 52px;
   margin: 2px 0;
-  padding: 11px 12px;
+  padding: 12px 16px;
   border: 0;
   border-radius: 11px;
   color: #253b30;
@@ -294,8 +294,8 @@
     left: 0;
     width: 100%;
     max-width: 100%;
-    max-height: min(80dvh, 640px);
-    padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+    max-height: min(65dvh, 520px);
+    padding: 16px 20px calc(16px + env(safe-area-inset-bottom));
     border-radius: 24px 24px 0 0;
     transform: none;
   }

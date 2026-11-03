@@ -337,3 +337,148 @@
     padding-left: 8px;
   }
 }
+
+.split-expense-container {
+  margin-top: 4px;
+}
+
+.split-expense-box {
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #f8faf9;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.split-mode-selector {
+  display: flex;
+  gap: 8px;
+}
+
+.split-mode-button {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+  text-align: center;
+  transition: all 120ms ease;
+}
+
+.split-mode-button.active {
+  background: #eaf5ef;
+  border-color: #0f8a65;
+  color: #0f8a65;
+}
+
+.split-participants-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.split-add-person-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.split-add-person-row input {
+  flex: 1;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 14px;
+}
+
+.split-add-btn {
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #0f8a65;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.split-participant-card {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.split-participant-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.split-participant-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.split-remove-btn {
+  border: 0;
+  background: transparent;
+  color: #8c9b93;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.split-remove-btn:hover {
+  color: #c93b2b;
+}
+
+.split-payment-status-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.split-payment-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  background: #f4f8f5;
+  border-radius: 8px;
+}
+
+.split-summary-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #eef5f1;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.split-warning {
+  color: #c93b2b;
+  font-size: 12px;
+  margin: 0;
+}

@@ -34,7 +34,7 @@ import {
 } from "./ui";
 import { type EditorState } from "./editors";
 import { exportTransactionsCsv } from "@/lib/imports";
-import { formatMoney, formatDate, groupSummary, sumMoney } from "@/lib/finance";
+import { formatMoney, formatDate, groupSummary, sumMoney, todayISO } from "@/lib/finance";
 import "./profile-theme.css";
 import "./signup-auth.css";
 
@@ -228,16 +228,125 @@ export function GroupsPage({
             )}
             {data.shares
               .filter((x) => x.groupId === group.id)
-              .map((x) => (
-                <div key={x.id} className="record-row">
-                  <span className="avatar">{x.participant[0]}</span>
-                  <strong className="grow">
-                    {x.participant}
-                    {x.isOwner ? " (you)" : ""}
-                  </strong>
-                  <strong>{formatMoney(x.amount)}</strong>
-                </div>
-              ))}
+              .map((x) => {
+                const incomingForParticipant = sumMoney(
+                  data.settlements
+                    .filter(
+                      (s) =>
+                        s.groupId === group.id &&
+                        s.counterparty === x.participant &&
+                        s.direction === "incoming",
+                    )
+                    .map((s) => s.amount),
+                );
+                const remaining = Decimal.max(
+                  0,
+                  new Decimal(x.amount).minus(incomingForParticipant),
+                ).toFixed(2);
+                const isFullyPaid =
+                  new Decimal(remaining).isZero() && new Decimal(x.amount).gt(0);
+                const isGift = new Decimal(x.amount).isZero();
+                const isPartiallyPaid =
+                  new Decimal(incomingForParticipant).gt(0) &&
+                  new Decimal(remaining).gt(0);
+
+                return (
+                  <div
+                    key={x.id}
+                    className="record-row"
+                    style={{ flexWrap: "wrap", gap: "8px" }}
+                  >
+                    <span className="avatar">{x.participant[0]}</span>
+                    <strong className="grow">
+                      {x.participant}
+                      {x.isOwner ? " (you)" : ""}
+                    </strong>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      {x.isOwner ? (
+                        <Badge tone="blue">
+                          Your share: {formatMoney(x.amount)}
+                        </Badge>
+                      ) : isGift ? (
+                        <Badge tone="purple">Gift</Badge>
+                      ) : isFullyPaid ? (
+                        <Badge tone="green">
+                          Fully Paid · {formatMoney(x.amount)}
+                        </Badge>
+                      ) : isPartiallyPaid ? (
+                        <Badge tone="amber">
+                          Paid {formatMoney(incomingForParticipant)} /{" "}
+                          {formatMoney(x.amount)} (Due: {formatMoney(remaining)})
+                        </Badge>
+                      ) : (
+                        <Badge tone="red">
+                          Not Paid Yet · {formatMoney(x.amount)}
+                        </Badge>
+                      )}
+                      {!x.isOwner && !isGift && !isFullyPaid && (
+                        <>
+                          <button
+                            type="button"
+                            className="button small"
+                            onClick={() => {
+                              open({
+                                type: "transaction",
+                                kind: "refund",
+                                record: {
+                                  id: crypto.randomUUID(),
+                                  userId,
+                                  amount: remaining,
+                                  currency: "INR",
+                                  kind: "refund",
+                                  status: "posted",
+                                  occurredOn: todayISO(),
+                                  description: `Reimbursement from ${x.participant} · ${group.title}`,
+                                  fromAccountId: null,
+                                  toAccountId: null,
+                                  category:
+                                    "Shared Expense / Paid-for-Others Repayment",
+                                  refundReason: "shared_reimbursement",
+                                  refundOfTransactionId: group.transactionId,
+                                  externalPayer: x.participant,
+                                },
+                              });
+                            }}
+                          >
+                            Record Payment
+                          </button>
+                          <button
+                            type="button"
+                            className="button small"
+                            style={{ opacity: 0.8 }}
+                            onClick={async () => {
+                              if (
+                                window.confirm(
+                                  `Convert remaining ₹${remaining} owed by ${x.participant} to Gift?`,
+                                )
+                              ) {
+                                await save("shares", {
+                                  ...x,
+                                  amount: incomingForParticipant,
+                                });
+                                toast(
+                                  `Remaining amount converted to Gift for ${x.participant}.`,
+                                );
+                              }
+                            }}
+                          >
+                            Convert to Gift
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
           </div>
         </Section>
         <Section title="Matched contributions & payouts">
