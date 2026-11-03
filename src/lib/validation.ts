@@ -490,10 +490,16 @@ export function validateWorkspaceRecord<K extends keyof WorkspaceData>(
     if (next.kind === "bill_payment" && next.toAccountId) {
       const toAcc = account(next.toAccountId);
       if (toAcc) {
-        if (next.category === "Credit Card Payment" && toAcc.kind !== "credit_card") {
+        if (
+          (next.category === "Credit Card Payment" || next.category === "Credit Card") &&
+          toAcc.kind !== "credit_card"
+        ) {
           throw new Error("Credit Card Payment destination must be a credit card account.");
         }
-        if (next.category === "Pay Later Payment" && toAcc.kind !== "pay_later") {
+        if (
+          (next.category === "Pay Later Payment" || next.category === "Pay Later") &&
+          toAcc.kind !== "pay_later"
+        ) {
           throw new Error("Pay Later Payment destination must be a Pay Later account.");
         }
       }

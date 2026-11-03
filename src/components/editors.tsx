@@ -39,6 +39,7 @@ import {
   getDefaultCategoryForKind,
   getSubcategoriesForCategory,
   transactionTypeLabel,
+  CATEGORY_ALIASES,
   OTHER_PLATFORM,
 } from "@/lib/category-platforms";
 import { withSellerDescription } from "@/lib/seller-description";
@@ -479,13 +480,13 @@ export function RecordEditor({
       if (kind === "bill_payment" && nextTo) {
         const toAcc = data.accounts.find((a) => a.id === nextTo);
         if (
-          category === "Credit Card Payment" &&
+          (category === "Credit Card Payment" || category === "Credit Card") &&
           toAcc &&
           toAcc.kind !== "credit_card"
         ) {
           nextTo = "";
         } else if (
-          category === "Pay Later Payment" &&
+          (category === "Pay Later Payment" || category === "Pay Later") &&
           toAcc &&
           toAcc.kind !== "pay_later"
         ) {
@@ -645,7 +646,8 @@ export function RecordEditor({
           if (to) {
             const targetAccount = data.accounts.find((a) => a.id === to);
             if (
-              transaction.category === "Credit Card Payment" &&
+              (transaction.category === "Credit Card Payment" ||
+                transaction.category === "Credit Card") &&
               targetAccount &&
               targetAccount.kind !== "credit_card"
             ) {
@@ -654,7 +656,8 @@ export function RecordEditor({
               );
             }
             if (
-              transaction.category === "Pay Later Payment" &&
+              (transaction.category === "Pay Later Payment" ||
+                transaction.category === "Pay Later") &&
               targetAccount &&
               targetAccount.kind !== "pay_later"
             ) {
@@ -1178,9 +1181,15 @@ export function RecordEditor({
       if (name === "fromAccountId") {
         allowedKinds = ["bank", "wallet", "credit_card", "pay_later"];
       } else if (name === "toAccountId") {
-        if (transaction.category === "Credit Card Payment") {
+        if (
+          transaction.category === "Credit Card Payment" ||
+          transaction.category === "Credit Card"
+        ) {
           allowedKinds = ["credit_card"];
-        } else if (transaction.category === "Pay Later Payment") {
+        } else if (
+          transaction.category === "Pay Later Payment" ||
+          transaction.category === "Pay Later"
+        ) {
           allowedKinds = ["pay_later"];
         } else {
           allowedKinds = ["credit_card", "pay_later", "bank", "wallet"];
@@ -1256,12 +1265,17 @@ export function RecordEditor({
   const currentKind = transaction.kind as TransactionKind;
   const currentCategory = transaction.category;
   const catalogCategories = getCategoriesForKind(currentKind, currentCategory);
-  const userCategoriesForKind = data.transactions
+  const customUserCategories = data.transactions
     .filter((item) => item.userId === userId && item.kind === currentKind)
     .map((item) => item.category)
-    .filter((cat): cat is string => Boolean(cat));
+    .filter((cat): cat is string => Boolean(cat))
+    .filter(
+      (cat) =>
+        !catalogCategories.includes(cat) &&
+        !CATEGORY_ALIASES[cat],
+    );
   const categoryOptions = [
-    ...new Set([...catalogCategories, ...userCategoriesForKind]),
+    ...new Set([...catalogCategories, ...customUserCategories]),
   ]
     .filter(Boolean)
     .map((cat) => ({
@@ -1525,7 +1539,8 @@ export function RecordEditor({
                       />
                     </Field>
                   )}
-                  {transaction.category === "Gift Given" && (
+                  {(transaction.category === "Gifts" ||
+                    transaction.category === "Gift Given") && (
                     <Field label="Recipient person (optional)" className="full">
                       {transactionInput("merchant")}
                     </Field>

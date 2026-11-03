@@ -3,46 +3,40 @@ import { CATEGORIES, type Category, type TransactionKind } from "./types";
 export const OTHER_PLATFORM = "Other";
 
 export const EXPENSE_CATALOG_CATEGORIES: readonly string[] = [
-  "Food & Drinks",
+  "Food",
   "Shopping",
   "Transport",
-  "Utilities",
-  "Education",
-  "Health",
+  "Bills & Utilities",
+  "Stationery & Education",
+  "Health & Personal Care",
   "Entertainment",
-  "Gift Given",
-  "Personal Care",
-  "Housing",
-  "Other",
+  "Gifts",
+  "Others",
 ];
 
 export const INCOME_CATALOG_CATEGORIES: readonly string[] = [
   "Salary / Fellowship",
   "Gift Received",
-  "Business / Freelance",
-  "Interest / Rewards",
-  "Investment Income",
+  "Interest & Rewards",
   "Other Income",
 ];
 
 export const BILL_REPAYMENT_CATALOG_CATEGORIES: readonly string[] = [
-  "Credit Card Payment",
-  "Pay Later Payment",
+  "Credit Card",
+  "Pay Later",
   "Loan EMI",
 ];
 
 export const TRANSFER_CATALOG_CATEGORIES: readonly string[] = [
-  "Own Account Transfer",
-  "Wallet Top-up",
-  "Savings / Investment",
-  "Cash Withdrawal / Deposit",
+  "Own Accounts",
+  "Wallet / Cash",
+  "Savings & Investments",
 ];
 
 export const REFUND_CATALOG_CATEGORIES: readonly string[] = [
   "Purchase Refund",
-  "Split Bill Reimbursement",
-  "Overpayment Refund",
-  "Other Money Back",
+  "Shared Expense / Paid-for-Others Repayment",
+  "Other Refund",
 ];
 
 export const ADJUSTMENT_CATALOG_CATEGORIES: readonly string[] = [
@@ -63,6 +57,7 @@ export const TRANSACTION_TYPE_CATEGORIES: Readonly<
 };
 
 export const CATEGORY_ALIASES: Readonly<Record<string, string>> = {
+  // Simplified -> Canonical / Legacy
   Food: "Food & Drinks",
   "Bills & Utilities": "Utilities",
   "Stationery & Education": "Education",
@@ -76,6 +71,28 @@ export const CATEGORY_ALIASES: Readonly<Record<string, string>> = {
   "Savings & Investments": "Savings / Investment",
   "Shared Expense / Paid-for-Others Repayment": "Split Bill Reimbursement",
   "Other Refund": "Other Money Back",
+
+  // Canonical / Legacy -> Simplified
+  "Food & Drinks": "Food",
+  Utilities: "Bills & Utilities",
+  Education: "Stationery & Education",
+  Stationery: "Stationery & Education",
+  Health: "Health & Personal Care",
+  "Personal Care": "Health & Personal Care",
+  "Gift Given": "Gifts",
+  Other: "Others",
+  "Credit Card Payment": "Credit Card",
+  "Pay Later Payment": "Pay Later",
+  "Own Account Transfer": "Own Accounts",
+  "Wallet Top-up": "Wallet / Cash",
+  "Savings / Investment": "Savings & Investments",
+  "Cash Withdrawal / Deposit": "Own Accounts",
+  "Split Bill Reimbursement": "Shared Expense / Paid-for-Others Repayment",
+  "Overpayment Refund": "Other Refund",
+  "Other Money Back": "Other Refund",
+  "Business / Freelance": "Other Income",
+  "Interest / Rewards": "Interest & Rewards",
+  "Investment Income": "Other Income",
 };
 
 export const EXPENSE_SUBCATEGORIES: Readonly<Record<string, readonly string[]>> =
@@ -96,7 +113,7 @@ export const EXPENSE_SUBCATEGORIES: Readonly<Record<string, readonly string[]>> 
   };
 
 /** Suggested sources for expense entry. These labels are stored as plain text. */
-export const CATEGORY_PLATFORMS: Readonly<Record<Category, readonly string[]>> =
+export const CATEGORY_PLATFORMS: Readonly<Record<string, readonly string[]>> =
   {
     "Food & Drinks": [
       "Swiggy",
@@ -135,6 +152,17 @@ export const CATEGORY_PLATFORMS: Readonly<Record<Category, readonly string[]>> =
       "Classmate",
       OTHER_PLATFORM,
     ],
+    "Stationery & Education": [
+      "Local stationery shop",
+      "Amazon",
+      "Flipkart",
+      "Classmate",
+      "School / college",
+      "Coaching",
+      "Udemy",
+      "Coursera",
+      OTHER_PLATFORM,
+    ],
     Transport: ["Uber", "Ola", "Rapido", "Public transport", OTHER_PLATFORM],
     Education: [
       "School / college",
@@ -145,6 +173,14 @@ export const CATEGORY_PLATFORMS: Readonly<Record<Category, readonly string[]>> =
     ],
     Housing: ["Rent", "Housing society", "Maintenance", OTHER_PLATFORM],
     Utilities: [
+      "Electricity provider",
+      "Water provider",
+      "Jio",
+      "Airtel",
+      "Vi",
+      OTHER_PLATFORM,
+    ],
+    "Bills & Utilities": [
       "Electricity provider",
       "Water provider",
       "Jio",
@@ -167,9 +203,27 @@ export const CATEGORY_PLATFORMS: Readonly<Record<Category, readonly string[]>> =
       "PharmEasy",
       OTHER_PLATFORM,
     ],
+    "Health & Personal Care": [
+      "Pharmacy",
+      "Clinic / hospital",
+      "Apollo Pharmacy",
+      "Tata 1mg",
+      "PharmEasy",
+      "Nykaa",
+      "Salon / Spa",
+      "Local store",
+      OTHER_PLATFORM,
+    ],
     Travel: ["IRCTC", "MakeMyTrip", "Goibibo", "Airline", OTHER_PLATFORM],
     Entertainment: ["BookMyShow", "PVR INOX", "Gaming", OTHER_PLATFORM],
     "Gift Given": [
+      "Amazon",
+      "Flipkart",
+      "Local store",
+      "Gift shop",
+      OTHER_PLATFORM,
+    ],
+    Gifts: [
       "Amazon",
       "Flipkart",
       "Local store",
@@ -186,6 +240,7 @@ export const CATEGORY_PLATFORMS: Readonly<Record<Category, readonly string[]>> =
       OTHER_PLATFORM,
     ],
     Other: ["Local merchant", "Online purchase", OTHER_PLATFORM],
+    Others: ["Local merchant", "Online purchase", OTHER_PLATFORM],
   };
 
 /** Keep a saved or scanned merchant selectable, including after category changes. */
@@ -321,19 +376,19 @@ export function transactionTypeLabel(kind: TransactionKind | string): string {
 export function getDefaultCategoryForKind(kind: TransactionKind): string {
   switch (kind) {
     case "expense":
-      return "Food & Drinks";
+      return "Food";
     case "income":
       return "Salary / Fellowship";
     case "bill_payment":
-      return "Credit Card Payment";
+      return "Credit Card";
     case "transfer":
-      return "Own Account Transfer";
+      return "Own Accounts";
     case "refund":
       return "Purchase Refund";
     case "adjustment":
       return "Balance Correction";
     default:
-      return "Other";
+      return "Others";
   }
 }
 
@@ -376,6 +431,11 @@ export function isCategoryValidForKind(
   const normalizedAlias = aliasTarget ? normalizeTransactionFilter(aliasTarget) : null;
   return allowed.some((c) => {
     const norm = normalizeTransactionFilter(c);
-    return norm === normalized || (normalizedAlias !== null && norm === normalizedAlias);
+    const aliasOfAllowed = CATEGORY_ALIASES[c] ? normalizeTransactionFilter(CATEGORY_ALIASES[c]) : null;
+    return (
+      norm === normalized ||
+      (normalizedAlias !== null && norm === normalizedAlias) ||
+      (aliasOfAllowed !== null && aliasOfAllowed === normalized)
+    );
   });
 }

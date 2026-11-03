@@ -15,6 +15,7 @@ import {
   HeartPulse,
   Plane,
   Clapperboard,
+  Gift,
 } from "lucide-react";
 import { transactionDirection } from "@/lib/finance";
 import { analyticsCategoryColor as categoryColor } from "@/lib/analytics-presentation";
@@ -22,18 +23,24 @@ import type { Transaction } from "@/lib/types";
 
 const categoryIcons = {
   food: Utensils,
+  "food & drinks": Utensils,
   groceries: ShoppingBasket,
   shopping: ShoppingBag,
   stationery: NotebookPen,
   "stationery items": NotebookPen,
+  "stationery & education": NotebookPen,
   transport: Car,
   education: GraduationCap,
   housing: House,
   utilities: Zap,
+  "bills & utilities": Zap,
   subscriptions: CalendarDays,
   health: HeartPulse,
+  "health & personal care": HeartPulse,
   travel: Plane,
   entertainment: Clapperboard,
+  gifts: Gift,
+  "gift given": Gift,
 };
 export function CategoryIcon({
   category,

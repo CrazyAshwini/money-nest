@@ -112,80 +112,112 @@ describe("Everyday transaction types", () => {
 });
 
 describe("Context-aware category catalog", () => {
-  it("provides correct categories for Expense with Food & Drinks, Utilities, and Stationery preserved", () => {
+  it("provides correct categories for Expense with the 9 simplified groups and legacy compatibility", () => {
     const expenseCategories = getCategoriesForKind("expense");
     expect(expenseCategories).toEqual(EXPENSE_CATALOG_CATEGORIES);
-    expect(expenseCategories).toContain("Food & Drinks");
-    expect(expenseCategories).toContain("Utilities");
-    expect(expenseCategories).toContain("Education");
-    expect(expenseCategories).toContain("Gift Given");
-    expect(expenseCategories).toContain("Personal Care");
-    expect(expenseCategories).toContain("Housing");
-    expect(expenseCategories).toContain("Other");
+    expect(expenseCategories).toEqual([
+      "Food",
+      "Shopping",
+      "Transport",
+      "Bills & Utilities",
+      "Stationery & Education",
+      "Health & Personal Care",
+      "Entertainment",
+      "Gifts",
+      "Others",
+    ]);
 
-    // Backward compatibility: legacy Stationery preserved if present on record
+    // Backward compatibility: legacy Stationery and Food & Drinks preserved if present on record
     const withStationery = getCategoriesForKind("expense", "Stationery");
     expect(withStationery).toContain("Stationery");
     expect(CATEGORIES).toContain("Stationery");
+    const withLegacyFood = getCategoriesForKind("expense", "Food & Drinks");
+    expect(withLegacyFood).toContain("Food & Drinks");
   });
 
-  it("provides correct categories for Income", () => {
+  it("provides correct categories for Income with the 4 simplified groups", () => {
     const incomeCategories = getCategoriesForKind("income");
     expect(incomeCategories).toEqual(INCOME_CATALOG_CATEGORIES);
-    expect(incomeCategories).toContain("Salary / Fellowship");
-    expect(incomeCategories).toContain("Gift Received");
-    expect(incomeCategories).toContain("Business / Freelance");
-    expect(incomeCategories).toContain("Interest / Rewards");
-    expect(incomeCategories).toContain("Investment Income");
-    expect(incomeCategories).toContain("Other Income");
+    expect(incomeCategories).toEqual([
+      "Salary / Fellowship",
+      "Gift Received",
+      "Interest & Rewards",
+      "Other Income",
+    ]);
   });
 
-  it("provides correct categories for Bill Repayment", () => {
+  it("provides correct categories for Bill Repayment with the 3 simplified groups", () => {
     const billCategories = getCategoriesForKind("bill_payment");
     expect(billCategories).toEqual(BILL_REPAYMENT_CATALOG_CATEGORIES);
-    expect(billCategories).toContain("Credit Card Payment");
-    expect(billCategories).toContain("Pay Later Payment");
-    expect(billCategories).toContain("Loan EMI");
+    expect(billCategories).toEqual([
+      "Credit Card",
+      "Pay Later",
+      "Loan EMI",
+    ]);
   });
 
-  it("provides correct categories for Transfer", () => {
+  it("provides correct categories for Transfer with the 3 simplified groups", () => {
     const transferCategories = getCategoriesForKind("transfer");
     expect(transferCategories).toEqual(TRANSFER_CATALOG_CATEGORIES);
-    expect(transferCategories).toContain("Own Account Transfer");
-    expect(transferCategories).toContain("Wallet Top-up");
-    expect(transferCategories).toContain("Savings / Investment");
-    expect(transferCategories).toContain("Cash Withdrawal / Deposit");
+    expect(transferCategories).toEqual([
+      "Own Accounts",
+      "Wallet / Cash",
+      "Savings & Investments",
+    ]);
   });
 
-  it("provides correct categories for Refund / Money Back", () => {
+  it("provides correct categories for Refund / Money Back with the 3 simplified groups", () => {
     const refundCategories = getCategoriesForKind("refund");
     expect(refundCategories).toEqual(REFUND_CATALOG_CATEGORIES);
-    expect(refundCategories).toContain("Purchase Refund");
-    expect(refundCategories).toContain("Split Bill Reimbursement");
-    expect(refundCategories).toContain("Overpayment Refund");
-    expect(refundCategories).toContain("Other Money Back");
+    expect(refundCategories).toEqual([
+      "Purchase Refund",
+      "Shared Expense / Paid-for-Others Repayment",
+      "Other Refund",
+    ]);
   });
 
   it("offers sensible default categories for each transaction kind", () => {
-    expect(getDefaultCategoryForKind("expense")).toBe("Food & Drinks");
+    expect(getDefaultCategoryForKind("expense")).toBe("Food");
     expect(getDefaultCategoryForKind("income")).toBe("Salary / Fellowship");
-    expect(getDefaultCategoryForKind("bill_payment")).toBe("Credit Card Payment");
-    expect(getDefaultCategoryForKind("transfer")).toBe("Own Account Transfer");
+    expect(getDefaultCategoryForKind("bill_payment")).toBe("Credit Card");
+    expect(getDefaultCategoryForKind("transfer")).toBe("Own Accounts");
     expect(getDefaultCategoryForKind("refund")).toBe("Purchase Refund");
   });
 
-  it("accurately validates category belonging to transaction kinds", () => {
+  it("accurately validates category belonging to transaction kinds with aliases", () => {
+    // Expense
+    expect(isCategoryValidForKind("expense", "Food")).toBe(true);
     expect(isCategoryValidForKind("expense", "Food & Drinks")).toBe(true);
+    expect(isCategoryValidForKind("expense", "Bills & Utilities")).toBe(true);
     expect(isCategoryValidForKind("expense", "Utilities")).toBe(true);
+    expect(isCategoryValidForKind("expense", "Stationery & Education")).toBe(true);
+    expect(isCategoryValidForKind("expense", "Education")).toBe(true);
+    expect(isCategoryValidForKind("expense", "Stationery")).toBe(true);
     expect(isCategoryValidForKind("expense", "Salary / Fellowship")).toBe(false);
 
+    // Income
     expect(isCategoryValidForKind("income", "Salary / Fellowship")).toBe(true);
-    expect(isCategoryValidForKind("income", "Interest / Rewards")).toBe(true);
-    expect(isCategoryValidForKind("income", "Food & Drinks")).toBe(false);
+    expect(isCategoryValidForKind("income", "Interest & Rewards")).toBe(true);
+    expect(isCategoryValidForKind("income", "Food")).toBe(false);
 
+    // Bill Repayment
+    expect(isCategoryValidForKind("bill_payment", "Credit Card")).toBe(true);
     expect(isCategoryValidForKind("bill_payment", "Credit Card Payment")).toBe(true);
+    expect(isCategoryValidForKind("bill_payment", "Pay Later")).toBe(true);
     expect(isCategoryValidForKind("bill_payment", "Pay Later Payment")).toBe(true);
     expect(isCategoryValidForKind("bill_payment", "Salary / Fellowship")).toBe(false);
+
+    // Transfer
+    expect(isCategoryValidForKind("transfer", "Own Accounts")).toBe(true);
+    expect(isCategoryValidForKind("transfer", "Own Account Transfer")).toBe(true);
+    expect(isCategoryValidForKind("transfer", "Wallet / Cash")).toBe(true);
+    expect(isCategoryValidForKind("transfer", "Savings & Investments")).toBe(true);
+
+    // Refund
+    expect(isCategoryValidForKind("refund", "Purchase Refund")).toBe(true);
+    expect(isCategoryValidForKind("refund", "Shared Expense / Paid-for-Others Repayment")).toBe(true);
+    expect(isCategoryValidForKind("refund", "Split Bill Reimbursement")).toBe(true);
+    expect(isCategoryValidForKind("refund", "Other Refund")).toBe(true);
   });
 });
 
@@ -316,7 +348,14 @@ describe("Account and ledger validation across transaction types", () => {
       validateWorkspaceRecord(ws, "transactions", badTxn, USER_ID),
     ).toThrowError("Credit Card Payment destination must be a credit card account.");
 
-    // With correct credit card destination
+    // Also validates with simplified category "Credit Card"
+    const badSimplifiedTxn: Transaction = {
+      ...badTxn,
+      category: "Credit Card",
+    };
+    expect(() =>
+      validateWorkspaceRecord(ws, "transactions", badSimplifiedTxn, USER_ID),
+    ).toThrowError("Credit Card Payment destination must be a credit card account.");
     const goodTxn: Transaction = {
       ...badTxn,
       toAccountId: CARD_1_ID,
@@ -350,6 +389,15 @@ describe("Account and ledger validation across transaction types", () => {
 
     expect(() =>
       validateWorkspaceRecord(ws, "transactions", badTxn, USER_ID),
+    ).toThrowError("Pay Later Payment destination must be a Pay Later account.");
+
+    // Also validates with simplified category "Pay Later"
+    const badSimplifiedTxn: Transaction = {
+      ...badTxn,
+      category: "Pay Later",
+    };
+    expect(() =>
+      validateWorkspaceRecord(ws, "transactions", badSimplifiedTxn, USER_ID),
     ).toThrowError("Pay Later Payment destination must be a Pay Later account.");
 
     // With correct Pay Later destination
