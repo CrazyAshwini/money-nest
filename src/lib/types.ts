@@ -6,6 +6,7 @@ export type TransactionKind =
 export type TransactionStatus = "posted" | "pending_review" | "voided";
 export type Category =
   | "Food"
+  | "Food & Drinks"
   | "Groceries"
   | "Shopping"
   | "Stationery"
@@ -19,6 +20,7 @@ export type Category =
   | "Entertainment"
   | "Gift Given"
   | "Gift Received"
+  | "Personal Care"
   | "Other";
 
 export interface OwnedRecord {
@@ -258,6 +260,7 @@ export interface WorkspaceDataWithEmi extends WorkspaceData {
 }
 export const CATEGORIES: Category[] = [
   "Food",
+  "Food & Drinks",
   "Groceries",
   "Shopping",
   "Stationery",
@@ -271,6 +274,7 @@ export const CATEGORIES: Category[] = [
   "Entertainment",
   "Gift Given",
   "Gift Received",
+  "Personal Care",
   "Other",
 ];
 export const TRANSACTION_KINDS: TransactionKind[] = [

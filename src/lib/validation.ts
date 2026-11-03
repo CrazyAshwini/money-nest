@@ -483,6 +483,17 @@ export function validateWorkspaceRecord<K extends keyof WorkspaceData>(
       const from = account(next.fromAccountId), to = account(next.toAccountId);
       if (!from || isDebtAccount(from) || !to || !isDebtAccount(to)) throw new Error("Bill repayments need a bank/wallet source and a card/Pay Later liability.");
     }
+    if (next.kind === "bill_payment" && next.toAccountId) {
+      const toAcc = account(next.toAccountId);
+      if (toAcc) {
+        if (next.category === "Credit Card Payment" && toAcc.kind !== "credit_card") {
+          throw new Error("Credit Card Payment destination must be a credit card account.");
+        }
+        if (next.category === "Pay Later Payment" && toAcc.kind !== "pay_later") {
+          throw new Error("Pay Later Payment destination must be a Pay Later account.");
+        }
+      }
+    }
     if (next.refundReason === "shared_reimbursement" && next.refundOfTransactionId) {
       const groups = data.groups.filter(g => g.userId === userId && g.transactionId === next.refundOfTransactionId && g.paidBy === "You" && g.kind !== "contribution_pool");
       if (groups.length !== 1) throw new Error("Link a purchase with a recorded shared-expense agreement.");

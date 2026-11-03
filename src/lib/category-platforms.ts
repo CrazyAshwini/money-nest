@@ -1,10 +1,94 @@
-import { CATEGORIES, type Category } from "./types";
+import { CATEGORIES, type Category, type TransactionKind } from "./types";
 
 export const OTHER_PLATFORM = "Other";
+
+export const EXPENSE_CATALOG_CATEGORIES: readonly string[] = [
+  "Food & Drinks",
+  "Shopping",
+  "Transport",
+  "Utilities",
+  "Education",
+  "Health",
+  "Entertainment",
+  "Gift Given",
+  "Personal Care",
+  "Housing",
+  "Other",
+];
+
+export const INCOME_CATALOG_CATEGORIES: readonly string[] = [
+  "Salary / Fellowship",
+  "Gift Received",
+  "Business / Freelance",
+  "Interest / Rewards",
+  "Investment Income",
+  "Other Income",
+];
+
+export const BILL_REPAYMENT_CATALOG_CATEGORIES: readonly string[] = [
+  "Credit Card Payment",
+  "Pay Later Payment",
+  "Loan EMI",
+];
+
+export const TRANSFER_CATALOG_CATEGORIES: readonly string[] = [
+  "Own Account Transfer",
+  "Wallet Top-up",
+  "Savings / Investment",
+  "Cash Withdrawal / Deposit",
+];
+
+export const REFUND_CATALOG_CATEGORIES: readonly string[] = [
+  "Purchase Refund",
+  "Split Bill Reimbursement",
+  "Overpayment Refund",
+  "Other Money Back",
+];
+
+export const ADJUSTMENT_CATALOG_CATEGORIES: readonly string[] = [
+  "Balance Correction",
+  "Reconciliation Adjustment",
+  "Other Adjustment",
+];
+
+export const TRANSACTION_TYPE_CATEGORIES: Readonly<
+  Record<TransactionKind, readonly string[]>
+> = {
+  expense: EXPENSE_CATALOG_CATEGORIES,
+  income: INCOME_CATALOG_CATEGORIES,
+  bill_payment: BILL_REPAYMENT_CATALOG_CATEGORIES,
+  transfer: TRANSFER_CATALOG_CATEGORIES,
+  refund: REFUND_CATALOG_CATEGORIES,
+  adjustment: ADJUSTMENT_CATALOG_CATEGORIES,
+};
+
+export const EXPENSE_SUBCATEGORIES: Readonly<Record<string, readonly string[]>> =
+  {
+    "Food & Drinks": ["Groceries", "Restaurant", "Snacks"],
+    Food: ["Groceries", "Restaurant", "Snacks"],
+    Shopping: ["Clothing", "Electronics", "Household"],
+    Transport: ["Auto/Cab", "Bus/Train", "Fuel"],
+    Utilities: ["Electricity", "Mobile Recharge", "Internet", "Water"],
+    Education: ["Books", "Stationery", "Courses"],
+    Health: ["Medicines", "Consultation"],
+    Entertainment: ["Movies", "Games", "Subscriptions"],
+    Housing: ["Rent", "Maintenance"],
+  };
 
 /** Suggested sources for expense entry. These labels are stored as plain text. */
 export const CATEGORY_PLATFORMS: Readonly<Record<Category, readonly string[]>> =
   {
+    "Food & Drinks": [
+      "Swiggy",
+      "Zomato",
+      "Blinkit",
+      "Zepto",
+      "BigBasket",
+      "Swiggy Instamart",
+      "Domino's",
+      "Local restaurant / store",
+      OTHER_PLATFORM,
+    ],
     Food: ["Swiggy", "Zomato", "Domino's", OTHER_PLATFORM],
     Groceries: [
       "Blinkit",
@@ -63,8 +147,22 @@ export const CATEGORY_PLATFORMS: Readonly<Record<Category, readonly string[]>> =
     ],
     Travel: ["IRCTC", "MakeMyTrip", "Goibibo", "Airline", OTHER_PLATFORM],
     Entertainment: ["BookMyShow", "PVR INOX", "Gaming", OTHER_PLATFORM],
-    "Gift Given": ["Gift shop", OTHER_PLATFORM],
+    "Gift Given": [
+      "Amazon",
+      "Flipkart",
+      "Local store",
+      "Gift shop",
+      OTHER_PLATFORM,
+    ],
     "Gift Received": ["Personal gift", OTHER_PLATFORM],
+    "Personal Care": [
+      "Nykaa",
+      "Amazon",
+      "Local store",
+      "Salon / Spa",
+      "Pharmacy",
+      OTHER_PLATFORM,
+    ],
     Other: ["Local merchant", "Online purchase", OTHER_PLATFORM],
   };
 
@@ -90,6 +188,7 @@ export function getCategoryPlatformOptions(
  */
 const HISTORY_CATEGORY_PLATFORMS: Readonly<Record<string, readonly string[]>> =
   {
+    "Food & Drinks": ["Swiggy", "Zomato", "Blinkit", "Instamart", "Domino's"],
     Food: ["Swiggy", "Zomato", "Blinkit", "Instamart", "Domino's"],
     Shopping: [
       "Amazon",
@@ -168,4 +267,80 @@ export function isOtherHistoryPlatform(
       (suggestion) => normalizeTransactionFilter(suggestion) === normalized,
     )
   );
+}
+
+export function transactionTypeLabel(kind: TransactionKind | string): string {
+  switch (kind) {
+    case "expense":
+      return "Expense";
+    case "income":
+      return "Income";
+    case "bill_payment":
+      return "Bill Repayment";
+    case "transfer":
+      return "Transfer";
+    case "refund":
+      return "Refund / Money Back";
+    case "adjustment":
+      return "Adjustment";
+    default:
+      return kind.replaceAll("_", " ");
+  }
+}
+
+export function getDefaultCategoryForKind(kind: TransactionKind): string {
+  switch (kind) {
+    case "expense":
+      return "Food & Drinks";
+    case "income":
+      return "Salary / Fellowship";
+    case "bill_payment":
+      return "Credit Card Payment";
+    case "transfer":
+      return "Own Account Transfer";
+    case "refund":
+      return "Purchase Refund";
+    case "adjustment":
+      return "Balance Correction";
+    default:
+      return "Other";
+  }
+}
+
+export function getCategoriesForKind(
+  kind: TransactionKind,
+  currentCategory?: string | null,
+): string[] {
+  const catalog =
+    TRANSACTION_TYPE_CATEGORIES[kind] || TRANSACTION_TYPE_CATEGORIES.expense;
+  const result = [...catalog];
+  if (currentCategory && !result.includes(currentCategory)) {
+    result.push(currentCategory);
+  }
+  return result;
+}
+
+export function getSubcategoriesForCategory(
+  kind: TransactionKind,
+  category: string | null | undefined,
+): string[] {
+  if (kind !== "expense" || !category) return [];
+  if (Object.prototype.hasOwnProperty.call(EXPENSE_SUBCATEGORIES, category)) {
+    return [...EXPENSE_SUBCATEGORIES[category]];
+  }
+  const normalized = normalizeTransactionFilter(category);
+  const found = Object.keys(EXPENSE_SUBCATEGORIES).find(
+    (key) => normalizeTransactionFilter(key) === normalized,
+  );
+  return found ? [...EXPENSE_SUBCATEGORIES[found]] : [];
+}
+
+export function isCategoryValidForKind(
+  kind: TransactionKind,
+  category: string | null | undefined,
+): boolean {
+  if (!category) return false;
+  const allowed = getCategoriesForKind(kind);
+  const normalized = normalizeTransactionFilter(category);
+  return allowed.some((c) => normalizeTransactionFilter(c) === normalized);
 }

@@ -33,6 +33,10 @@ import { accountUsage } from "@/lib/usage";
 import { ReceiptScanner, type AppliedReceipt } from "./receipt-scanner";
 import {
   getCategoryPlatformOptions,
+  getCategoriesForKind,
+  getDefaultCategoryForKind,
+  getSubcategoriesForCategory,
+  transactionTypeLabel,
   OTHER_PLATFORM,
 } from "@/lib/category-platforms";
 import { withSellerDescription } from "@/lib/seller-description";
@@ -41,12 +45,24 @@ import { TransactionPicker } from "./transaction-picker";
 import "./account-management.css";
 import "./transaction-editor.css";
 
+export const EVERYDAY_TRANSACTION_KINDS: readonly {
+  kind: TransactionKind;
+  label: string;
+}[] = [
+  { kind: "expense", label: "Expense" },
+  { kind: "income", label: "Income" },
+  { kind: "bill_payment", label: "Bill Repayment" },
+  { kind: "transfer", label: "Transfer" },
+  { kind: "refund", label: "Refund / Money Back" },
+];
+
 type TransactionValues = {
   description: string;
   amount: string;
   occurredOn: string;
   kind: string;
   category: string;
+  subcategory: string;
   platform: string;
   merchant: string;
   fromAccountId: string;
@@ -67,6 +83,7 @@ function transactionValues(
   externalLender: string,
   kind: TransactionKind = "expense",
 ): TransactionValues {
+  const currentKind = record?.kind || kind;
   const legacyPlatform =
     record?.platform === undefined &&
     record?.merchant &&
@@ -85,8 +102,11 @@ function transactionValues(
         : record?.description || "",
     amount: record?.amount || "",
     occurredOn: record ? record.occurredOn || "" : today,
-    kind: record?.kind || kind,
-    category: record?.category || "Other",
+    kind: currentKind,
+    category:
+      record?.category ||
+      (record ? "Other" : getDefaultCategoryForKind(currentKind)),
+    subcategory: record?.subcategory || "",
     platform: record?.platform ?? legacyPlatform,
     merchant: record?.merchant || "",
     fromAccountId: record?.fromAccountId || "",
@@ -258,16 +278,18 @@ export function RecordEditor({
   }
   function applyReceiptFields(applied: AppliedReceipt) {
     const draft = applied.draft;
+    const kind = (draft.kind || transaction.kind) as TransactionKind;
     setTransaction({
-      ...transactionValues(undefined, "", ""),
+      ...transactionValues(undefined, "", "", kind),
       description: draft.description || "",
       amount: draft.amount || "",
       occurredOn: draft.occurredOn || "",
       merchant: draft.merchant || "",
       platform: draft.platform || "",
       externalReference: draft.externalReference || "",
-      kind: draft.kind || transaction.kind,
-      category: draft.category || "Other",
+      kind,
+      category: draft.category || getDefaultCategoryForKind(kind),
+      subcategory: draft.subcategory || "",
       status: "pending_review",
     });
     setReceipt(applied);
@@ -295,6 +317,28 @@ export function RecordEditor({
   function changeCategory(category: string) {
     dirty.current = true;
     setTransaction((current) => {
+      const kind = current.kind as TransactionKind;
+      const subcategories = getSubcategoriesForCategory(kind, category);
+      const subcategoryStillValid = subcategories.includes(current.subcategory);
+
+      let nextTo = current.toAccountId;
+      if (kind === "bill_payment" && nextTo) {
+        const toAcc = data.accounts.find((a) => a.id === nextTo);
+        if (
+          category === "Credit Card Payment" &&
+          toAcc &&
+          toAcc.kind !== "credit_card"
+        ) {
+          nextTo = "";
+        } else if (
+          category === "Pay Later Payment" &&
+          toAcc &&
+          toAcc.kind !== "pay_later"
+        ) {
+          nextTo = "";
+        }
+      }
+
       const previousPresets = getCategoryPlatformOptions(current.category);
       const nextPresets = getCategoryPlatformOptions(category);
       const incompatiblePreset =
@@ -305,7 +349,9 @@ export function RecordEditor({
       return {
         ...current,
         category,
+        subcategory: subcategoryStillValid ? current.subcategory : "",
         platform: incompatiblePreset ? "" : current.platform,
+        toAccountId: nextTo,
       };
     });
     setReceiptReviewed(false);
@@ -328,6 +374,38 @@ export function RecordEditor({
             : current.platform
           : platform,
     }));
+    setReceiptReviewed(false);
+    setReceiptPaymentConfirmed(false);
+    setPendingConfirmed(false);
+  }
+  function changeKind(nextKind: string) {
+    if (nextKind === transaction.kind) return;
+    const typedKind = nextKind as TransactionKind;
+    const allowedCategories = getCategoriesForKind(typedKind);
+    const isCategoryCompatible = allowedCategories.some(
+      (c) =>
+        c.trim().toLowerCase() === transaction.category.trim().toLowerCase(),
+    );
+    const nextCategory = isCategoryCompatible
+      ? transaction.category
+      : allowedCategories[0] || getDefaultCategoryForKind(typedKind);
+
+    updateTransaction("kind", nextKind);
+    setTransaction((current) => ({
+      ...current,
+      kind: nextKind,
+      category: nextCategory,
+      subcategory: "",
+      platform: nextKind === "expense" ? current.platform : "",
+      fromAccountId: "",
+      toAccountId: "",
+      externalPayer: "",
+      externalRepayment: false,
+      refundOfTransactionId: "",
+    }));
+    setOtherPlatform(false);
+    setExternalPayerChosen(false);
+    setBalanceChoices({});
     setReceiptReviewed(false);
     setReceiptPaymentConfirmed(false);
     setPendingConfirmed(false);
@@ -387,6 +465,43 @@ export function RecordEditor({
           throw new Error("Expenses need a source account or external payer.");
         if ((kind === "income" || kind === "refund") && !to)
           throw new Error("Choose the account that received the money.");
+        if (kind === "bill_payment") {
+          if (!from)
+            throw new Error("Choose the account you are paying from.");
+          if (!to && !transaction.externalRepayment)
+            throw new Error(
+              "Choose the account to repay or confirm external lender.",
+            );
+          if (to) {
+            const targetAccount = data.accounts.find((a) => a.id === to);
+            if (
+              transaction.category === "Credit Card Payment" &&
+              targetAccount &&
+              targetAccount.kind !== "credit_card"
+            ) {
+              throw new Error(
+                "Credit Card Payment destination must be a credit card account.",
+              );
+            }
+            if (
+              transaction.category === "Pay Later Payment" &&
+              targetAccount &&
+              targetAccount.kind !== "pay_later"
+            ) {
+              throw new Error(
+                "Pay Later Payment destination must be a Pay Later account.",
+              );
+            }
+          }
+        }
+        if (kind === "transfer") {
+          if (!from)
+            throw new Error("Choose the source account to transfer from.");
+          if (!to)
+            throw new Error("Choose the destination account to transfer to.");
+          if (from === to)
+            throw new Error("Source and destination must be different accounts.");
+        }
         const value = amount(transaction.amount)!;
         if (new Decimal(value).lte(0))
           throw new Error("Transaction amount must be greater than zero.");
@@ -462,10 +577,12 @@ export function RecordEditor({
           description: transaction.description.trim() || human(kind),
           refundReason: kind === "refund" ? transaction.refundReason as Transaction["refundReason"] : null,
           merchant: transaction.merchant.trim() || null,
-          platform: transaction.platform.trim() || null,
+          platform:
+            kind === "expense" ? transaction.platform.trim() || null : null,
           fromAccountId: from,
           toAccountId: to,
-          category: transaction.category || "Other",
+          category: transaction.category || getDefaultCategoryForKind(kind),
+          subcategory: transaction.subcategory?.trim() || null,
           externalPayer,
           externalReference: transaction.externalReference || null,
           refundOfTransactionId: transaction.refundOfTransactionId || null,
@@ -735,38 +852,70 @@ export function RecordEditor({
     pay_later: "Pay Later",
     wallet: "Wallets",
   };
+  const fromAccountLabel =
+    transaction.kind === "expense"
+      ? "Paid from"
+      : transaction.kind === "bill_payment"
+        ? "Pay from"
+        : "From account";
+  const toAccountLabel =
+    transaction.kind === "bill_payment"
+      ? "Repay to"
+      : incomingTransaction
+        ? "Received in"
+        : "To account";
   const transactionAccount = (
     name: "fromAccountId" | "toAccountId",
     label: string,
     full = false,
-  ) => (
-    <Field label={label} className={full ? "full" : undefined}>
-      <TransactionPicker
-        label={label}
-        value={
-          name === "fromAccountId" &&
-          transaction.kind === "expense" &&
-          externalPayerChosen
-            ? "__external_payer__"
-            : transaction[name]
+  ) => {
+    let allowedKinds: readonly Account["kind"][] = [
+      "bank",
+      "credit_card",
+      "pay_later",
+      "wallet",
+    ];
+    if (transaction.kind === "bill_payment") {
+      if (name === "fromAccountId") {
+        allowedKinds = ["bank", "wallet", "credit_card", "pay_later"];
+      } else if (name === "toAccountId") {
+        if (transaction.category === "Credit Card Payment") {
+          allowedKinds = ["credit_card"];
+        } else if (transaction.category === "Pay Later Payment") {
+          allowedKinds = ["pay_later"];
+        } else {
+          allowedKinds = ["credit_card", "pay_later", "bank", "wallet"];
         }
-        placeholder="Choose account"
-        disabled={busy}
-        onChange={(value) => {
-          if (name === "fromAccountId" && transaction.kind === "expense") {
-            setExternalPayerChosen(value === "__external_payer__");
-            updateTransaction(
-              name,
-              value === "__external_payer__" ? "" : value,
-            );
-            if (value !== "__external_payer__")
-              updateTransaction("externalPayer", "");
-          } else updateTransaction(name, value);
-        }}
-        options={[
-          { value: "", label: "Choose account" },
-          ...(["bank", "credit_card", "pay_later", "wallet"] as const).flatMap(
-            (kind) =>
+      }
+    }
+
+    return (
+      <Field label={label} className={full ? "full" : undefined}>
+        <TransactionPicker
+          label={label}
+          value={
+            name === "fromAccountId" &&
+            transaction.kind === "expense" &&
+            externalPayerChosen
+              ? "__external_payer__"
+              : transaction[name]
+          }
+          placeholder="Choose account"
+          disabled={busy}
+          onChange={(value) => {
+            if (name === "fromAccountId" && transaction.kind === "expense") {
+              setExternalPayerChosen(value === "__external_payer__");
+              updateTransaction(
+                name,
+                value === "__external_payer__" ? "" : value,
+              );
+              if (value !== "__external_payer__")
+                updateTransaction("externalPayer", "");
+            } else updateTransaction(name, value);
+          }}
+          options={[
+            { value: "", label: "Choose account" },
+            ...allowedKinds.flatMap((kind) =>
               data.accounts
                 .filter(
                   (account) =>
@@ -789,21 +938,42 @@ export function RecordEditor({
                       : "Archived account",
                   };
                 }),
-          ),
-          ...(name === "fromAccountId" && transaction.kind === "expense"
-            ? [
-                {
-                  value: "__external_payer__",
-                  label: "Someone else paid",
-                  group: "Other payment",
-                },
-              ]
-            : []),
-        ]}
-      />
-    </Field>
+            ),
+            ...(name === "fromAccountId" && transaction.kind === "expense"
+              ? [
+                  {
+                    value: "__external_payer__",
+                    label: "Someone else paid",
+                    group: "Other payment",
+                  },
+                ]
+              : []),
+          ]}
+        />
+      </Field>
+    );
+  };
+  const transactionTitle = `${editor.type === "transaction" && editor.record ? "Edit" : "Add"} ${transactionTypeLabel(transaction.kind).toLowerCase()}`;
+  const currentKind = transaction.kind as TransactionKind;
+  const currentCategory = transaction.category;
+  const catalogCategories = getCategoriesForKind(currentKind, currentCategory);
+  const userCategoriesForKind = data.transactions
+    .filter((item) => item.userId === userId && item.kind === currentKind)
+    .map((item) => item.category)
+    .filter((cat): cat is string => Boolean(cat));
+  const categoryOptions = [
+    ...new Set([...catalogCategories, ...userCategoriesForKind]),
+  ]
+    .filter(Boolean)
+    .map((cat) => ({
+      value: cat,
+      label: cat,
+    }));
+
+  const subcategories = getSubcategoriesForCategory(
+    currentKind,
+    currentCategory,
   );
-  const transactionTitle = `${editor.type === "transaction" && editor.record ? "Edit" : "Add"} ${human(transaction.kind)}`;
   return (
     <Modal
       title={
@@ -931,29 +1101,16 @@ export function RecordEditor({
                   searchable={false}
                   placeholder={transaction.kind === "adjustment" ? "Adjustment (legacy)" : "Choose type"}
                   disabled={busy}
-                  options={ENTRY_TRANSACTION_KINDS.map((kind) => ({
-                    value: kind,
-                    label: TRANSACTION_LABELS[kind],
-                  }))}
-                  onChange={(kind) => {
-                    if (kind === transaction.kind) return;
-                    dirty.current = true;
-                    updateTransaction("kind", kind);
-                    setTransaction((current) => ({
-                      ...current,
-                      kind,
-                      fromAccountId: "",
-                      toAccountId: "",
-                      externalPayer: "",
-                      externalRepayment: false,
-                      externalLender: "",
-                      refundOfTransactionId: "",
-                      refundReason: "merchant_refund",
-                      platform: "", merchant: "", category: kind === "income" ? "Other" : "Other",
-                    }));
-                    setExternalPayerChosen(false);
-                    setBalanceChoices({});
-                  }}
+                  options={[
+                    ...ENTRY_TRANSACTION_KINDS.map((kind) => ({
+                      value: kind,
+                      label: TRANSACTION_LABELS[kind],
+                    })),
+                    ...(transaction.kind === "adjustment"
+                      ? [{ value: "adjustment", label: "Adjustment" }]
+                      : []),
+                  ]}
+                  onChange={changeKind}
                 />
                 <label className="transaction-date-control">
                   <CalendarDays size={16} aria-hidden="true" />
@@ -1000,75 +1157,113 @@ export function RecordEditor({
                   placeholder={
                     transaction.kind === "expense"
                       ? "Seller name and what you bought"
-                      : `What was this ${human(transaction.kind)} for?`
+                      : transaction.kind === "bill_payment"
+                        ? "e.g. Credit card bill payment"
+                        : transaction.kind === "transfer"
+                          ? "e.g. Transfer to savings"
+                          : transaction.kind === "refund"
+                            ? "e.g. Refund for returned item"
+                            : "What was this income for?"
                   }
                   rows={1}
                   maxLength={200}
                 />
               </Field>
-              {["expense", "income"].includes(transaction.kind) && <div className="transaction-category-row full">
-                <Field label="Category">
-                  <TransactionPicker
-                    label="Category"
-                    value={transaction.category}
-                    onChange={changeCategory}
-                    disabled={busy}
-                    options={[
-                      ...new Set([
-                        ...(transaction.kind === "income" ? ["Salary", "Fellowship", "Gift Received", "Other"] : CATEGORIES.filter(c => c !== "Gift Received")),
-                        transaction.category,
-                        ...data.transactions
-                          .filter((item) => item.userId === userId)
-                          .map((item) => item.category)
-                          .filter((category): category is string =>
-                            Boolean(category),
-                          ),
-                      ]),
-                    ]
-                      .filter(Boolean)
-                      .map((category) => ({
-                        value: category,
-                        label: category,
-                      }))}
-                  />
-                </Field>
-                {transaction.kind === "expense" && <Field label="Platform">
-                  <TransactionPicker
-                    label="Platform"
-                    value={
-                      otherPlatform ? OTHER_PLATFORM : transaction.platform
-                    }
-                    onChange={changePlatform}
-                    disabled={busy}
-                    placeholder="Choose platform"
-                    options={[
-                      { value: "", label: "No platform" },
-                      ...getCategoryPlatformOptions(
-                        transaction.category,
-                        transaction.platform,
-                      ).map((platform) => ({
-                        value: platform,
-                        label: platform,
-                      })),
-                    ]}
-                  />
-                </Field>}
-              </div>}
-              {transaction.kind === "expense" && otherPlatform && (
-                <Field label="Other platform / source" className="full">
-                  {transactionInput("platform")}
-                </Field>
+              {transaction.kind === "expense" ? (
+                <>
+                  <div className="transaction-category-row full">
+                    <Field label="Category">
+                      <TransactionPicker
+                        label="Category"
+                        value={transaction.category}
+                        onChange={changeCategory}
+                        disabled={busy}
+                        options={categoryOptions}
+                      />
+                    </Field>
+                    <Field label="Platform">
+                      <TransactionPicker
+                        label="Platform"
+                        value={
+                          otherPlatform ? OTHER_PLATFORM : transaction.platform
+                        }
+                        onChange={changePlatform}
+                        disabled={busy}
+                        placeholder="Choose platform"
+                        options={[
+                          { value: "", label: "No platform" },
+                          ...getCategoryPlatformOptions(
+                            transaction.category,
+                            transaction.platform,
+                          ).map((platform) => ({
+                            value: platform,
+                            label: platform,
+                          })),
+                        ]}
+                      />
+                    </Field>
+                  </div>
+                  {otherPlatform && (
+                    <Field label="Other platform / source" className="full">
+                      {transactionInput("platform")}
+                    </Field>
+                  )}
+                  {subcategories.length > 0 && (
+                    <Field label="Subcategory (optional)" className="full">
+                      <TransactionPicker
+                        label="Subcategory"
+                        value={transaction.subcategory}
+                        onChange={(sub) => updateTransaction("subcategory", sub)}
+                        disabled={busy}
+                        placeholder="Choose subcategory (optional)"
+                        options={[
+                          { value: "", label: "None / Not specified" },
+                          ...subcategories.map((sub) => ({
+                            value: sub,
+                            label: sub,
+                          })),
+                        ]}
+                      />
+                    </Field>
+                  )}
+                  {transaction.category === "Gift Given" && (
+                    <Field label="Recipient person (optional)" className="full">
+                      {transactionInput("merchant")}
+                    </Field>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Field label="Category" className="full">
+                    <TransactionPicker
+                      label="Category"
+                      value={transaction.category}
+                      onChange={changeCategory}
+                      disabled={busy}
+                      options={categoryOptions}
+                    />
+                  </Field>
+                  {transaction.kind === "income" &&
+                    transaction.category === "Gift Received" && (
+                      <Field
+                        label="From person / source (optional)"
+                        className="full"
+                      >
+                        {transactionInput("merchant")}
+                      </Field>
+                    )}
+                </>
               )}
               {!incomingTransaction &&
                 transactionAccount(
                   "fromAccountId",
-                  transaction.kind === "expense" ? "Paid from" : "From account",
+                  fromAccountLabel,
                   !twoAccountTransaction,
                 )}
               {(incomingTransaction || twoAccountTransaction) &&
                 transactionAccount(
                   "toAccountId",
-                  transaction.kind === "bill_payment" ? "Liability account" : "To account",
+                  toAccountLabel,
                   !twoAccountTransaction,
                 )}
               {receipt?.accountHint && (
@@ -1634,7 +1829,7 @@ export function RecordEditor({
                 ? "Save and next"
                 : "Save " +
                   (editor.type === "transaction"
-                    ? human(transaction.kind)
+                    ? transactionTypeLabel(transaction.kind).toLowerCase()
                     : names[editor.type])}
           </button>
         </div>
