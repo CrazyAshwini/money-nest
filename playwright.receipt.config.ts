@@ -35,7 +35,7 @@ process.env.GOOGLE_GENERATIVE_AI_MODEL = DEFAULT_RECEIPT_AI_MODEL;
 
 export default defineConfig({
   testDir: "./tests/private-e2e",
-  testMatch: "receipt-scan.spec.ts",
+  testMatch: "**/receipt-scan/*.spec.ts",
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
