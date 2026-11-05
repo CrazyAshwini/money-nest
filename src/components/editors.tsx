@@ -41,7 +41,10 @@ import {
   transactionTypeLabel,
   CATEGORY_ALIASES,
   OTHER_PLATFORM,
+  inferCategoryAndPlatformFromText,
+  inferCategoryFromPlatform,
 } from "@/lib/category-platforms";
+import { triggerHaptic } from "@/lib/haptic";
 import { withSellerDescription } from "@/lib/seller-description";
 import { balanceSnapshotIdForEdit } from "@/lib/transaction-balance-confirmation";
 import { TransactionPicker } from "./transaction-picker";
@@ -471,6 +474,7 @@ export function RecordEditor({
   }
   function changeCategory(category: string) {
     dirty.current = true;
+    triggerHaptic(8);
     setTransaction((current) => {
       const kind = current.kind as TransactionKind;
       const subcategories = getSubcategoriesForCategory(kind, category);
@@ -530,10 +534,10 @@ export function RecordEditor({
   }
   function changePlatform(platform: string) {
     dirty.current = true;
+    triggerHaptic(8);
     setOtherPlatform(platform === OTHER_PLATFORM);
-    setTransaction((current) => ({
-      ...current,
-      platform:
+    setTransaction((current) => {
+      const nextPlatform =
         platform === OTHER_PLATFORM
           ? getCategoryPlatformOptions(current.category).includes(
               current.platform,
@@ -542,14 +546,33 @@ export function RecordEditor({
             !otherPlatform
             ? ""
             : current.platform
-          : platform,
-    }));
+          : platform;
+
+      let nextCategory = current.category;
+      if (current.kind === "expense" && platform && platform !== OTHER_PLATFORM) {
+        const inferred = inferCategoryFromPlatform(platform);
+        if (
+          inferred &&
+          (current.category === "Food" ||
+            !getCategoryPlatformOptions(current.category).includes(platform))
+        ) {
+          nextCategory = inferred;
+        }
+      }
+
+      return {
+        ...current,
+        platform: nextPlatform,
+        category: nextCategory,
+      };
+    });
     setReceiptReviewed(false);
     setReceiptPaymentConfirmed(false);
     setPendingConfirmed(false);
   }
   function changeKind(nextKind: string) {
     if (nextKind === transaction.kind) return;
+    triggerHaptic(10);
     setIsSplitExpense(false);
     const typedKind = nextKind as TransactionKind;
     const allowedCategories = getCategoriesForKind(typedKind);
@@ -1078,6 +1101,7 @@ export function RecordEditor({
         );
         return;
       }
+      triggerHaptic(15);
       toast(successMessage);
       onClose();
     } catch (e) {
@@ -1464,9 +1488,20 @@ export function RecordEditor({
                 <textarea
                   name="description"
                   value={transaction.description}
-                  onChange={(event) =>
-                    updateTransaction("description", event.target.value)
-                  }
+                  onChange={(event) => {
+                    const desc = event.target.value;
+                    updateTransaction("description", desc);
+                    if (transaction.kind === "expense" && !editor.record) {
+                      const inferred = inferCategoryAndPlatformFromText(desc);
+                      if (inferred) {
+                        setTransaction((current) => ({
+                          ...current,
+                          category: inferred.category || current.category,
+                          platform: inferred.platform || current.platform,
+                        }));
+                      }
+                    }
+                  }}
                   placeholder={
                     transaction.kind === "expense"
                       ? "Seller name and what you bought"

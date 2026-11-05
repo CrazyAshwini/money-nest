@@ -1083,7 +1083,7 @@ function AccountsPage({
                 data={data}
                 today={today}
                 onEdit={(selected) =>
-                  router.push(`/profile?account=${selected.id}`)
+                  open({ type: "account", record: selected })
                 }
               />
             )}
@@ -1241,7 +1241,6 @@ function AccountGroup({
   data: WorkspaceData;
   today: string;
 }) {
-  const router = useRouter();
   const [selection, setSelection] = useState<string | null>(null);
   const selectedId = resolveSelectedAccountId(accounts, selection);
   return (
@@ -1257,7 +1256,7 @@ function AccountGroup({
             account={account}
             data={data}
             today={today}
-            onEdit={(selected) => router.push(`/profile?account=${selected.id}`)}
+            onEdit={(selected) => open({ type: "account", record: selected })}
           />
         )}
       />

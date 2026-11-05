@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CATEGORY_PLATFORMS,
   getCategoryPlatformOptions,
+  inferCategoryAndPlatformFromText,
+  inferCategoryFromPlatform,
   OTHER_PLATFORM,
 } from "./category-platforms";
 import { CATEGORIES } from "./types";
@@ -56,5 +58,43 @@ describe("expense category platform choices", () => {
     expect(getCategoryPlatformOptions("Food", "   ")).toEqual([
       ...CATEGORY_PLATFORMS.Food,
     ]);
+  });
+
+  describe("smart category and platform inference", () => {
+    it("infers category and platform from typed description or merchant text", () => {
+      expect(inferCategoryAndPlatformFromText("Swiggy lunch")).toEqual({
+        category: "Food",
+        platform: "Swiggy",
+      });
+      expect(inferCategoryAndPlatformFromText("Blinkit order for vegetables")).toEqual({
+        category: "Shopping",
+        platform: "Blinkit",
+      });
+      expect(inferCategoryAndPlatformFromText("Uber cab to airport")).toEqual({
+        category: "Transport",
+        platform: "Uber",
+      });
+      expect(inferCategoryAndPlatformFromText("Amazon Prime subscription")).toEqual({
+        category: "Subscriptions",
+        platform: "Amazon Prime",
+      });
+      expect(inferCategoryAndPlatformFromText("Tata 1mg medicines")).toEqual({
+        category: "Health & Personal Care",
+        platform: "Tata 1mg",
+      });
+      expect(inferCategoryAndPlatformFromText("Unknown random payment")).toBeNull();
+      expect(inferCategoryAndPlatformFromText("")).toBeNull();
+      expect(inferCategoryAndPlatformFromText(null)).toBeNull();
+    });
+
+    it("infers category directly from chosen platform", () => {
+      expect(inferCategoryFromPlatform("Swiggy")).toBe("Food");
+      expect(inferCategoryFromPlatform("Zomato")).toBe("Food");
+      expect(inferCategoryFromPlatform("Blinkit")).toBe("Shopping");
+      expect(inferCategoryFromPlatform("Uber")).toBe("Transport");
+      expect(inferCategoryFromPlatform("Netflix")).toBe("Subscriptions");
+      expect(inferCategoryFromPlatform("Tata 1mg")).toBe("Health & Personal Care");
+      expect(inferCategoryFromPlatform("RandomPlatform")).toBeNull();
+    });
   });
 });

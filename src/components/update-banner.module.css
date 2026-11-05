@@ -1,0 +1,90 @@
+.banner {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  max-width: calc(100vw - 28px);
+  width: max-content;
+  pointer-events: auto;
+  animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(21, 94, 80, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #ffffff;
+  padding: 8px 12px 8px 14px;
+  border-radius: 9999px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.15);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.icon {
+  flex-shrink: 0;
+  animation: spinSlow 4s linear infinite;
+}
+
+.text {
+  white-space: nowrap;
+}
+
+.updateButton {
+  background: #ffffff;
+  color: #155e50;
+  border: none;
+  border-radius: 9999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.updateButton:active {
+  transform: scale(0.96);
+  background: #e6f4f1;
+}
+
+.dismissButton {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border: none;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.dismissButton:hover {
+  color: #ffffff;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes spinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

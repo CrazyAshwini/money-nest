@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { FinanceProvider } from "@/components/finance-provider";
+import { UpdateBanner } from "@/components/update-banner";
 import { testFixturesEnabled } from "@/lib/test-fixtures";
 export const metadata: Metadata = {
   applicationName: "Money Nest",
@@ -34,6 +35,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <FinanceProvider allowTestFixtures={testFixturesEnabled()}>
+          <UpdateBanner />
           {children}
         </FinanceProvider>
       </body>

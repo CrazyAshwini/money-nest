@@ -4149,3 +4149,12 @@ body {
     background: var(--panel);
   }
 }
+
+/* Prevent automatic zoom on iOS Safari when tapping form inputs */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

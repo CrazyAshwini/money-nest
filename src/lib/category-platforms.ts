@@ -439,3 +439,223 @@ export function isCategoryValidForKind(
     );
   });
 }
+
+export type InferredCategoryPlatform = {
+  category?: string;
+  platform?: string;
+};
+
+/**
+ * Automatically infers Category and Platform from transaction description keywords.
+ * Enables 1-step smart entry on mobile and desktop without manual picker steps.
+ */
+export function inferCategoryAndPlatformFromText(
+  text: string | null | undefined,
+): InferredCategoryPlatform | null {
+  if (!text) return null;
+  const lower = text.toLowerCase().trim();
+
+  // Instant delivery & quick commerce
+  if (lower.includes("swiggy instamart") || lower.includes("instamart")) {
+    return { category: "Shopping", platform: "Swiggy Instamart" };
+  }
+  if (lower.includes("blinkit")) {
+    return { category: "Shopping", platform: "Blinkit" };
+  }
+  if (lower.includes("zepto")) {
+    return { category: "Food", platform: "Zepto" };
+  }
+  if (lower.includes("bigbasket") || lower.includes("bbnow")) {
+    return { category: "Food", platform: "BigBasket" };
+  }
+
+  // Food delivery & dining
+  if (lower.includes("swiggy")) {
+    return { category: "Food", platform: "Swiggy" };
+  }
+  if (lower.includes("zomato")) {
+    return { category: "Food", platform: "Zomato" };
+  }
+  if (lower.includes("domino")) {
+    return { category: "Food", platform: "Domino's" };
+  }
+
+  // Subscriptions & Streaming (check before generic Amazon)
+  if (lower.includes("amazon prime") || lower.includes("prime video")) {
+    return { category: "Subscriptions", platform: "Amazon Prime" };
+  }
+  if (lower.includes("netflix")) {
+    return { category: "Subscriptions", platform: "Netflix" };
+  }
+  if (lower.includes("spotify")) {
+    return { category: "Subscriptions", platform: "Spotify" };
+  }
+  if (lower.includes("youtube premium")) {
+    return { category: "Subscriptions", platform: "YouTube Premium" };
+  }
+
+  // Shopping & E-Commerce
+  if (lower.includes("amazon")) {
+    return { category: "Shopping", platform: "Amazon" };
+  }
+  if (lower.includes("flipkart")) {
+    return { category: "Shopping", platform: "Flipkart" };
+  }
+  if (lower.includes("myntra")) {
+    return { category: "Shopping", platform: "Myntra" };
+  }
+  if (lower.includes("meesho")) {
+    return { category: "Shopping", platform: "Meesho" };
+  }
+
+  // Transport & Commute
+  if (lower.includes("uber")) {
+    return { category: "Transport", platform: "Uber" };
+  }
+  if (lower.includes("ola") || lower.includes("olacabs")) {
+    return { category: "Transport", platform: "Ola" };
+  }
+  if (lower.includes("rapido")) {
+    return { category: "Transport", platform: "Rapido" };
+  }
+  if (lower.includes("irctc") || lower.includes("railway") || lower.includes("train ticket")) {
+    return { category: "Transport", platform: "IRCTC" };
+  }
+  if (lower.includes("redbus")) {
+    return { category: "Transport", platform: "Public transport" };
+  }
+
+  // Bills & Utilities
+  if (lower.includes("jio") || lower.includes("myjio")) {
+    return { category: "Bills & Utilities", platform: "Jio" };
+  }
+  if (lower.includes("airtel")) {
+    return { category: "Bills & Utilities", platform: "Airtel" };
+  }
+  if (lower.includes("vodafone") || lower.includes("vi recharge")) {
+    return { category: "Bills & Utilities", platform: "Vi" };
+  }
+  if (
+    lower.includes("electricity") ||
+    lower.includes("bescom") ||
+    lower.includes("tneb") ||
+    lower.includes("power bill") ||
+    lower.includes("water bill")
+  ) {
+    return { category: "Bills & Utilities" };
+  }
+
+  // Health & Pharmacy
+  if (lower.includes("apollo")) {
+    return { category: "Health & Personal Care", platform: "Apollo Pharmacy" };
+  }
+  if (lower.includes("1mg") || lower.includes("tata 1mg")) {
+    return { category: "Health & Personal Care", platform: "Tata 1mg" };
+  }
+  if (lower.includes("pharmeasy")) {
+    return { category: "Health & Personal Care", platform: "PharmEasy" };
+  }
+  if (lower.includes("nykaa")) {
+    return { category: "Health & Personal Care", platform: "Nykaa" };
+  }
+  if (
+    lower.includes("pharmacy") ||
+    lower.includes("medicine") ||
+    lower.includes("hospital") ||
+    lower.includes("clinic") ||
+    lower.includes("consultation")
+  ) {
+    return { category: "Health & Personal Care", platform: "Pharmacy" };
+  }
+
+  // Entertainment
+  if (
+    lower.includes("bookmyshow") ||
+    lower.includes("pvr") ||
+    lower.includes("inox") ||
+    lower.includes("movie ticket")
+  ) {
+    return { category: "Entertainment", platform: "BookMyShow" };
+  }
+
+  // Stationery & Learning
+  if (lower.includes("udemy")) {
+    return { category: "Stationery & Education", platform: "Udemy" };
+  }
+  if (lower.includes("coursera")) {
+    return { category: "Stationery & Education", platform: "Coursera" };
+  }
+  if (
+    lower.includes("stationery") ||
+    lower.includes("notebook") ||
+    lower.includes("textbook")
+  ) {
+    return { category: "Stationery & Education" };
+  }
+
+  return null;
+}
+
+/**
+ * When a user directly chooses a platform, automatically infers the most relevant category.
+ */
+export function inferCategoryFromPlatform(platform: string): string | null {
+  const norm = normalizeTransactionFilter(platform);
+  if (["uber", "ola", "rapido", "irctc", "public transport"].includes(norm)) {
+    return "Transport";
+  }
+  if (["swiggy", "zomato", "domino's", "zepto", "bigbasket"].includes(norm)) {
+    return "Food";
+  }
+  if (["amazon", "flipkart", "myntra", "meesho", "blinkit", "swiggy instamart"].includes(norm)) {
+    return "Shopping";
+  }
+  if (["jio", "airtel", "vi", "electricity provider", "water provider"].includes(norm)) {
+    return "Bills & Utilities";
+  }
+  if (
+    [
+      "apollo pharmacy",
+      "tata 1mg",
+      "pharmeasy",
+      "nykaa",
+      "salon / spa",
+      "pharmacy",
+      "clinic / hospital",
+    ].includes(norm)
+  ) {
+    return "Health & Personal Care";
+  }
+  if (
+    [
+      "netflix",
+      "youtube premium",
+      "spotify",
+      "amazon prime",
+    ].includes(norm)
+  ) {
+    return "Subscriptions";
+  }
+  if (
+    [
+      "bookmyshow",
+      "pvr inox",
+      "gaming",
+    ].includes(norm)
+  ) {
+    return "Entertainment";
+  }
+  if (
+    [
+      "udemy",
+      "coursera",
+      "classmate",
+      "local stationery shop",
+      "school / college",
+      "coaching",
+    ].includes(norm)
+  ) {
+    return "Stationery & Education";
+  }
+  return null;
+}
