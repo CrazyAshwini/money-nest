@@ -16,6 +16,8 @@ describe("workspace route boundaries", () => {
   });
 
   it("preserves setup, transaction creation and actual UUID detail routes", () => {
+    expect(resolveAppPage(["add"])?.page).toBe("transactions");
+    expect(resolveAppPage(["add"])?.title).toBe("Add transaction");
     expect(resolveAppPage(["transactions", "new"])?.title).toBe(
       "Add transaction",
     );

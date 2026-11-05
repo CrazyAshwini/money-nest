@@ -122,6 +122,15 @@ const recordIdPattern =
 
 /** Validate the route shape without looking up any private workspace records. */
 export function resolveAppPage(path: readonly string[] = []) {
+  if (path[0] === "add") {
+    return {
+      page: "transactions" as AppPage,
+      title: "Add transaction",
+      description:
+        "Quickly capture an income, expense or transfer in Money Nest.",
+      detail: false,
+    };
+  }
   const name = path[0] ?? "dashboard";
   if (!Object.prototype.hasOwnProperty.call(APP_PAGE_METADATA, name))
     return null;

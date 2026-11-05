@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Decimal from "decimal.js";
 import Link from "next/link";
 import { CalendarDays, ChevronDown } from "lucide-react";
@@ -1311,6 +1311,23 @@ export function RecordEditor({
     currentKind,
     currentCategory,
   );
+  const frequentPlatforms: string[] = useMemo(() => {
+    if (editor.type !== "transaction" || transaction.kind !== "expense") return [];
+    const counts = new Map<string, number>();
+    for (const tx of data.transactions) {
+      if (tx.userId === userId && tx.platform && tx.platform.trim() && tx.platform !== OTHER_PLATFORM) {
+        counts.set(tx.platform, (counts.get(tx.platform) || 0) + 1);
+      }
+    }
+    const defaultSuggestions = ["Swiggy", "Blinkit", "Amazon", "Uber", "Zomato"];
+    for (const def of defaultSuggestions) {
+      if (!counts.has(def)) counts.set(def, 0);
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([p]) => p)
+      .slice(0, 5);
+  }, [editor.type, transaction.kind, data.transactions, userId]);
   return (
     <Modal
       title={
@@ -1551,6 +1568,27 @@ export function RecordEditor({
                       />
                     </Field>
                   </div>
+                  {frequentPlatforms.length > 0 && (
+                    <div className="quick-platform-row full">
+                      <span className="quick-platform-label">Quick select:</span>
+                      <div className="quick-platform-chips" role="group" aria-label="Frequent platforms">
+                        {frequentPlatforms.map((p: string) => {
+                          const isSelected = transaction.platform === p && !otherPlatform;
+                          return (
+                            <button
+                              key={p}
+                              type="button"
+                              className={`quick-chip ${isSelected ? "selected" : ""}`}
+                              onClick={() => changePlatform(isSelected ? "" : p)}
+                              aria-pressed={isSelected}
+                            >
+                              {p}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   {otherPlatform && (
                     <Field label="Other platform / source" className="full">
                       {transactionInput("platform")}

@@ -67,7 +67,9 @@ import {
   PasswordRecoveryPage,
   NotificationsPage,
 } from "./workspace-pages";
+import Decimal from "decimal.js";
 import {
+  monthlySummary,
   dashboardMetrics,
   formatMoney,
   formatDate,
@@ -116,12 +118,32 @@ export function FinanceApp() {
   const [botTrigger, setBotTrigger] = useState<HTMLButtonElement | null>(null);
   const [mobile, setMobile] = useState(false);
   const navigationTrigger = useRef<HTMLButtonElement | null>(null);
-  const [editor, setEditor] = useState<EditorState | null>(null);
-  const [editorTrigger, setEditorTrigger] = useState<HTMLElement | null>(null);
   const part = pathname.split("/").filter(Boolean);
   const pageInfo = resolveAppPage(part);
   const page = pageInfo?.page || "dashboard";
   const id = part[1];
+  const [editor, setEditor] = useState<EditorState | null>(() =>
+    pathname === "/add" || pathname.startsWith("/transactions/new")
+      ? { type: "transaction" }
+      : null,
+  );
+  const [editorTrigger, setEditorTrigger] = useState<HTMLElement | null>(null);
+  const directAddTriggered = useRef(editor !== null);
+  useEffect(() => {
+    if (
+      (pathname === "/add" || (page === "transactions" && part[1] === "new")) &&
+      !directAddTriggered.current
+    ) {
+      directAddTriggered.current = true;
+      const timer = setTimeout(() => {
+        setEditor({ type: "transaction" });
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+    if (pathname !== "/add" && part[1] !== "new") {
+      directAddTriggered.current = false;
+    }
+  }, [pathname, page, part]);
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 761px)");
     const closeOnDesktop = () => {
@@ -471,7 +493,12 @@ export function FinanceApp() {
         {editor && (
           <RecordEditor
             editor={editor}
-            onClose={() => setEditor(null)}
+            onClose={() => {
+              setEditor(null);
+              if (pathname === "/add" || (page === "transactions" && part[1] === "new")) {
+                router.replace("/transactions");
+              }
+            }}
             returnFocusTo={editorTrigger}
           />
         )}
@@ -630,6 +657,50 @@ function DashboardCreditLimit({
     </span>
   );
 }
+function DashboardSpendingPacing({
+  data,
+  month,
+  today,
+  monthSpending,
+}: {
+  data: WorkspaceData;
+  month: string;
+  today: string;
+  monthSpending: string;
+}) {
+  const isCurrentMonth = today.startsWith(month);
+  const currentDay = isCurrentMonth
+    ? Math.max(1, parseInt(today.slice(8, 10), 10))
+    : 30;
+  const currentDailyDec = new Decimal(monthSpending || "0").div(currentDay);
+  const currentDaily = currentDailyDec.toFixed(0);
+
+  const [yearStr, monthNumStr] = month.split("-");
+  const year = parseInt(yearStr, 10);
+  const m = parseInt(monthNumStr, 10);
+  const prevDate = new Date(year, m - 2, 1);
+  const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
+  const daysInPrevMonth = new Date(year, m - 1, 0).getDate();
+  const prevSummary = monthlySummary(data, prevMonth);
+  const prevDailyDec = new Decimal(prevSummary.gross || "0").div(daysInPrevMonth);
+  const prevDaily = prevDailyDec.toFixed(0);
+
+  const diffDec = currentDailyDec.minus(prevDailyDec);
+  const diff = diffDec.toNumber();
+  const diffFormatted = formatMoney(Math.abs(diff), { decimals: 0 });
+
+  return (
+    <span className="dashboard-spending-pacing">
+      <span>{formatMoney(currentDaily, { decimals: 0 })}/day</span>
+      {prevDaily !== "0" && (
+        <span className={diff <= 0 ? "pacing-lower" : "pacing-higher"}>
+          {diff <= 0 ? ` · ${diffFormatted}/day lower` : ` · ${diffFormatted}/day higher`}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function Kpis() {
   const { data, month, today } = useFinance();
   const [details, setDetails] = useState<{
@@ -699,7 +770,14 @@ function Kpis() {
           icon={<ArrowUpRight size={20} aria-hidden="true" />}
           active={details?.section === "spending"}
           onOpen={show}
-        />
+        >
+          <DashboardSpendingPacing
+            data={data}
+            month={month}
+            today={today}
+            monthSpending={metrics.monthSpending}
+          />
+        </FinancialCard>
         <FinancialCard
           section="credit"
           title="Credit cards"
@@ -747,6 +825,27 @@ function Kpis() {
 }
 function Dashboard({ open }: { open: Open }) {
   const { data, month, today } = useFinance();
+  const urgentBills = useMemo(() => {
+    return data.bills
+      .map((b) => {
+        const s = billSummary(data, b.id, today);
+        const days = b.dueDate
+          ? Math.ceil(
+              (new Date(b.dueDate + "T00:00:00").getTime() -
+                new Date(today + "T00:00:00").getTime()) /
+                (1000 * 60 * 60 * 24),
+            )
+          : null;
+        return { bill: b, summary: s, days };
+      })
+      .filter(
+        (item) =>
+          item.summary.remaining !== "0.00" &&
+          item.days !== null &&
+          item.days <= 5,
+      )
+      .sort((a, b) => (a.days ?? 999) - (b.days ?? 999));
+  }, [data, today]);
   const unpaid = data.bills
     .filter((b) => billSummary(data, b.id, today).remaining !== "0.00")
     .sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999"));
@@ -757,6 +856,50 @@ function Dashboard({ open }: { open: Open }) {
   return (
     <>
       <Kpis />
+      {urgentBills.length > 0 && (
+        <div
+          className={`bill-alert-card ${urgentBills[0].days! < 0 ? "alert-overdue" : "alert-upcoming"}`}
+          role="alert"
+        >
+          <div className="bill-alert-content">
+            <div className="bill-alert-icon">
+              <CircleAlert size={20} aria-hidden="true" />
+            </div>
+            <div className="bill-alert-text">
+              <div className="bill-alert-headline">
+                <strong>
+                  {data.accounts.find((a) => a.id === urgentBills[0].bill.accountId)?.name || "Bill statement"}
+                </strong>
+                <span className="bill-alert-tag">
+                  {urgentBills[0].days! < 0
+                    ? `Overdue by ${Math.abs(urgentBills[0].days!)} day${Math.abs(urgentBills[0].days!) > 1 ? "s" : ""}`
+                    : urgentBills[0].days === 0
+                      ? "Due today"
+                      : `Due in ${urgentBills[0].days} day${urgentBills[0].days! > 1 ? "s" : ""}`}
+                </span>
+              </div>
+              <div className="bill-alert-sub">
+                {formatMoney(urgentBills[0].summary.remaining)} remaining
+              </div>
+            </div>
+          </div>
+          <div className="bill-alert-actions">
+            <button
+              type="button"
+              className="button primary small"
+              onClick={() => open({ type: "allocation", bill: urgentBills[0].bill })}
+            >
+              Pay / Allocate
+            </button>
+            <Link
+              href={`/bills/${urgentBills[0].bill.id}`}
+              className="button ghost small"
+            >
+              View
+            </Link>
+          </div>
+        </div>
+      )}
       <div className="dashboard-essential-grid">
         <Section title="Bills to pay" href="/bills" className="dashboard-bills">
           <div className="upcoming-list">
