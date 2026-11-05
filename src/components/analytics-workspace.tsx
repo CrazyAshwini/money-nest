@@ -1,6 +1,9 @@
 "use client";
 
-import { ArrowUpRight, Info } from "lucide-react";
+import { ArrowUpRight, Info, SlidersHorizontal } from "lucide-react";
+import { CATEGORIES } from "@/lib/types";
+import { computeBudgetStatus, getCategoryBudgets, type CategoryBudgets } from "@/lib/budgets";
+import { CategoryBudgetModal } from "./category-budget-modal";
 import Link from "next/link";
 import { useMemo, useState, type CSSProperties } from "react";
 import {
@@ -34,6 +37,10 @@ export function AnalyticsWorkspace({
   onOpenTransaction: (transaction: Transaction) => void;
 }) {
   const { data: workspace, month, userId } = useFinance();
+  const [budgets, setBudgets] = useState<CategoryBudgets>(() =>
+    getCategoryBudgets(userId),
+  );
+  const [budgetModalOpen, setBudgetModalOpen] = useState(false);
   const data = useMemo(
     () => ownedAnalyticsData(workspace, userId),
     [workspace, userId],
@@ -273,40 +280,89 @@ export function AnalyticsWorkspace({
               <h2 id="analytics-breakdown-title">Category breakdown</h2>
               <p>Select a category to view its posted expenses.</p>
             </div>
+            <button
+              type="button"
+              className="button ghost small"
+              onClick={() => setBudgetModalOpen(true)}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              <SlidersHorizontal size={14} aria-hidden="true" />
+              Set budgets
+            </button>
           </header>
           {categories.length ? (
             <ul>
-              {categories.map((category) => (
-                <li key={category.category}>
-                  <Link
-                    href={analyticsTransactionsHref({
-                      category: category.category,
-                      month,
-                    })}
-                    style={
-                      {
-                        "--analytics-category-color": analyticsCategoryColor(
-                          category.category,
-                        ),
-                      } as CSSProperties
-                    }
-                  >
-                    <i aria-hidden="true" />
-                    <span className="analytics-category-name">
-                      <strong>{category.category}</strong>
-                      <small>
-                        {category.count} expense
-                        {category.count === 1 ? "" : "s"} ·{" "}
-                        {category.percentage.toFixed(1)}%
-                      </small>
-                    </span>
-                    <span className="analytics-category-amount">
-                      {formatMoney(category.amount)}
-                    </span>
-                    <ArrowUpRight size={15} aria-hidden="true" />
-                  </Link>
-                </li>
-              ))}
+              {categories.map((category) => {
+                const budgetStatus = computeBudgetStatus(
+                  category.amount,
+                  budgets[category.category],
+                );
+                return (
+                  <li key={category.category}>
+                    <Link
+                      href={analyticsTransactionsHref({
+                        category: category.category,
+                        month,
+                      })}
+                      style={
+                        {
+                          "--analytics-category-color": analyticsCategoryColor(
+                            category.category,
+                          ),
+                        } as CSSProperties
+                      }
+                    >
+                      <i aria-hidden="true" />
+                      <span className="analytics-category-name">
+                        <strong>{category.category}</strong>
+                        <small>
+                          {category.count} expense
+                          {category.count === 1 ? "" : "s"} ·{" "}
+                          {category.percentage.toFixed(1)}%
+                        </small>
+                        {budgetStatus && (
+                          <span className="category-budget-progress">
+                            <span className="category-budget-meter">
+                              <span
+                                className={`category-budget-fill ${
+                                  budgetStatus.isOver
+                                    ? "over"
+                                    : budgetStatus.isWarning
+                                      ? "warning"
+                                      : "normal"
+                                }`}
+                                style={{
+                                  width: `${Math.min(100, budgetStatus.percentage)}%`,
+                                }}
+                              />
+                            </span>
+                            <span className="category-budget-labels">
+                              <small>
+                                {formatMoney(category.amount, { decimals: 0 })} / {formatMoney(budgetStatus.limit, { decimals: 0 })}
+                              </small>
+                              <small
+                                className={
+                                  budgetStatus.isOver
+                                    ? "budget-over-text"
+                                    : budgetStatus.isWarning
+                                      ? "budget-warning-text"
+                                      : "budget-safe-text"
+                                }
+                              >
+                                {budgetStatus.statusLabel}
+                              </small>
+                            </span>
+                          </span>
+                        )}
+                      </span>
+                      <span className="analytics-category-amount">
+                        {formatMoney(category.amount)}
+                      </span>
+                      <ArrowUpRight size={15} aria-hidden="true" />
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p className="analytics-empty">
@@ -402,6 +458,14 @@ export function AnalyticsWorkspace({
           onOpenTransaction={onOpenTransaction}
         />
       )}
+      <CategoryBudgetModal
+        isOpen={budgetModalOpen}
+        onClose={() => setBudgetModalOpen(false)}
+        userId={userId}
+        categories={CATEGORIES}
+        budgets={budgets}
+        onSave={setBudgets}
+      />
     </div>
   );
 }
