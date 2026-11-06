@@ -1495,6 +1495,15 @@ export function RecordEditor({
                   />
                 </label>
               </div>
+              <div className="transaction-kind-hint full">
+                <span>Lending or borrowing with someone?</span>{" "}
+                <Link
+                  href="/loans"
+                  onClick={closeWithCheck}
+                >
+                  Use Personal Loans &rarr;
+                </Link>
+              </div>
               <Field label="Amount · ₹" className="transaction-amount full">
                 <span className="transaction-amount-control">
                   <span aria-hidden="true">₹</span>
