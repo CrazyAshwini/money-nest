@@ -322,10 +322,12 @@ export function PrivateProfilePage() {
           </button>
         </div>
 
-        {/* Minimal Centered Footer */}
+        {/* Instamart-style Minimal Centered Footer */}
         <footer className={styles.minimalFooter} aria-label="Creator branding">
-          <p className={styles.footerBrand}>Made with ❤️ by Ashwini</p>
-          <p className={styles.footerTagline}>MoneyNest · Personal Finance Manager</p>
+          <p className={styles.footerBrand}>moneynest</p>
+          <p className={styles.footerTagline}>
+            Crafted with <span className={styles.blueHeart}>💙</span> by Ashwini
+          </p>
         </footer>
       </div>
     );

@@ -270,25 +270,57 @@
   cursor: not-allowed;
 }
 
-/* Minimal Centered Footer */
+/* Instamart-style Minimal Centered Footer */
 .minimalFooter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  padding: 20px 16px 8px;
-  margin-top: 4px;
+  padding: 32px 16px 12px;
+  margin-top: 12px;
+  user-select: none;
 }
 
 .footerBrand {
   margin: 0;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--text);
-  letter-spacing: 0.2px;
+  font-family: var(--font-sans, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  font-size: clamp(28px, 5vw, 36px);
+  font-weight: 850;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  color: var(--muted, #94a3b8);
+  opacity: 0.65;
+  transition: opacity 0.2s ease, color 0.2s ease;
+}
+
+.footerBrand:hover {
+  opacity: 0.85;
 }
 
 .footerTagline {
-  margin: 4px 0 0 0;
-  font-size: 11.5px;
-  color: var(--muted);
+  margin: 6px 0 0 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--muted, #64748b);
+  line-height: 1.4;
+}
+
+.blueHeart {
+  display: inline-block;
+  font-size: 13.5px;
+  margin: 0 1px;
+  filter: drop-shadow(0 0 4px rgba(59, 130, 246, 0.4));
+  transition: transform 0.2s ease;
+}
+
+.blueHeart:hover {
+  transform: scale(1.15);
 }
 
 /* Responsive Scaling */
