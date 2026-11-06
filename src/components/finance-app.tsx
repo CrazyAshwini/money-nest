@@ -42,6 +42,8 @@ import {
   Search,
   Plus,
   ArrowUpRight,
+  ArrowLeft,
+  HandCoins,
   ChevronRight,
   ChevronLeft,
   Wallet,
@@ -1769,6 +1771,11 @@ function LoansPage({
   open: Open;
 }) {
   const { data, today } = useFinance();
+  const [selectedTab, setSelectedTab] = useState<"personal" | "institutional" | "calendar">(
+    calendar ? "calendar" : "personal"
+  );
+  const activeTab = calendar ? "calendar" : selectedTab;
+
   const loan = data.loans.find((l) => l.id === id);
   if (id && !loan)
     return (
@@ -1782,12 +1789,22 @@ function LoansPage({
         </Link>
       </>
     );
+
   if (loan?.ledgerManaged) return <PersonalLoans id={id} />;
-  const loans = (id ? data.loans.filter((l) => l.id === id) : data.loans).filter(l => !l.ledgerManaged);
-  return (
-    <>
-      {!id && !calendar && <PersonalLoans />}
-      {loan && (
+
+  const institutionalLoans = data.loans.filter((l) => !l.ledgerManaged);
+  const personalLoans = data.loans.filter((l) => l.ledgerManaged);
+
+  // Single Institutional Loan View
+  if (loan && !loan.ledgerManaged) {
+    const scheduledEmis = data.emis.filter((e) => e.loanId === loan.id);
+    return (
+      <div className="loans-workspace">
+        <Link className="loan-detail-back" href="/loans">
+          <ArrowLeft size={16} aria-hidden="true" />
+          <span>Back to all loans</span>
+        </Link>
+
         <DetailHeading
           title={loan.name}
           subtitle={`${loan.lender} · ${loan.kind}`}
@@ -1810,128 +1827,313 @@ function LoansPage({
             </>
           }
         />
-      )}
-      <div className="list-toolbar">
-        <div className="tabs">
-          <Link href="/loans" className={!calendar ? "selected" : ""}>
-            Loans
-          </Link>
-          <Link href="/emi-calendar" className={calendar ? "selected" : ""}>
-            EMI calendar
-          </Link>
+
+        <div className="loan-metrics" style={{ padding: "16px", borderRadius: "16px", background: "var(--panel)", border: "1px solid var(--border)" }}>
+          <div className="loan-metric-col">
+            <small>Contractual Principal</small>
+            <strong>{formatOptional(loan.contractualPrincipal)}</strong>
+          </div>
+          <div className="loan-metric-col">
+            <small>Net Disbursed</small>
+            <strong>{formatOptional(loan.netDisbursed)}</strong>
+          </div>
+          <div className="loan-metric-col">
+            <small>Reported Outstanding</small>
+            <strong className="highlight-borrowed">{formatOptional(loan.reportedOutstanding)}</strong>
+          </div>
+          <div className="loan-metric-col">
+            <small>Scheduled Repayments</small>
+            <strong>
+              {formatMoney(
+                sumMoney(scheduledEmis.map((e) => e.amount)),
+              )}
+            </strong>
+          </div>
         </div>
-        <button className="button" onClick={() => open({ type: "loan" })}>
-          <Plus size={15} />
-          Add institutional loan
-        </button>
+
+        <Section
+          title="Repayment schedule"
+          subtitle="Payments are confirmed only through linked ledger allocations."
+        >
+          <div className="record-list">
+            {scheduledEmis
+              .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+              .map((e) => {
+                const s = emiSummary(data, e.id, today);
+                return (
+                  <div className="record-row" key={e.id}>
+                    <span className="date-tile">
+                      <small>
+                        {new Date(e.dueDate + "T00:00:00").toLocaleDateString(
+                          "en-GB",
+                          { month: "short" },
+                        )}
+                      </small>
+                      <strong>{e.dueDate.slice(-2)}</strong>
+                    </span>
+                    <span className="grow">
+                      <strong>#{e.number} Installment</strong>
+                      <small>
+                        {formatDate(e.dueDate)} · {formatMoney(s.paid)} paid
+                      </small>
+                    </span>
+                    <Badge
+                      tone={
+                        s.status === "paid"
+                          ? "green"
+                          : s.status === "overdue"
+                            ? "red"
+                            : "neutral"
+                      }
+                    >
+                      {kindLabel(s.status)}
+                    </Badge>
+                    <strong>{formatMoney(s.remaining)}</strong>
+                    <button
+                      className="button small"
+                      onClick={() => open({ type: "allocation", emi: e })}
+                    >
+                      Match payment
+                    </button>
+                  </div>
+                );
+              })}
+            {!scheduledEmis.length && (
+              <Empty
+                title="No installments recorded"
+                description="Click 'Add installment' above to add scheduled payments for this loan."
+              />
+            )}
+          </div>
+        </Section>
       </div>
-      {!calendar && (
-        <div className="bills-grid">
-          {loans.map((l) => (
-            <Section key={l.id} title={l.name} action={<Badge>{l.kind}</Badge>}>
-              <div className="bill-values">
-                <div>
-                  <small>Original principal</small>
-                  <strong>{formatOptional(l.contractualPrincipal)}</strong>
-                </div>
-                <div>
-                  <small>Net disbursed</small>
-                  <strong>{formatOptional(l.netDisbursed)}</strong>
-                </div>
-                <div>
-                  <small>Reported outstanding</small>
-                  <strong>{formatOptional(l.reportedOutstanding)}</strong>
-                </div>
-                <div>
-                  <small>Scheduled repayments</small>
-                  <strong>
-                    {formatMoney(
-                      sumMoney(
-                        data.emis
-                          .filter((e) => e.loanId === l.id)
-                          .map((e) => e.amount),
-                      ),
-                    )}
-                  </strong>
-                </div>
-              </div>
-              <div className="panel-foot">
-                <Link href={`/loans/${l.id}`} className="text-link">
-                  View schedule <ChevronRight size={14} />
-                </Link>
-                <button
-                  className="text-link"
-                  onClick={() => open({ type: "loan", record: l })}
-                >
-                  Edit
-                </button>
-              </div>
-            </Section>
-          ))}
+    );
+  }
+
+  return (
+    <div className="loans-workspace">
+      {/* Top Segmented Tabs Navigation */}
+      <div className="loans-tabs-container">
+        <div className="loans-segmented-tabs" role="tablist" aria-label="Loan categories">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "personal"}
+            className={`loans-tab-button ${activeTab === "personal" ? "active" : ""}`}
+            onClick={() => setSelectedTab("personal")}
+          >
+            <HandCoins size={15} aria-hidden="true" />
+            <span>Personal (P2P)</span>
+            {personalLoans.length > 0 && (
+              <span className="loans-tab-badge">{personalLoans.length}</span>
+            )}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "institutional"}
+            className={`loans-tab-button ${activeTab === "institutional" ? "active" : ""}`}
+            onClick={() => setSelectedTab("institutional")}
+          >
+            <Landmark size={15} aria-hidden="true" />
+            <span>Bank Loans</span>
+            {institutionalLoans.length > 0 && (
+              <span className="loans-tab-badge">{institutionalLoans.length}</span>
+            )}
+          </button>
+          <Link
+            href="/emi-calendar"
+            role="tab"
+            aria-selected={activeTab === "calendar"}
+            className={`loans-tab-button ${activeTab === "calendar" ? "active" : ""}`}
+          >
+            <CalendarDays size={15} aria-hidden="true" />
+            <span>EMI Calendar</span>
+            {data.emis.length > 0 && (
+              <span className="loans-tab-badge">{data.emis.length}</span>
+            )}
+          </Link>
         </div>
-      )}
-      <Section
-        title={calendar ? "Upcoming installments" : "Repayment schedule"}
-        subtitle="Payments are confirmed only through linked ledger allocations."
-      >
-        <div className="record-list">
-          {data.emis
-            .filter((e) => !id || e.loanId === id)
-            .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-            .map((e) => {
-              const s = emiSummary(data, e.id, today);
-              return (
-                <div className="record-row" key={e.id}>
-                  <span className="date-tile">
-                    <small>
-                      {new Date(e.dueDate + "T00:00:00").toLocaleDateString(
-                        "en-GB",
-                        { month: "short" },
-                      )}
-                    </small>
-                    <strong>{e.dueDate.slice(-2)}</strong>
-                  </span>
-                  <span className="grow">
-                    <strong>
-                      {data.loans.find((l) => l.id === e.loanId)?.name} · #
-                      {e.number}
-                    </strong>
-                    <small>
-                      {formatDate(e.dueDate)} · {formatMoney(s.paid)} paid
-                    </small>
-                  </span>
-                  <Badge
-                    tone={
-                      s.status === "paid"
-                        ? "green"
-                        : s.status === "overdue"
-                          ? "red"
-                          : "neutral"
-                    }
-                  >
-                    {kindLabel(s.status)}
-                  </Badge>
-                  <strong>{formatMoney(s.remaining)}</strong>
-                  <button
-                    className="button small"
-                    onClick={() => open({ type: "allocation", emi: e })}
-                  >
-                    Match payment
-                  </button>
-                </div>
-              );
-            })}
-          {!data.emis.length && (
+
+        {activeTab === "institutional" && (
+          <button className="button primary" onClick={() => open({ type: "loan" })}>
+            <Plus size={15} />
+            <span>Add institutional loan</span>
+          </button>
+        )}
+      </div>
+
+      {/* Tab Content: Personal Loans */}
+      {activeTab === "personal" && <PersonalLoans />}
+
+      {/* Tab Content: Institutional Bank Loans */}
+      {activeTab === "institutional" && (
+        <>
+          {!institutionalLoans.length ? (
             <Empty
-              title="No installments recorded"
-              description="Open a loan to add its confirmed repayment schedule."
+              title="No bank loans recorded"
+              description="Add formal bank loans, auto loans, or home loans to track EMIs and outstanding liabilities."
             />
+          ) : (
+            <div className="loans-grid">
+              {institutionalLoans.map((l) => {
+                const scheduledEmis = data.emis.filter((e) => e.loanId === l.id);
+                const scheduledTotal = sumMoney(scheduledEmis.map((e) => e.amount));
+                const paidEmis = scheduledEmis.filter((e) => {
+                  const s = emiSummary(data, e.id, today);
+                  return s.status === "paid";
+                });
+                const percentPaid = scheduledEmis.length > 0
+                  ? Math.round((paidEmis.length / scheduledEmis.length) * 100)
+                  : 0;
+
+                return (
+                  <div key={l.id} className="loan-card borrowed">
+                    <div>
+                      <div className="loan-card-top">
+                        <div className="loan-person-info">
+                          <div
+                            className="loan-avatar"
+                            aria-hidden="true"
+                            style={{
+                              background: "rgba(21, 94, 80, 0.1)",
+                              color: "#155e50",
+                              border: "1px solid rgba(21, 94, 80, 0.2)",
+                            }}
+                          >
+                            {l.lender.slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="loan-person-text">
+                            <h3 className="loan-person-name">{l.name}</h3>
+                            <span className="loan-direction-tag">
+                              <Landmark size={13} />
+                              <span>{l.lender} · {l.kind}</span>
+                            </span>
+                          </div>
+                        </div>
+                        <Badge>{l.kind}</Badge>
+                      </div>
+
+                      {scheduledEmis.length > 0 && (
+                        <div className="loan-progress-wrap">
+                          <div className="loan-progress-labels">
+                            <span>{paidEmis.length} of {scheduledEmis.length} EMIs paid</span>
+                            <span>{percentPaid}%</span>
+                          </div>
+                          <div className="loan-progress-bar">
+                            <div
+                              className="loan-progress-fill"
+                              style={{
+                                width: `${percentPaid}%`,
+                                background: "#155e50",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="loan-metrics">
+                        <div className="loan-metric-col">
+                          <small>Contractual</small>
+                          <strong>{formatOptional(l.contractualPrincipal)}</strong>
+                        </div>
+                        <div className="loan-metric-col">
+                          <small>Outstanding</small>
+                          <strong className="highlight-borrowed">{formatOptional(l.reportedOutstanding)}</strong>
+                        </div>
+                        <div className="loan-metric-col">
+                          <small>Scheduled</small>
+                          <strong>{formatMoney(scheduledTotal)}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="loan-card-foot">
+                      <Link href={`/loans/${l.id}`} className="loan-history-link">
+                        <span>View schedule</span>
+                        <ChevronRight size={14} aria-hidden="true" />
+                      </Link>
+                      <button
+                        type="button"
+                        className="text-link"
+                        onClick={() => open({ type: "loan", record: l })}
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
-        </div>
-      </Section>
-    </>
+        </>
+      )}
+
+      {/* Tab Content: EMI Calendar */}
+      {activeTab === "calendar" && (
+        <Section
+          title="Upcoming installments"
+          subtitle="Payments are confirmed only through linked ledger allocations."
+        >
+          <div className="record-list">
+            {data.emis
+              .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+              .map((e) => {
+                const s = emiSummary(data, e.id, today);
+                return (
+                  <div className="record-row" key={e.id}>
+                    <span className="date-tile">
+                      <small>
+                        {new Date(e.dueDate + "T00:00:00").toLocaleDateString(
+                          "en-GB",
+                          { month: "short" },
+                        )}
+                      </small>
+                      <strong>{e.dueDate.slice(-2)}</strong>
+                    </span>
+                    <span className="grow">
+                      <strong>
+                        {data.loans.find((l) => l.id === e.loanId)?.name} · #
+                        {e.number}
+                      </strong>
+                      <small>
+                        {formatDate(e.dueDate)} · {formatMoney(s.paid)} paid
+                      </small>
+                    </span>
+                    <Badge
+                      tone={
+                        s.status === "paid"
+                          ? "green"
+                          : s.status === "overdue"
+                            ? "red"
+                            : "neutral"
+                      }
+                    >
+                      {kindLabel(s.status)}
+                    </Badge>
+                    <strong>{formatMoney(s.remaining)}</strong>
+                    <button
+                      className="button small"
+                      onClick={() => open({ type: "allocation", emi: e })}
+                    >
+                      Match payment
+                    </button>
+                  </div>
+                );
+              })}
+            {!data.emis.length && (
+              <Empty
+                title="No installments recorded"
+                description="Open a bank loan to add its confirmed repayment schedule."
+              />
+            )}
+          </div>
+        </Section>
+      )}
+    </div>
   );
 }
+
 export function DetailHeading({
   title,
   subtitle,
