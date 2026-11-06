@@ -322,7 +322,7 @@ export function PrivateProfilePage() {
           </button>
         </div>
 
-        {/* Instamart-style Minimal Centered Footer */}
+        {/* Instamart-style Minimal Left-Aligned Footer */}
         <footer className={styles.minimalFooter} aria-label="Creator branding">
           <p className={styles.footerBrand}>moneynest</p>
           <p className={styles.footerTagline}>
@@ -330,8 +330,8 @@ export function PrivateProfilePage() {
             <svg
               className={styles.blueHeartIcon}
               viewBox="0 0 24 24"
-              width="13"
-              height="13"
+              width="14"
+              height="14"
               aria-hidden="true"
               focusable="false"
             >

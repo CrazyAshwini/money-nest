@@ -8,23 +8,35 @@
   --lw-amber-soft: rgba(217, 119, 6, 0.08);
   --lw-red: #b91c1c;
   --lw-red-soft: rgba(185, 28, 28, 0.08);
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 18px;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
+  min-height: 460px;
 }
 
 .loans-workspace * {
   box-sizing: border-box;
 }
 
-/* Navigation Tabs */
+/* Secondary Header Spacer (Replaces 3-line hamburger menu on mobile) */
+.secondary-header-spacer {
+  display: inline-block;
+  width: 44px;
+  height: 44px;
+  visibility: hidden;
+  flex-shrink: 0;
+}
+
+/* Stable Navigation Tabs */
 .loans-tabs-container {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
 }
 
 .loans-segmented-tabs {
@@ -35,14 +47,16 @@
   background: var(--raised, #f1f5f3);
   border: 1px solid var(--border, #e2e8e5);
   border-radius: 14px;
+  min-height: 48px;
 }
 
 .loans-tab-button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   min-height: 40px;
-  padding: 8px 16px;
+  padding: 8px 18px;
   border: none;
   border-radius: 10px;
   background: transparent;
@@ -52,7 +66,6 @@
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
-  text-decoration: none;
 }
 
 .loans-tab-button:hover {
@@ -60,7 +73,7 @@
 }
 
 .loans-tab-button.active,
-.loans-tab-button[aria-pressed="true"] {
+.loans-tab-button[aria-selected="true"] {
   background: var(--panel, #ffffff);
   color: var(--lw-green, #155e50);
   font-weight: 650;
@@ -81,11 +94,48 @@
   color: #0f8a65;
 }
 
+/* Individual Tab Content Containers */
+.loans-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.loans-tab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-height: 40px;
+}
+
+.loans-tab-title-wrap {
+  min-width: 0;
+}
+
+.loans-tab-heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text, #111827);
+  letter-spacing: -0.015em;
+}
+
+.loans-tab-subheading {
+  margin: 3px 0 0 0;
+  font-size: 12.5px;
+  color: var(--muted, #64748b);
+}
+
 /* Hero Metrics Section */
 .loans-hero-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  width: 100%;
 }
 
 .loans-hero-card {
@@ -227,6 +277,7 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .loans-search-wrap {
@@ -303,6 +354,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  width: 100%;
 }
 
 .loan-card {
@@ -558,6 +610,16 @@
   color: #155e50;
 }
 
+/* EMI Calendar Card Container */
+.loans-calendar-card {
+  border-radius: 18px;
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--border, #e2e8e5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  padding: 16px 20px;
+  width: 100%;
+}
+
 /* Suggestion Chips in Modal */
 .loan-contact-chips {
   display: flex;
@@ -708,7 +770,7 @@
   .loans-tab-button {
     justify-content: center;
     padding: 8px 6px;
-    font-size: 12.5px;
+    font-size: 12px;
   }
 
   .loans-search-wrap {

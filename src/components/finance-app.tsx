@@ -317,17 +317,25 @@ export function FinanceApp() {
                   </Link>
                 )}
                 <span>{active}</span>
-                <Dialog.Trigger asChild>
-                  <button
-                    className="icon-button mobile-menu"
-                    aria-label="Open navigation"
-                    onClick={(event) => {
-                      navigationTrigger.current = event.currentTarget;
-                    }}
-                  >
-                    <Menu size={20} />
-                  </button>
-                </Dialog.Trigger>
+                {page !== "loans" && page !== "emi-calendar" ? (
+                  <Dialog.Trigger asChild>
+                    <button
+                      className="icon-button mobile-menu"
+                      aria-label="Open navigation"
+                      onClick={(event) => {
+                        navigationTrigger.current = event.currentTarget;
+                      }}
+                    >
+                      <Menu size={20} />
+                    </button>
+                  </Dialog.Trigger>
+                ) : (
+                  <span
+                    className="secondary-header-spacer"
+                    aria-hidden="true"
+                    style={{ width: 44, height: 44 }}
+                  />
+                )}
               </header>
             )
           )}
@@ -1771,10 +1779,19 @@ function LoansPage({
   open: Open;
 }) {
   const { data, today } = useFinance();
-  const [selectedTab, setSelectedTab] = useState<"personal" | "institutional" | "calendar">(
+  const [activeTab, setActiveTab] = useState<"personal" | "institutional" | "calendar">(
     calendar ? "calendar" : "personal"
   );
-  const activeTab = calendar ? "calendar" : selectedTab;
+
+  const switchTab = (tab: "personal" | "institutional" | "calendar") => {
+    setActiveTab(tab);
+    if (typeof window !== "undefined") {
+      const targetUrl = tab === "calendar" ? "/emi-calendar" : "/loans";
+      if (window.location.pathname !== targetUrl) {
+        window.history.replaceState(null, "", targetUrl);
+      }
+    }
+  };
 
   const loan = data.loans.find((l) => l.id === id);
   if (id && !loan)
@@ -1920,7 +1937,7 @@ function LoansPage({
             role="tab"
             aria-selected={activeTab === "personal"}
             className={`loans-tab-button ${activeTab === "personal" ? "active" : ""}`}
-            onClick={() => setSelectedTab("personal")}
+            onClick={() => switchTab("personal")}
           >
             <HandCoins size={15} aria-hidden="true" />
             <span>Personal (P2P)</span>
@@ -1933,7 +1950,7 @@ function LoansPage({
             role="tab"
             aria-selected={activeTab === "institutional"}
             className={`loans-tab-button ${activeTab === "institutional" ? "active" : ""}`}
-            onClick={() => setSelectedTab("institutional")}
+            onClick={() => switchTab("institutional")}
           >
             <Landmark size={15} aria-hidden="true" />
             <span>Bank Loans</span>
@@ -1941,26 +1958,20 @@ function LoansPage({
               <span className="loans-tab-badge">{institutionalLoans.length}</span>
             )}
           </button>
-          <Link
-            href="/emi-calendar"
+          <button
+            type="button"
             role="tab"
             aria-selected={activeTab === "calendar"}
             className={`loans-tab-button ${activeTab === "calendar" ? "active" : ""}`}
+            onClick={() => switchTab("calendar")}
           >
             <CalendarDays size={15} aria-hidden="true" />
             <span>EMI Calendar</span>
             {data.emis.length > 0 && (
               <span className="loans-tab-badge">{data.emis.length}</span>
             )}
-          </Link>
-        </div>
-
-        {activeTab === "institutional" && (
-          <button className="button primary" onClick={() => open({ type: "loan" })}>
-            <Plus size={15} />
-            <span>Add institutional loan</span>
           </button>
-        )}
+        </div>
       </div>
 
       {/* Tab Content: Personal Loans */}
@@ -1968,7 +1979,19 @@ function LoansPage({
 
       {/* Tab Content: Institutional Bank Loans */}
       {activeTab === "institutional" && (
-        <>
+        <div className="loans-tab-content">
+          <div className="loans-tab-header">
+            <div className="loans-tab-title-wrap">
+              <h2 className="loans-tab-heading">Institutional &amp; Bank Loans</h2>
+              <p className="loans-tab-subheading">
+                Formal loans from banks, NBFCs, auto financers, and home lenders.
+              </p>
+            </div>
+            <button className="button primary" onClick={() => open({ type: "loan" })}>
+              <Plus size={15} />
+              <span>Add institutional loan</span>
+            </button>
+          </div>
           {!institutionalLoans.length ? (
             <Empty
               title="No bank loans recorded"
@@ -2066,15 +2089,20 @@ function LoansPage({
               })}
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* Tab Content: EMI Calendar */}
       {activeTab === "calendar" && (
-        <Section
-          title="Upcoming installments"
-          subtitle="Payments are confirmed only through linked ledger allocations."
-        >
+        <div className="loans-calendar-card">
+          <div className="loans-tab-header">
+            <div className="loans-tab-title-wrap">
+              <h2 className="loans-tab-heading">Upcoming installments</h2>
+              <p className="loans-tab-subheading">
+                Payments are confirmed only through linked ledger allocations.
+              </p>
+            </div>
+          </div>
           <div className="record-list">
             {data.emis
               .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
@@ -2128,7 +2156,7 @@ function LoansPage({
               />
             )}
           </div>
-        </Section>
+        </div>
       )}
     </div>
   );
