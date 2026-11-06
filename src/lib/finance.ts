@@ -684,23 +684,60 @@ export function validateEmiAllocation(
     return invalid(
       "Choose an existing posted and dated repayment or transfer.",
     );
-  if (
-    !loan.repaymentAccountId ||
-    transaction.fromAccountId !== loan.repaymentAccountId ||
-    !paymentSource(data, transaction, loan.userId)
-  )
-    return invalid(
-      "The debit must come from this loan's confirmed repayment account.",
-    );
-  if (
-    transaction.toAccountId &&
-    data.accounts.some(
-      (a) => a.id === transaction.toAccountId && a.userId === loan.userId,
+  const isPayLaterFinancedLoan =
+    (loan.repaymentAccountId &&
+      data.accounts.some(
+        (a) =>
+          a.id === loan.repaymentAccountId &&
+          (a.kind === "pay_later" || a.kind === "credit_card"),
+      )) ||
+    (Boolean(loan.lender?.toLowerCase().includes("amazon")) &&
+      data.accounts.some(
+        (a) =>
+          a.kind === "pay_later" &&
+          (a.id === transaction.toAccountId ||
+            a.id === loan.repaymentAccountId ||
+            a.name.toLowerCase().includes("amazon")),
+      ));
+
+  if (isPayLaterFinancedLoan) {
+    const toPayLaterAccount =
+      transaction.toAccountId === loan.repaymentAccountId ||
+      data.accounts.some(
+        (a) =>
+          a.id === transaction.toAccountId &&
+          a.userId === loan.userId &&
+          (a.kind === "pay_later" || a.kind === "credit_card"),
+      );
+    if (!toPayLaterAccount && transaction.fromAccountId !== loan.repaymentAccountId) {
+      return invalid(
+        "Payment must be made to or from the Pay Later repayment account.",
+      );
+    }
+    if (toPayLaterAccount && !paymentSource(data, transaction, loan.userId)) {
+      return invalid(
+        "The debit must come from a tracked bank account or wallet.",
+      );
+    }
+  } else {
+    if (
+      !loan.repaymentAccountId ||
+      transaction.fromAccountId !== loan.repaymentAccountId ||
+      !paymentSource(data, transaction, loan.userId)
     )
-  )
-    return invalid(
-      "A transfer to another tracked account cannot also repay an external loan.",
-    );
+      return invalid(
+        "The debit must come from this loan's confirmed repayment account.",
+      );
+    if (
+      transaction.toAccountId &&
+      data.accounts.some(
+        (a) => a.id === transaction.toAccountId && a.userId === loan.userId,
+      )
+    )
+      return invalid(
+        "A transfer to another tracked account cannot also repay an external loan.",
+      );
+  }
   if (
     dec(transactionAllocated(data, transactionId, excludingId))
       .plus(amount)

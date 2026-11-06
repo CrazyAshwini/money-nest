@@ -1,5 +1,6 @@
 import type { Transaction, WorkspaceData, WorkspaceDataWithEmi } from "./types";
 import { generateEmiSchedule } from "./emi";
+import Decimal from "decimal.js";
 
 export const SAMSUNG_TV_LOAN_ID = "e3b0c442-98fc-4c14-9afe-632c7a8f095b";
 
@@ -2136,6 +2137,84 @@ export function sanitizeWorkspaceTransactions<T extends WorkspaceData>(workspace
         amount: "3500.00",
       });
     }
+  }
+
+  // Auto-link Amazon Pay Later bill payments to Samsung TV EMI installments
+  // User confirmed: whenever Amazon Pay Later bill is paid, it represents 1 EMI for Samsung TV
+  const amazonBillPayments = sanitizedTransactions
+    .filter((t) => {
+      if (t.status !== "posted" || !t.occurredOn) return false;
+      if (t.occurredOn <= "2026-10-18") return false; // occurred after Samsung TV purchase
+      const isToAmazon =
+        (amazonAccountId && t.toAccountId === amazonAccountId) ||
+        t.merchant?.toLowerCase().includes("amazon pay later") ||
+        t.description?.toLowerCase().includes("amazon pay later") ||
+        t.notes?.toLowerCase().includes("amazon pay later");
+      const isRepaymentKind = t.kind === "bill_payment" || t.kind === "transfer";
+      return isToAmazon && isRepaymentKind;
+    })
+    .sort((a, b) => (a.occurredOn || "").localeCompare(b.occurredOn || ""));
+
+  const samsungEmis = sanitizedEmis
+    .filter((e) => e.loanId === SAMSUNG_TV_LOAN_ID)
+    .sort((a, b) => a.number - b.number);
+
+  let paidSamsungPrincipalSum = new Decimal(0);
+
+  for (let i = 0; i < amazonBillPayments.length; i++) {
+    const paymentTx = amazonBillPayments[i];
+    const targetEmi = samsungEmis[i];
+    if (!targetEmi) break;
+
+    const allocAmount = Decimal.min(
+      new Decimal(paymentTx.amount),
+      new Decimal(targetEmi.amount),
+    ).toFixed(2);
+
+    const hasAlloc = sanitizedEmiAllocations.some(
+      (a) => a.emiId === targetEmi.id && a.transactionId === paymentTx.id,
+    );
+
+    if (!hasAlloc) {
+      sanitizedEmiAllocations.push({
+        id: `alloc-samsung-emi-${targetEmi.number}-${paymentTx.id.slice(0, 8)}`,
+        userId,
+        emiId: targetEmi.id,
+        transactionId: paymentTx.id,
+        amount: allocAmount,
+      });
+    }
+
+    if (targetEmi.principalPortion) {
+      paidSamsungPrincipalSum = paidSamsungPrincipalSum.plus(targetEmi.principalPortion);
+    }
+  }
+
+  // Update Samsung TV Loan reportedOutstanding if any installments were paid
+  const samsungLoanIndex = sanitizedLoans.findIndex((l) => l.id === SAMSUNG_TV_LOAN_ID);
+  if (samsungLoanIndex >= 0 && paidSamsungPrincipalSum.gt(0)) {
+    const originalPrincipal = new Decimal(
+      sanitizedLoans[samsungLoanIndex].contractualPrincipal ?? "30509.79",
+    );
+    const updatedOutstanding = Decimal.max(0, originalPrincipal.minus(paidSamsungPrincipalSum)).toFixed(2);
+    sanitizedLoans[samsungLoanIndex] = {
+      ...sanitizedLoans[samsungLoanIndex],
+      reportedOutstanding: updatedOutstanding,
+      notes: `${sanitizedLoans[samsungLoanIndex].notes || ""} (${amazonBillPayments.length} EMI installment${amazonBillPayments.length > 1 ? "s" : ""} paid via Amazon Pay Later statement repayment).`.trim(),
+    };
+  }
+
+  const samsungAgreementIndex = sanitizedEmiAgreements.findIndex(
+    (a) => a.id === "agr-samsung-tv" || a.description?.toLowerCase().includes("samsung"),
+  );
+  if (samsungAgreementIndex >= 0 && paidSamsungPrincipalSum.gt(0)) {
+    const originalPrincipal = new Decimal(sanitizedEmiAgreements[samsungAgreementIndex].financedPrincipal);
+    const remainingPrincipal = Decimal.max(0, originalPrincipal.minus(paidSamsungPrincipalSum)).toFixed(2);
+    sanitizedEmiAgreements[samsungAgreementIndex] = {
+      ...sanitizedEmiAgreements[samsungAgreementIndex],
+      principalRepaid: paidSamsungPrincipalSum.toFixed(2),
+      principalOutstanding: remainingPrincipal,
+    };
   }
 
   // Ensure Meesho Pay Later bill exists (₹170.00) and is fully allocated to the ₹170.00 repayment

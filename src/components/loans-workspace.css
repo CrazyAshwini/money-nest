@@ -31,6 +31,93 @@
   flex-shrink: 0;
 }
 
+/* Overall Portfolio Overview (Total Loan & Due) */
+.loans-portfolio-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.loans-portfolio-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--border, #e2e8e5);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.loans-portfolio-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(20, 60, 46, 0.06);
+}
+
+.loans-portfolio-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.loans-portfolio-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--brand-soft, rgba(15, 138, 101, 0.08));
+  color: var(--lw-green, #155e50);
+  flex-shrink: 0;
+}
+
+.loans-portfolio-icon.bank {
+  background: rgba(15, 138, 101, 0.1);
+  color: #0f8a65;
+}
+
+.loans-portfolio-icon.due {
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+}
+
+.loans-portfolio-icon.receivable {
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+}
+
+.loans-portfolio-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted, #64748b);
+  letter-spacing: -0.01em;
+}
+
+.loans-portfolio-value {
+  font-size: clamp(20px, 2.3vw, 25px);
+  font-weight: 750;
+  color: var(--text, #111827);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.loans-portfolio-value.highlight-due {
+  color: #b91c1c;
+}
+
+.loans-portfolio-value.highlight-receivable {
+  color: #155e50;
+}
+
+.loans-portfolio-caption {
+  font-size: 12px;
+  color: var(--muted, #64748b);
+  line-height: 1.3;
+}
+
 /* Stable Navigation Tabs */
 .loans-tabs-container {
   display: flex;
@@ -48,15 +135,15 @@
   background: var(--raised, #f1f5f3);
   border: 1px solid var(--border, #e2e8e5);
   border-radius: 14px;
-  min-height: 48px;
+  min-height: 46px;
 }
 
 .loans-tab-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 40px;
+  gap: 7px;
+  min-height: 38px;
   padding: 8px 18px;
   border: none;
   border-radius: 10px;
@@ -782,7 +869,17 @@
   white-space: nowrap;
 }
 
-/* Mobile Responsive */
+/* Responsive Layout */
+@media (max-width: 860px) {
+  .loans-portfolio-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .loans-portfolio-card.total-receivable {
+    grid-column: span 2;
+  }
+}
+
 @media (max-width: 768px) {
   .loans-hero-grid,
   .loans-grid {
@@ -793,12 +890,18 @@
     width: 100%;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px;
+    padding: 3px;
+    min-height: 44px;
   }
 
   .loans-tab-button {
     justify-content: center;
-    padding: 8px 6px;
-    font-size: 12px;
+    padding: 8px 4px;
+    font-size: 12.5px;
+    gap: 5px;
+    min-height: 38px;
+    border-radius: 9px;
   }
 
   .loans-search-wrap {
@@ -813,5 +916,30 @@
 
   .loan-metrics strong {
     font-size: 13px;
+  }
+}
+
+@media (max-width: 560px) {
+  .loans-portfolio-overview {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .loans-portfolio-card.total-receivable {
+    grid-column: span 1;
+  }
+  .loans-portfolio-card {
+    padding: 14px 16px;
+    border-radius: 16px;
+  }
+  .loans-portfolio-value {
+    font-size: 20px;
+  }
+  .loans-tab-button {
+    font-size: 11.5px;
+    padding: 6px 2px;
+  }
+  .loans-tab-button svg {
+    width: 14px;
+    height: 14px;
   }
 }

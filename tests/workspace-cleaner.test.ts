@@ -400,6 +400,61 @@ describe("workspace-cleaner", () => {
     expect(summary.remaining).toBe("0.00");
   });
 
+  it("automatically links Amazon Pay Later bill payments after 18 Oct 2026 to Samsung TV EMI installments and updates reported outstanding", () => {
+    const ws = createBaseWorkspace();
+    const amazonAccountId = "476fa60a-ab35-5769-a18c-839e8a88d283";
+    ws.accounts.push({
+      id: amazonAccountId,
+      userId,
+      kind: "pay_later",
+      name: "Amazon Pay Later",
+      institution: "Amazon",
+      maskedSuffix: "AMZN",
+      active: true,
+    });
+
+    // Add an Amazon Pay Later bill payment paid on 05 Nov 2026 for ₹3,678.70
+    ws.transactions.push({
+      id: "tx-amzn-bill-pay-nov-5",
+      userId,
+      amount: "3678.70",
+      currency: "INR",
+      kind: "bill_payment",
+      status: "posted",
+      occurredOn: "2026-11-05",
+      merchant: "Amazon Pay Later",
+      description: "Repayment of Amazon Pay Later bill statement",
+      category: "Bills",
+      fromAccountId: sbiAccountId,
+      toAccountId: amazonAccountId,
+    });
+
+    const cleaned = sanitizeWorkspaceTransactions(ws);
+
+    // Verify EMI #1 was linked via emiAllocations
+    const samsungEmi1 = cleaned.emis.find(
+      (e) => e.loanId === SAMSUNG_TV_LOAN_ID && e.number === 1,
+    );
+    expect(samsungEmi1).toBeDefined();
+
+    const emiAlloc = cleaned.emiAllocations.find(
+      (a) => a.emiId === samsungEmi1!.id && a.transactionId === "tx-amzn-bill-pay-nov-5",
+    );
+    expect(emiAlloc).toBeDefined();
+    expect(emiAlloc?.amount).toBe("3678.70");
+
+    // Verify EMI #1 status is paid
+    const summary = emiSummary(cleaned, samsungEmi1!.id, "2026-11-06");
+    expect(summary.status).toBe("paid");
+    expect(summary.remaining).toBe("0.00");
+
+    // Verify Samsung TV loan reportedOutstanding was reduced from 30509.79 by principal component
+    const tvLoan = cleaned.loans.find((l) => l.id === SAMSUNG_TV_LOAN_ID);
+    expect(tvLoan).toBeDefined();
+    expect(Number(tvLoan?.reportedOutstanding)).toBeLessThan(30509.79);
+    expect(tvLoan?.notes).toContain("1 EMI installment paid via Amazon Pay Later");
+  });
+
   it("does not inject rogue transactions into empty workspaces for other users", () => {
     const emptyWorkspace: WorkspaceData = {
       accounts: [],

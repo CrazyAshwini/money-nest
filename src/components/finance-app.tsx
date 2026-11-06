@@ -19,6 +19,7 @@ import "./workspace-layout.css";
 import { FinancialCardCarousel } from "./financial-card-carousel";
 import { VirtualAccountCard } from "./virtual-account-card";
 import { PersonalLoans } from "./personal-loans";
+import { personalLoanSummary } from "@/lib/personal-loans";
 
 import {
   ownedAnalyticsData,
@@ -1824,10 +1825,32 @@ function LoansPage({
   const institutionalLoans = data.loans.filter((l) => !l.ledgerManaged);
   const personalLoans = data.loans.filter((l) => l.ledgerManaged);
 
+  // Overall Portfolio Aggregates (Across Bank Loans & Personal P2P Borrowings)
+  const personalBorrowedLoans = personalLoans.filter((l) => l.kind === "borrowed");
+  const personalLentLoans = personalLoans.filter((l) => l.kind === "lent");
+
+  const totalPersonalBorrowedPrincipal = sumMoney(
+    personalBorrowedLoans.map((l) => personalLoanSummary(data, l, today).principal),
+  );
+  const totalPersonalBorrowedDue = sumMoney(
+    personalBorrowedLoans.map((l) => personalLoanSummary(data, l, today).outstanding),
+  );
+  const totalPersonalLentDue = sumMoney(
+    personalLentLoans.map((l) => personalLoanSummary(data, l, today).outstanding),
+  );
+
+  const totalBankPrincipal = sumMoney(
+    institutionalLoans.map((l) => l.contractualPrincipal ?? l.netDisbursed ?? "0"),
+  );
+
+  const overallTotalLoan = sumMoney([totalBankPrincipal, totalPersonalBorrowedPrincipal]);
+  const overallTotalReceivable = totalPersonalLentDue;
+
   // Bank Loans metrics & filters
   const totalBankOutstanding = sumMoney(
     institutionalLoans.map((l) => (l.reportedOutstanding != null ? String(l.reportedOutstanding) : "0"))
   );
+  const overallTotalDue = sumMoney([totalBankOutstanding, totalPersonalBorrowedDue]);
   const institutionalEmis = data.emis.filter((e) =>
     institutionalLoans.some((l) => l.id === e.loanId)
   );
@@ -2006,6 +2029,48 @@ function LoansPage({
 
   return (
     <div className="loans-workspace">
+      {/* Top Overall Portfolio Overview: Total Loan and Due */}
+      <div className="loans-portfolio-overview" aria-label="Overall loan and debt summary">
+        <div className="loans-portfolio-card total-loan">
+          <div className="loans-portfolio-header">
+            <span className="loans-portfolio-icon bank" aria-hidden="true">
+              <Landmark size={18} />
+            </span>
+            <span className="loans-portfolio-label">Total Loan (Principal)</span>
+          </div>
+          <strong className="loans-portfolio-value">{formatMoney(overallTotalLoan)}</strong>
+          <span className="loans-portfolio-caption">
+            Total borrowed across bank &amp; personal loans
+          </span>
+        </div>
+
+        <div className="loans-portfolio-card total-due">
+          <div className="loans-portfolio-header">
+            <span className="loans-portfolio-icon due" aria-hidden="true">
+              <CircleAlert size={18} />
+            </span>
+            <span className="loans-portfolio-label">Total Outstanding Due</span>
+          </div>
+          <strong className="loans-portfolio-value highlight-due">{formatMoney(overallTotalDue)}</strong>
+          <span className="loans-portfolio-caption">
+            Active debt remaining to repay
+          </span>
+        </div>
+
+        <div className="loans-portfolio-card total-receivable">
+          <div className="loans-portfolio-header">
+            <span className="loans-portfolio-icon receivable" aria-hidden="true">
+              <ArrowUpRight size={18} />
+            </span>
+            <span className="loans-portfolio-label">Total Receivable (Lent)</span>
+          </div>
+          <strong className="loans-portfolio-value highlight-receivable">{formatMoney(overallTotalReceivable)}</strong>
+          <span className="loans-portfolio-caption">
+            Money lent to collect back
+          </span>
+        </div>
+      </div>
+
       {/* Top Segmented Tabs Navigation */}
       <div className="loans-tabs-container">
         <div className="loans-segmented-tabs" role="tablist" aria-label="Loan categories">
@@ -2018,9 +2083,6 @@ function LoansPage({
           >
             <HandCoins size={15} aria-hidden="true" />
             <span>Personal (P2P)</span>
-            {personalLoans.length > 0 && (
-              <span className="loans-tab-badge">{personalLoans.length}</span>
-            )}
           </button>
           <button
             type="button"
@@ -2031,9 +2093,6 @@ function LoansPage({
           >
             <Landmark size={15} aria-hidden="true" />
             <span>Bank Loans</span>
-            {institutionalLoans.length > 0 && (
-              <span className="loans-tab-badge">{institutionalLoans.length}</span>
-            )}
           </button>
           <button
             type="button"
@@ -2044,9 +2103,6 @@ function LoansPage({
           >
             <CalendarDays size={15} aria-hidden="true" />
             <span>EMI Calendar</span>
-            {data.emis.length > 0 && (
-              <span className="loans-tab-badge">{data.emis.length}</span>
-            )}
           </button>
         </div>
       </div>
