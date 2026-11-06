@@ -326,7 +326,9 @@ export function PrivateProfilePage() {
         <footer className={styles.minimalFooter} aria-label="Creator branding">
           <p className={styles.footerBrand}>moneynest</p>
           <p className={styles.footerTagline}>
-            Crafted with <span className={styles.blueHeart}>💙</span> by Ashwini
+            <span>Crafted with</span>
+            <span className={styles.blueHeart}>💙</span>
+            <span>by Ashwini</span>
           </p>
         </footer>
       </div>
