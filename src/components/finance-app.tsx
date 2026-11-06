@@ -177,12 +177,20 @@ export function FinanceApp() {
       ? "Analytics"
       : page === "profile"
         ? "Profile"
-        : pageInfo?.title || "Money Nest";
+        : page === "emi-calendar"
+          ? "Loans & Borrowings"
+          : pageInfo?.title || "Money Nest";
   const mainTab =
     !id &&
-    ["dashboard", "accounts", "analytics", "profile", "transactions"].includes(
-      page,
-    );
+    [
+      "dashboard",
+      "accounts",
+      "analytics",
+      "profile",
+      "transactions",
+      "loans",
+      "emi-calendar",
+    ].includes(page);
   const detailRecords =
     page === "accounts"
       ? data.accounts
@@ -1782,6 +1790,10 @@ function LoansPage({
   const [activeTab, setActiveTab] = useState<"personal" | "institutional" | "calendar">(
     calendar ? "calendar" : "personal"
   );
+  const [bankSearch, setBankSearch] = useState("");
+  const [bankFilter, setBankFilter] = useState<"all" | "active" | "closed">("all");
+  const [emiSearch, setEmiSearch] = useState("");
+  const [emiFilter, setEmiFilter] = useState<"all" | "upcoming" | "paid" | "overdue">("all");
 
   const switchTab = (tab: "personal" | "institutional" | "calendar") => {
     setActiveTab(tab);
@@ -1811,6 +1823,71 @@ function LoansPage({
 
   const institutionalLoans = data.loans.filter((l) => !l.ledgerManaged);
   const personalLoans = data.loans.filter((l) => l.ledgerManaged);
+
+  // Bank Loans metrics & filters
+  const totalBankOutstanding = sumMoney(
+    institutionalLoans.map((l) => (l.reportedOutstanding != null ? String(l.reportedOutstanding) : "0"))
+  );
+  const institutionalEmis = data.emis.filter((e) =>
+    institutionalLoans.some((l) => l.id === e.loanId)
+  );
+  const totalBankEmisScheduled = sumMoney(institutionalEmis.map((e) => e.amount));
+
+
+
+  const filteredBankLoans = institutionalLoans.filter((l) => {
+    const matchesSearch =
+      !bankSearch.trim() ||
+      l.name.toLowerCase().includes(bankSearch.toLowerCase()) ||
+      l.lender.toLowerCase().includes(bankSearch.toLowerCase()) ||
+      l.kind.toLowerCase().includes(bankSearch.toLowerCase());
+    if (!matchesSearch) return false;
+    if (bankFilter === "active") return Number(l.reportedOutstanding ?? 0) > 0;
+    if (bankFilter === "closed") return Number(l.reportedOutstanding ?? 0) <= 0;
+    return true;
+  });
+
+  // EMI Calendar metrics & filters
+  const allEmisWithSummary = data.emis.map((e) => ({
+    emi: e,
+    summary: emiSummary(data, e.id, today),
+    loan: data.loans.find((l) => l.id === e.loanId),
+  }));
+
+  const totalUpcomingEmiAmount = sumMoney(
+    allEmisWithSummary
+      .filter((item) => item.summary.status !== "paid")
+      .map((item) => item.summary.remaining)
+  );
+
+  const totalPaidEmiAmount = sumMoney(
+    allEmisWithSummary.map((item) => item.summary.paid)
+  );
+
+  const pendingCount = allEmisWithSummary.filter(
+    (item) => item.summary.status !== "paid"
+  ).length;
+  const paidCount = allEmisWithSummary.filter(
+    (item) => item.summary.status === "paid"
+  ).length;
+
+
+
+  const filteredEmis = allEmisWithSummary
+    .filter((item) => {
+      const matchesSearch =
+        !emiSearch.trim() ||
+        (item.loan?.name || "").toLowerCase().includes(emiSearch.toLowerCase()) ||
+        (item.loan?.lender || "").toLowerCase().includes(emiSearch.toLowerCase()) ||
+        String(item.emi.number).includes(emiSearch.trim()) ||
+        item.emi.dueDate.includes(emiSearch.trim());
+      if (!matchesSearch) return false;
+      if (emiFilter === "upcoming") return item.summary.status !== "paid" && item.summary.status !== "overdue";
+      if (emiFilter === "paid") return item.summary.status === "paid";
+      if (emiFilter === "overdue") return item.summary.status === "overdue";
+      return true;
+    })
+    .sort((a, b) => a.emi.dueDate.localeCompare(b.emi.dueDate));
 
   // Single Institutional Loan View
   if (loan && !loan.ledgerManaged) {
@@ -1980,26 +2057,120 @@ function LoansPage({
       {/* Tab Content: Institutional Bank Loans */}
       {activeTab === "institutional" && (
         <div className="loans-tab-content">
-          <div className="loans-tab-header">
-            <div className="loans-tab-title-wrap">
-              <h2 className="loans-tab-heading">Institutional &amp; Bank Loans</h2>
-              <p className="loans-tab-subheading">
-                Formal loans from banks, NBFCs, auto financers, and home lenders.
-              </p>
+          {/* Hero Metrics Cards */}
+          <div className="loans-hero-grid">
+            <div className="loans-hero-card bank">
+              <div>
+                <div className="loans-hero-header">
+                  <div className="loans-hero-label-wrap">
+                    <span className="loans-hero-icon" aria-hidden="true">
+                      <Landmark size={18} />
+                    </span>
+                    <span className="loans-hero-label">Total Bank Debt (Outstanding)</span>
+                  </div>
+                </div>
+                <div className="loans-hero-amount">
+                  {formatMoney(totalBankOutstanding)}
+                </div>
+                <div className="loans-hero-subtitle">
+                  {institutionalLoans.length > 0
+                    ? `${institutionalLoans.length} active formal bank loan${institutionalLoans.length > 1 ? "s" : ""}`
+                    : "No institutional bank loans recorded"}
+                </div>
+              </div>
+              <div className="loans-hero-footer">
+                <span style={{ fontSize: "11px", color: "var(--muted)" }}>Formal liabilities</span>
+                <button
+                  type="button"
+                  className="loans-hero-btn primary"
+                  onClick={() => open({ type: "loan" })}
+                >
+                  <Plus size={15} aria-hidden="true" />
+                  <span>Add Bank Loan</span>
+                </button>
+              </div>
             </div>
-            <button className="button primary" onClick={() => open({ type: "loan" })}>
-              <Plus size={15} />
-              <span>Add institutional loan</span>
-            </button>
+
+            <div className="loans-hero-card borrowed">
+              <div>
+                <div className="loans-hero-header">
+                  <div className="loans-hero-label-wrap">
+                    <span className="loans-hero-icon" aria-hidden="true">
+                      <CalendarDays size={18} />
+                    </span>
+                    <span className="loans-hero-label">Scheduled Repayments (EMIs)</span>
+                  </div>
+                </div>
+                <div className="loans-hero-amount">
+                  {formatMoney(totalBankEmisScheduled)}
+                </div>
+                <div className="loans-hero-subtitle">
+                  {institutionalEmis.length > 0
+                    ? `${institutionalEmis.length} total installment${institutionalEmis.length > 1 ? "s" : ""} scheduled`
+                    : "No repayment installments scheduled"}
+                </div>
+              </div>
+              <div className="loans-hero-footer">
+                <span style={{ fontSize: "11px", color: "var(--muted)" }}>Repayment timeline</span>
+                <button
+                  type="button"
+                  className="loans-hero-btn secondary"
+                  onClick={() => switchTab("calendar")}
+                >
+                  <CalendarDays size={15} aria-hidden="true" />
+                  <span>View Calendar</span>
+                </button>
+              </div>
+            </div>
           </div>
-          {!institutionalLoans.length ? (
+
+          {/* Search & Filter Bar */}
+          <div className="loans-filter-row">
+            <div className="loans-search-wrap">
+              <Search size={16} className="loans-search-icon" aria-hidden="true" />
+              <input
+                type="search"
+                className="loans-search-input"
+                placeholder="Search bank loans by name or lender…"
+                value={bankSearch}
+                onChange={(e) => setBankSearch(e.target.value)}
+                aria-label="Search bank loans"
+              />
+            </div>
+            <div className="loans-filter-chips" role="group" aria-label="Filter bank loans">
+              <button
+                type="button"
+                className={`loans-chip ${bankFilter === "all" ? "active" : ""}`}
+                onClick={() => setBankFilter("all")}
+              >
+                All ({institutionalLoans.length})
+              </button>
+              <button
+                type="button"
+                className={`loans-chip ${bankFilter === "active" ? "active" : ""}`}
+                onClick={() => setBankFilter("active")}
+              >
+                Active
+              </button>
+              <button
+                type="button"
+                className={`loans-chip ${bankFilter === "closed" ? "active" : ""}`}
+                onClick={() => setBankFilter("closed")}
+              >
+                Closed
+              </button>
+            </div>
+          </div>
+
+          {/* Cards Grid */}
+          {!filteredBankLoans.length ? (
             <Empty
-              title="No bank loans recorded"
-              description="Add formal bank loans, auto loans, or home loans to track EMIs and outstanding liabilities."
+              title="No bank loans found"
+              description={institutionalLoans.length === 0 ? "Add formal bank loans, auto loans, or home loans to track EMIs and outstanding liabilities." : "Try adjusting your search or filter."}
             />
           ) : (
             <div className="loans-grid">
-              {institutionalLoans.map((l) => {
+              {filteredBankLoans.map((l) => {
                 const scheduledEmis = data.emis.filter((e) => e.loanId === l.id);
                 const scheduledTotal = sumMoney(scheduledEmis.map((e) => e.amount));
                 const paidEmis = scheduledEmis.filter((e) => {
@@ -2094,68 +2265,189 @@ function LoansPage({
 
       {/* Tab Content: EMI Calendar */}
       {activeTab === "calendar" && (
-        <div className="loans-calendar-card">
-          <div className="loans-tab-header">
-            <div className="loans-tab-title-wrap">
-              <h2 className="loans-tab-heading">Upcoming installments</h2>
-              <p className="loans-tab-subheading">
-                Payments are confirmed only through linked ledger allocations.
-              </p>
+        <div className="loans-tab-content">
+          {/* Hero Metrics Cards */}
+          <div className="loans-hero-grid">
+            <div className="loans-hero-card calendar">
+              <div>
+                <div className="loans-hero-header">
+                  <div className="loans-hero-label-wrap">
+                    <span className="loans-hero-icon" aria-hidden="true">
+                      <Clock size={18} />
+                    </span>
+                    <span className="loans-hero-label">Upcoming Installments</span>
+                  </div>
+                </div>
+                <div className="loans-hero-amount">
+                  {formatMoney(totalUpcomingEmiAmount)}
+                </div>
+                <div className="loans-hero-subtitle">
+                  {pendingCount > 0
+                    ? `${pendingCount} installment${pendingCount > 1 ? "s" : ""} pending payment`
+                    : "All scheduled EMIs settled"}
+                </div>
+              </div>
+              <div className="loans-hero-footer">
+                <span style={{ fontSize: "11px", color: "var(--muted)" }}>Pending obligations</span>
+                <button
+                  type="button"
+                  className="loans-hero-btn secondary"
+                  onClick={() => setEmiFilter("upcoming")}
+                >
+                  <Clock size={15} aria-hidden="true" />
+                  <span>Show Pending</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="loans-hero-card lent">
+              <div>
+                <div className="loans-hero-header">
+                  <div className="loans-hero-label-wrap">
+                    <span className="loans-hero-icon" aria-hidden="true">
+                      <Check size={18} />
+                    </span>
+                    <span className="loans-hero-label">Settled Installments (Paid)</span>
+                  </div>
+                </div>
+                <div className="loans-hero-amount">
+                  {formatMoney(totalPaidEmiAmount)}
+                </div>
+                <div className="loans-hero-subtitle">
+                  {paidCount > 0
+                    ? `${paidCount} installment${paidCount > 1 ? "s" : ""} fully paid`
+                    : "No payments recorded yet"}
+                </div>
+              </div>
+              <div className="loans-hero-footer">
+                <span style={{ fontSize: "11px", color: "var(--muted)" }}>Cleared obligations</span>
+                <button
+                  type="button"
+                  className="loans-hero-btn primary"
+                  onClick={() => setEmiFilter("paid")}
+                >
+                  <Check size={15} aria-hidden="true" />
+                  <span>Show Paid</span>
+                </button>
+              </div>
             </div>
           </div>
-          <div className="record-list">
-            {data.emis
-              .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-              .map((e) => {
-                const s = emiSummary(data, e.id, today);
-                return (
-                  <div className="record-row" key={e.id}>
-                    <span className="date-tile">
-                      <small>
-                        {new Date(e.dueDate + "T00:00:00").toLocaleDateString(
-                          "en-GB",
-                          { month: "short" },
-                        )}
-                      </small>
-                      <strong>{e.dueDate.slice(-2)}</strong>
-                    </span>
-                    <span className="grow">
-                      <strong>
-                        {data.loans.find((l) => l.id === e.loanId)?.name} · #
-                        {e.number}
-                      </strong>
-                      <small>
-                        {formatDate(e.dueDate)} · {formatMoney(s.paid)} paid
-                      </small>
-                    </span>
-                    <Badge
-                      tone={
-                        s.status === "paid"
-                          ? "green"
-                          : s.status === "overdue"
-                            ? "red"
-                            : "neutral"
-                      }
-                    >
-                      {kindLabel(s.status)}
-                    </Badge>
-                    <strong>{formatMoney(s.remaining)}</strong>
+
+          {/* Search & Filter Bar */}
+          <div className="loans-filter-row">
+            <div className="loans-search-wrap">
+              <Search size={16} className="loans-search-icon" aria-hidden="true" />
+              <input
+                type="search"
+                className="loans-search-input"
+                placeholder="Search installment by loan name or date…"
+                value={emiSearch}
+                onChange={(e) => setEmiSearch(e.target.value)}
+                aria-label="Search installments"
+              />
+            </div>
+            <div className="loans-filter-chips" role="group" aria-label="Filter installments">
+              <button
+                type="button"
+                className={`loans-chip ${emiFilter === "all" ? "active" : ""}`}
+                onClick={() => setEmiFilter("all")}
+              >
+                All ({allEmisWithSummary.length})
+              </button>
+              <button
+                type="button"
+                className={`loans-chip ${emiFilter === "upcoming" ? "active" : ""}`}
+                onClick={() => setEmiFilter("upcoming")}
+              >
+                Upcoming ({pendingCount})
+              </button>
+              <button
+                type="button"
+                className={`loans-chip ${emiFilter === "paid" ? "active" : ""}`}
+                onClick={() => setEmiFilter("paid")}
+              >
+                Paid ({paidCount})
+              </button>
+              <button
+                type="button"
+                className={`loans-chip ${emiFilter === "overdue" ? "active" : ""}`}
+                onClick={() => setEmiFilter("overdue")}
+              >
+                Overdue
+              </button>
+            </div>
+          </div>
+
+          {/* Cards Grid */}
+          {!filteredEmis.length ? (
+            <Empty
+              title="No installments found"
+              description={data.emis.length === 0 ? "Open a bank loan to add its confirmed repayment schedule." : "Try adjusting your search or filter."}
+            />
+          ) : (
+            <div className="loans-grid">
+              {filteredEmis.map(({ emi: e, summary: s, loan: l }) => (
+                <div key={e.id} className="loan-card emi-card">
+                  <div>
+                    <div className="loan-card-top">
+                      <div className="loan-person-info">
+                        <div className="loan-avatar" aria-hidden="true">
+                          #{e.number}
+                        </div>
+                        <div className="loan-person-text">
+                          <h3 className="loan-person-name">{l?.name || "Loan Installment"}</h3>
+                          <span className="loan-direction-tag">
+                            <CalendarDays size={13} />
+                            <span>Due {formatDate(e.dueDate)} · {l?.lender || "Bank"}</span>
+                          </span>
+                        </div>
+                      </div>
+                      <Badge
+                        tone={
+                          s.status === "paid"
+                            ? "green"
+                            : s.status === "overdue"
+                              ? "red"
+                              : "neutral"
+                        }
+                      >
+                        {kindLabel(s.status)}
+                      </Badge>
+                    </div>
+
+                    <div className="loan-metrics" style={{ margin: "10px 0" }}>
+                      <div className="loan-metric-col">
+                        <small>Amount</small>
+                        <strong>{formatMoney(e.amount)}</strong>
+                      </div>
+                      <div className="loan-metric-col">
+                        <small>Paid</small>
+                        <strong className={Number(s.paid) > 0 ? "highlight-lent" : ""}>{formatMoney(s.paid)}</strong>
+                      </div>
+                      <div className="loan-metric-col">
+                        <small>Remaining</small>
+                        <strong className={s.status === "overdue" ? "overdue-text" : ""}>{formatMoney(s.remaining)}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="loan-card-foot">
+                    <Link href={`/loans/${e.loanId}`} className="loan-history-link">
+                      <span>View loan schedule</span>
+                      <ChevronRight size={14} aria-hidden="true" />
+                    </Link>
                     <button
+                      type="button"
                       className="button small"
                       onClick={() => open({ type: "allocation", emi: e })}
                     >
                       Match payment
                     </button>
                   </div>
-                );
-              })}
-            {!data.emis.length && (
-              <Empty
-                title="No installments recorded"
-                description="Open a bank loan to add its confirmed repayment schedule."
-              />
-            )}
-          </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

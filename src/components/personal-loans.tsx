@@ -364,7 +364,7 @@ export function PersonalLoans({ id }: { id?: string }) {
 
   // Main Personal Loans View (List)
   return (
-    <div className="loans-workspace">
+    <div className="loans-tab-content">
       {/* Hero Metrics Cards */}
       <div className="loans-hero-grid">
         <div className="loans-hero-card lent">

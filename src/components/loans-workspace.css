@@ -12,7 +12,8 @@
   flex-direction: column;
   gap: 18px;
   width: 100%;
-  max-width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
   min-width: 0;
   min-height: 460px;
 }
@@ -165,6 +166,16 @@
   background: linear-gradient(135deg, var(--panel, #ffffff) 70%, rgba(217, 119, 6, 0.05) 100%);
 }
 
+.loans-hero-card.bank {
+  border-color: rgba(21, 94, 80, 0.22);
+  background: linear-gradient(135deg, var(--panel, #ffffff) 70%, rgba(21, 94, 80, 0.05) 100%);
+}
+
+.loans-hero-card.calendar {
+  border-color: rgba(14, 116, 144, 0.22);
+  background: linear-gradient(135deg, var(--panel, #ffffff) 70%, rgba(14, 116, 144, 0.05) 100%);
+}
+
 .loans-hero-header {
   display: flex;
   align-items: center;
@@ -196,6 +207,16 @@
 .loans-hero-card.borrowed .loans-hero-icon {
   background: var(--lw-amber-soft);
   color: var(--lw-amber);
+}
+
+.loans-hero-card.bank .loans-hero-icon {
+  background: rgba(21, 94, 80, 0.12);
+  color: #155e50;
+}
+
+.loans-hero-card.calendar .loans-hero-icon {
+  background: rgba(14, 116, 144, 0.12);
+  color: #0e7490;
 }
 
 .loans-hero-label {
@@ -409,6 +430,13 @@
   background: rgba(217, 119, 6, 0.12);
   color: #b45309;
   border: 1px solid rgba(217, 119, 6, 0.2);
+}
+
+.loan-card.emi-card .loan-avatar {
+  background: rgba(21, 94, 80, 0.12);
+  color: #155e50;
+  border: 1px solid rgba(21, 94, 80, 0.2);
+  font-size: 13.5px;
 }
 
 .loan-person-text {
