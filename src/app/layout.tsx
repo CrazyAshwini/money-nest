@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: { default: "Money Nest", template: "%s | Money Nest" },
   description:
     "Manage your accounts, spending, bills, orders and refunds together in your Money Nest finance workspace.",
-  manifest: "/manifest.webmanifest",
+  manifest: "/manifest.webmanifest?v=brand-v2",
   icons: {
     icon: [
       { url: "/icon.svg?v=brand-v2", type: "image/svg+xml", sizes: "any" },
