@@ -224,8 +224,8 @@ export function PersonalLoans({ id }: { id?: string }) {
                   {loan.name}
                 </h1>
                 <span className={`loan-direction-tag ${isLent ? "lent" : "borrowed"}`}>
-                  {isLent ? <ArrowUpRight size={14} /> : <ArrowDownLeft size={14} />}
-                  {isLent ? "Money Lent (You will receive)" : "Money Borrowed (You will repay)"} · Disbursed on {formatDate(loan.disbursedOn)}
+                  {isLent ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
+                  {isLent ? "Money Lent" : "Money Borrowed"} · Disbursed {formatDate(loan.disbursedOn)}
                 </span>
               </div>
             </div>
@@ -372,7 +372,7 @@ export function PersonalLoans({ id }: { id?: string }) {
             <div className="loans-hero-header">
               <div className="loans-hero-label-wrap">
                 <span className="loans-hero-icon" aria-hidden="true">
-                  <ArrowUpRight size={18} />
+                  <ArrowDownLeft size={18} />
                 </span>
                 <span className="loans-hero-label">To Receive (Money Lent)</span>
               </div>
@@ -383,11 +383,10 @@ export function PersonalLoans({ id }: { id?: string }) {
             <div className="loans-hero-subtitle">
               {activeBorrowersCount > 0
                 ? `${activeBorrowersCount} active borrower${activeBorrowersCount > 1 ? "s" : ""}`
-                : "All lent money settled"}
+                : "All settled"}
             </div>
           </div>
           <div className="loans-hero-footer">
-            <span style={{ fontSize: "11px", color: "var(--muted)" }}>Lent to someone</span>
             <button
               type="button"
               className="loans-hero-btn primary"
@@ -404,7 +403,7 @@ export function PersonalLoans({ id }: { id?: string }) {
             <div className="loans-hero-header">
               <div className="loans-hero-label-wrap">
                 <span className="loans-hero-icon" aria-hidden="true">
-                  <ArrowDownLeft size={18} />
+                  <ArrowUpRight size={18} />
                 </span>
                 <span className="loans-hero-label">To Repay (Money Borrowed)</span>
               </div>
@@ -415,11 +414,10 @@ export function PersonalLoans({ id }: { id?: string }) {
             <div className="loans-hero-subtitle">
               {activeLendersCount > 0
                 ? `${activeLendersCount} active lender${activeLendersCount > 1 ? "s" : ""}`
-                : "No outstanding debts"}
+                : "No open dues"}
             </div>
           </div>
           <div className="loans-hero-footer">
-            <span style={{ fontSize: "11px", color: "var(--muted)" }}>Borrowed from someone</span>
             <button
               type="button"
               className="loans-hero-btn secondary"
@@ -440,7 +438,7 @@ export function PersonalLoans({ id }: { id?: string }) {
             <input
               type="search"
               className="loans-search-input"
-              placeholder="Search by person name..."
+              placeholder="Search by person…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               aria-label="Search loans by person"
@@ -484,14 +482,14 @@ export function PersonalLoans({ id }: { id?: string }) {
       {!loans.length && (
         <Empty
           title="No personal loans yet"
-          description="Track money you have lent to or borrowed from friends, family, and colleagues separately from regular expenses."
+          description="Track money lent to or borrowed from friends and family."
         />
       )}
 
       {loans.length > 0 && filteredLoans.length === 0 && (
         <Empty
           title="No matching agreements"
-          description="Try adjusting your search query or switching the filter filter chip."
+          description="Try another search or filter."
         />
       )}
 
@@ -515,7 +513,7 @@ export function PersonalLoans({ id }: { id?: string }) {
                     <div className="loan-person-text">
                       <h3 className="loan-person-name">{loan.name}</h3>
                       <span className={`loan-direction-tag ${isLent ? "lent" : "borrowed"}`}>
-                        {isLent ? <ArrowUpRight size={13} /> : <ArrowDownLeft size={13} />}
+                        {isLent ? <ArrowDownLeft size={13} /> : <ArrowUpRight size={13} />}
                         <span>{isLent ? "Money Lent" : "Money Borrowed"}</span>
                       </span>
                     </div>
@@ -772,12 +770,12 @@ export function PersonalLoans({ id }: { id?: string }) {
 
             <p className="form-note full">
               {draft.direction === "lent"
-                ? "Lending money debits your selected bank account and adds an outstanding receivable under To Receive."
+                ? "Debits selected account and adds to To Receive."
                 : draft.direction === "borrowed"
-                  ? "Borrowing money credits your bank account and adds an outstanding payable under To Repay."
+                  ? "Credits selected account and adds to To Repay."
                   : draft.reversal
-                    ? "Reversing this repayment restores the outstanding balance and reverses any linked interest."
-                    : "Recording a repayment updates cash and reduces the remaining loan balance."}
+                    ? "Reverses repayment and restores balance."
+                    : "Updates account and reduces balance."}
             </p>
 
             {error && (

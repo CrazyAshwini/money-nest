@@ -78,7 +78,7 @@ export function ReceiptAISettingsPanel() {
     <div id="ai" className="receipt-ai-settings">
       <Section
         title="Receipt AI"
-        subtitle="Create transactions from payment screenshots and shopping receipts."
+        subtitle="Scan receipts and screenshots."
       >
         {!signedIn ? (
           <p className="muted">Sign in to your profile to scan receipts.</p>
@@ -87,10 +87,7 @@ export function ReceiptAISettingsPanel() {
             <div className="settings-row">
               <div>
                 <strong>{settings?.provider || "Receipt scanning"}</strong>
-                <p>
-                  Receipt scanning is provided by the app. You do not need an
-                  API key.
-                </p>
+                <p>Built-in scanner · no API key required.</p>
               </div>
               <Badge tone={settings?.configured ? "green" : "amber"}>
                 {settings

@@ -43,6 +43,7 @@ import {
   Search,
   Plus,
   ArrowUpRight,
+  ArrowDownLeft,
   ArrowLeft,
   HandCoins,
   ChevronRight,
@@ -2029,48 +2030,6 @@ function LoansPage({
 
   return (
     <div className="loans-workspace">
-      {/* Top Overall Portfolio Overview: Total Loan and Due */}
-      <div className="loans-portfolio-overview" aria-label="Overall loan and debt summary">
-        <div className="loans-portfolio-card total-loan">
-          <div className="loans-portfolio-header">
-            <span className="loans-portfolio-icon bank" aria-hidden="true">
-              <Landmark size={18} />
-            </span>
-            <span className="loans-portfolio-label">Total Loan (Principal)</span>
-          </div>
-          <strong className="loans-portfolio-value">{formatMoney(overallTotalLoan)}</strong>
-          <span className="loans-portfolio-caption">
-            Total borrowed across bank &amp; personal loans
-          </span>
-        </div>
-
-        <div className="loans-portfolio-card total-due">
-          <div className="loans-portfolio-header">
-            <span className="loans-portfolio-icon due" aria-hidden="true">
-              <CircleAlert size={18} />
-            </span>
-            <span className="loans-portfolio-label">Total Outstanding Due</span>
-          </div>
-          <strong className="loans-portfolio-value highlight-due">{formatMoney(overallTotalDue)}</strong>
-          <span className="loans-portfolio-caption">
-            Active debt remaining to repay
-          </span>
-        </div>
-
-        <div className="loans-portfolio-card total-receivable">
-          <div className="loans-portfolio-header">
-            <span className="loans-portfolio-icon receivable" aria-hidden="true">
-              <ArrowUpRight size={18} />
-            </span>
-            <span className="loans-portfolio-label">Total Receivable (Lent)</span>
-          </div>
-          <strong className="loans-portfolio-value highlight-receivable">{formatMoney(overallTotalReceivable)}</strong>
-          <span className="loans-portfolio-caption">
-            Money lent to collect back
-          </span>
-        </div>
-      </div>
-
       {/* Top Segmented Tabs Navigation */}
       <div className="loans-tabs-container">
         <div className="loans-segmented-tabs" role="tablist" aria-label="Loan categories">
@@ -2107,6 +2066,48 @@ function LoansPage({
         </div>
       </div>
 
+      {/* Portfolio Overview directly under tabs */}
+      <div className="loans-portfolio-overview" aria-label="Overall loan and debt summary">
+        <div className="loans-portfolio-card total-loan">
+          <div className="loans-portfolio-header">
+            <span className="loans-portfolio-icon bank" aria-hidden="true">
+              <Landmark size={18} />
+            </span>
+            <span className="loans-portfolio-label">Total Loan (Principal)</span>
+          </div>
+          <strong className="loans-portfolio-value">{formatMoney(overallTotalLoan)}</strong>
+          <span className="loans-portfolio-caption">
+            Bank + personal borrowed
+          </span>
+        </div>
+
+        <div className="loans-portfolio-card total-due">
+          <div className="loans-portfolio-header">
+            <span className="loans-portfolio-icon due" aria-hidden="true">
+              <CircleAlert size={18} />
+            </span>
+            <span className="loans-portfolio-label">Total Outstanding Due</span>
+          </div>
+          <strong className="loans-portfolio-value highlight-due">{formatMoney(overallTotalDue)}</strong>
+          <span className="loans-portfolio-caption">
+            Remaining to repay
+          </span>
+        </div>
+
+        <div className="loans-portfolio-card total-receivable">
+          <div className="loans-portfolio-header">
+            <span className="loans-portfolio-icon receivable" aria-hidden="true">
+              <ArrowDownLeft size={18} />
+            </span>
+            <span className="loans-portfolio-label">Total Receivable (Lent)</span>
+          </div>
+          <strong className="loans-portfolio-value highlight-receivable">{formatMoney(overallTotalReceivable)}</strong>
+          <span className="loans-portfolio-caption">
+            Lent to collect back
+          </span>
+        </div>
+      </div>
+
       {/* Tab Content: Personal Loans */}
       {activeTab === "personal" && <PersonalLoans />}
 
@@ -2122,7 +2123,7 @@ function LoansPage({
                     <span className="loans-hero-icon" aria-hidden="true">
                       <Landmark size={18} />
                     </span>
-                    <span className="loans-hero-label">Total Bank Debt (Outstanding)</span>
+                    <span className="loans-hero-label">Bank Debt (Outstanding)</span>
                   </div>
                 </div>
                 <div className="loans-hero-amount">
@@ -2130,12 +2131,11 @@ function LoansPage({
                 </div>
                 <div className="loans-hero-subtitle">
                   {institutionalLoans.length > 0
-                    ? `${institutionalLoans.length} active formal bank loan${institutionalLoans.length > 1 ? "s" : ""}`
-                    : "No institutional bank loans recorded"}
+                    ? `${institutionalLoans.length} loan${institutionalLoans.length > 1 ? "s" : ""} · Principal ${formatMoney(totalBankPrincipal)}`
+                    : "No bank loans recorded"}
                 </div>
               </div>
               <div className="loans-hero-footer">
-                <span style={{ fontSize: "11px", color: "var(--muted)" }}>Formal liabilities</span>
                 <button
                   type="button"
                   className="loans-hero-btn primary"
@@ -2154,7 +2154,7 @@ function LoansPage({
                     <span className="loans-hero-icon" aria-hidden="true">
                       <CalendarDays size={18} />
                     </span>
-                    <span className="loans-hero-label">Scheduled Repayments (EMIs)</span>
+                    <span className="loans-hero-label">Scheduled EMIs</span>
                   </div>
                 </div>
                 <div className="loans-hero-amount">
@@ -2162,12 +2162,11 @@ function LoansPage({
                 </div>
                 <div className="loans-hero-subtitle">
                   {institutionalEmis.length > 0
-                    ? `${institutionalEmis.length} total installment${institutionalEmis.length > 1 ? "s" : ""} scheduled`
-                    : "No repayment installments scheduled"}
+                    ? `${institutionalEmis.length} installment${institutionalEmis.length > 1 ? "s" : ""}`
+                    : "No installments scheduled"}
                 </div>
               </div>
               <div className="loans-hero-footer">
-                <span style={{ fontSize: "11px", color: "var(--muted)" }}>Repayment timeline</span>
                 <button
                   type="button"
                   className="loans-hero-btn secondary"
@@ -2187,7 +2186,7 @@ function LoansPage({
               <input
                 type="search"
                 className="loans-search-input"
-                placeholder="Search bank loans by name or lender…"
+                placeholder="Search bank loans…"
                 value={bankSearch}
                 onChange={(e) => setBankSearch(e.target.value)}
                 aria-label="Search bank loans"
@@ -2222,7 +2221,7 @@ function LoansPage({
           {!filteredBankLoans.length ? (
             <Empty
               title="No bank loans found"
-              description={institutionalLoans.length === 0 ? "Add formal bank loans, auto loans, or home loans to track EMIs and outstanding liabilities." : "Try adjusting your search or filter."}
+              description={institutionalLoans.length === 0 ? "Add a bank loan to track EMIs and balance." : "Try another search or filter."}
             />
           ) : (
             <div className="loans-grid">
@@ -2257,7 +2256,7 @@ function LoansPage({
                             <h3 className="loan-person-name">{l.name}</h3>
                             <span className="loan-direction-tag">
                               <Landmark size={13} />
-                              <span>{l.lender} · {l.kind}</span>
+                              <span>{l.lender}</span>
                             </span>
                           </div>
                         </div>
@@ -2331,7 +2330,7 @@ function LoansPage({
                     <span className="loans-hero-icon" aria-hidden="true">
                       <Clock size={18} />
                     </span>
-                    <span className="loans-hero-label">Upcoming Installments</span>
+                    <span className="loans-hero-label">Upcoming EMIs</span>
                   </div>
                 </div>
                 <div className="loans-hero-amount">
@@ -2339,12 +2338,11 @@ function LoansPage({
                 </div>
                 <div className="loans-hero-subtitle">
                   {pendingCount > 0
-                    ? `${pendingCount} installment${pendingCount > 1 ? "s" : ""} pending payment`
-                    : "All scheduled EMIs settled"}
+                    ? `${pendingCount} pending`
+                    : "All settled"}
                 </div>
               </div>
               <div className="loans-hero-footer">
-                <span style={{ fontSize: "11px", color: "var(--muted)" }}>Pending obligations</span>
                 <button
                   type="button"
                   className="loans-hero-btn secondary"
@@ -2363,7 +2361,7 @@ function LoansPage({
                     <span className="loans-hero-icon" aria-hidden="true">
                       <Check size={18} />
                     </span>
-                    <span className="loans-hero-label">Settled Installments (Paid)</span>
+                    <span className="loans-hero-label">Paid EMIs</span>
                   </div>
                 </div>
                 <div className="loans-hero-amount">
@@ -2371,12 +2369,11 @@ function LoansPage({
                 </div>
                 <div className="loans-hero-subtitle">
                   {paidCount > 0
-                    ? `${paidCount} installment${paidCount > 1 ? "s" : ""} fully paid`
-                    : "No payments recorded yet"}
+                    ? `${paidCount} paid`
+                    : "None recorded"}
                 </div>
               </div>
               <div className="loans-hero-footer">
-                <span style={{ fontSize: "11px", color: "var(--muted)" }}>Cleared obligations</span>
                 <button
                   type="button"
                   className="loans-hero-btn primary"
@@ -2396,7 +2393,7 @@ function LoansPage({
               <input
                 type="search"
                 className="loans-search-input"
-                placeholder="Search installment by loan name or date…"
+                placeholder="Search installments…"
                 value={emiSearch}
                 onChange={(e) => setEmiSearch(e.target.value)}
                 aria-label="Search installments"
@@ -2438,7 +2435,7 @@ function LoansPage({
           {!filteredEmis.length ? (
             <Empty
               title="No installments found"
-              description={data.emis.length === 0 ? "Open a bank loan to add its confirmed repayment schedule." : "Try adjusting your search or filter."}
+              description={data.emis.length === 0 ? "Open a bank loan to add installments." : "Try another search or filter."}
             />
           ) : (
             <div className="loans-grid">

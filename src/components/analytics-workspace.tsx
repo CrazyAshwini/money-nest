@@ -135,7 +135,9 @@ export function AnalyticsWorkspace({
         </div>
       </section>
 
-      <p className="form-note">Money In {formatMoney(cash.incoming)} · Money Out {formatMoney(cash.outgoing)}. Bank/wallet cash movements, including loan principal and bill repayments; internal bank/wallet transfers excluded.</p>
+      <p className="form-note">
+        Money In {formatMoney(cash.incoming)} · Money Out {formatMoney(cash.outgoing)} (excludes internal transfers).
+      </p>
       <div className="analytics-chart-grid">
         <section
           className="analytics-panel analytics-daily-panel"
@@ -162,7 +164,7 @@ export function AnalyticsWorkspace({
             onSelectDate={(date, trigger) => setSelection({ date, trigger })}
           />
           <p className="analytics-chart-hint">
-            Select a day to see its transactions.
+            Tap a day for transactions.
           </p>
           {summary.expenseCount === 0 && (
             <p className="analytics-empty">
@@ -239,7 +241,7 @@ export function AnalyticsWorkspace({
             </div>
           )}
           <p className="analytics-chart-hint">
-            Category totals use gross expenses in both spending modes.
+            Totals use gross expenses.
           </p>
         </section>
       </div>
@@ -278,7 +280,7 @@ export function AnalyticsWorkspace({
           <header className="analytics-panel-heading">
             <div>
               <h2 id="analytics-breakdown-title">Category breakdown</h2>
-              <p>Select a category to view its posted expenses.</p>
+
             </div>
             <button
               type="button"

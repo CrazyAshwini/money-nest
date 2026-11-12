@@ -1359,10 +1359,8 @@ export function RecordEditor({
       description={
         editor.type === "allocation"
           ? "Apply an existing ledger payment. This does not record another expense."
-          : editor.type === "transaction"
-            ? editor.record
-              ? "Review the transaction details."
-              : "Fill in the details or scan a receipt to auto-populate."
+          : editor.type === "transaction" && !editor.record
+            ? "Enter details or scan a receipt."
             : undefined
       }
     >

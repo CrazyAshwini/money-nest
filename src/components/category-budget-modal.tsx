@@ -70,7 +70,7 @@ export function CategoryBudgetModal({
   return (
     <Modal
       title="Category Budget Limits"
-      description="Set monthly spending targets to keep your personal finances on track."
+      description="Set monthly spending limits."
       onClose={onClose}
     >
       <form onSubmit={handleSave} className="budget-modal-form">

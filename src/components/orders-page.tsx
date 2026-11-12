@@ -344,7 +344,7 @@ export function OrdersPage() {
       {!!drafts.length && (
         <Section
           title={`Review ${drafts.length} order${drafts.length === 1 ? "" : "s"}`}
-          subtitle="Choose how each order belongs in your ledger. Unknown details can stay pending."
+          subtitle="Unknown details can stay pending."
         >
           <div className="commerce-drafts">
             {drafts.map((draft, index) => {
@@ -886,7 +886,7 @@ export function OrdersPage() {
         ) : !loaded && error ? null : !orders.length ? (
           <Empty
             title="Your orders, in one place"
-            description="Scan an order history or add an order. Review it before creating any expense."
+            description="Scan order history or add an order."
           />
         ) : (
           <div className="commerce-orders">
@@ -985,7 +985,7 @@ export function OrdersPage() {
       </Section>
       <Section
         title={`Refunds${loaded ? ` · ${commerce.refunds.length}` : ""}`}
-        subtitle="Pending requests stay separate from confirmed incoming credits."
+        subtitle="Pending and confirmed credits stay separate."
         action={<OrderScanner intent="refunds" onExtract={extracted} />}
       >
         {loading && !loaded ? (
@@ -993,7 +993,7 @@ export function OrdersPage() {
         ) : !loaded && error ? null : !commerce.refunds.length ? (
           <Empty
             title="Track a return or cancellation"
-            description="Add a refund request or scan its screenshot. Confirm the credit after it reaches your account."
+            description="Add or scan a refund request."
           />
         ) : (
           <div className="commerce-orders">
